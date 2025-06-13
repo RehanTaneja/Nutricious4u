@@ -37,6 +37,26 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class FoodItem(BaseModel):
+    id: int
+    name: str
+    calories: float
+    protein: float
+    fat: float
+    per_100g: bool = True
+
+class FoodSearchResponse(BaseModel):
+    foods: List[FoodItem]
+
+class WorkoutItem(BaseModel):
+    id: int
+    name: str
+    calories_per_minute: float
+    type: str
+
+class WorkoutSearchResponse(BaseModel):
+    exercises: List[WorkoutItem]
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
