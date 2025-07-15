@@ -1,0 +1,84 @@
+{
+  "workouts": [
+    {
+      "id": "running",
+      "name": "Running",
+      "caloriesPerMinute": 10,
+      "category": "cardio",
+      "description": "Running at a moderate pace",
+      "intensity": "high"
+    },
+    {
+      "id": "walking",
+      "name": "Walking",
+      "caloriesPerMinute": 4,
+      "category": "cardio",
+      "description": "Brisk walking",
+      "intensity": "low"
+    },
+    {
+      "id": "cycling",
+      "name": "Cycling",
+      "caloriesPerMinute": 8,
+      "category": "cardio",
+      "description": "Moderate cycling",
+      "intensity": "medium"
+    },
+    {
+      "id": "swimming",
+      "name": "Swimming",
+      "caloriesPerMinute": 9,
+      "category": "cardio",
+      "description": "Freestyle swimming",
+      "intensity": "high"
+    },
+    {
+      "id": "pushups",
+      "name": "Push-ups",
+      "caloriesPerMinute": 7,
+      "category": "strength",
+      "description": "Standard push-ups",
+      "intensity": "medium"
+    },
+    {
+      "id": "squats",
+      "name": "Squats",
+      "caloriesPerMinute": 6,
+      "category": "strength",
+      "description": "Bodyweight squats",
+      "intensity": "medium"
+    },
+    {
+      "id": "yoga",
+      "name": "Yoga",
+      "caloriesPerMinute": 3,
+      "category": "flexibility",
+      "description": "Hatha yoga",
+      "intensity": "low"
+    },
+    {
+      "id": "hiit",
+      "name": "HIIT",
+      "caloriesPerMinute": 12,
+      "category": "cardio",
+      "description": "High-intensity interval training",
+      "intensity": "high"
+    },
+    {
+      "id": "dancing",
+      "name": "Dancing",
+      "caloriesPerMinute": 7,
+      "category": "cardio",
+      "description": "Moderate intensity dancing",
+      "intensity": "medium"
+    },
+    {
+      "id": "weightlifting",
+      "name": "Weight Lifting",
+      "caloriesPerMinute": 5,
+      "category": "strength",
+      "description": "General weight training",
+      "intensity": "medium"
+    }
+  ]
+} 
