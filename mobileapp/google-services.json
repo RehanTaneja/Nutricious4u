@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "383526478160",
+    "project_id": "nutricious4u-63158",
+    "storage_bucket": "nutricious4u-63158.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:383526478160:android:a40de2927b92ed99068c55",
+        "android_client_info": {
+          "package_name": "com.nutricious4u.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "383526478160-29on25eqdhqukfukt4uirp4iqjdbeor4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nutricious4u.app",
+            "certificate_hash": "6ab80bd70fdc794ff1409efe433f2b19f916bedb"
+          }
+        },
+        {
+          "client_id": "383526478160-e8eq7b8pr1bslp6tmbbs8b8sdno0jt12.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBRyZh9WPNNgtjYPwyvXUe6B7ER1MAyqI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "383526478160-e8eq7b8pr1bslp6tmbbs8b8sdno0jt12.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
