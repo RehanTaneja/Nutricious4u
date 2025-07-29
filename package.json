@@ -16,6 +16,7 @@
     "axios": "^1.7.2",
     "date-fns": "^4.1.0",
     "expo": "~51.0.14",
+    "expo-document-picker": "^13.1.6",
     "expo-notifications": "~0.28.19",
     "expo-sensors": "~13.0.9",
     "expo-status-bar": "~1.12.1",

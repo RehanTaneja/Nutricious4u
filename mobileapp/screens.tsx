@@ -1250,6 +1250,26 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setScanResult(null);
   };
 
+  // Handler for Done button in Scan Food edit modal
+  const handleDoneScanEdit = async () => {
+    if (!scanResult) return;
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    setScanFoodLoading(true);
+    try {
+      // Use the edited values for name and nutrition
+      await logFood(userId, editScanName.trim() || 'Scanned Food', '100');
+      await fetchSummary();
+      setShowFoodSuccess(true);
+    } catch (e) {
+      setScanError('Failed to log scanned food.');
+      setShowScanError(true);
+    }
+    setScanFoodLoading(false);
+    setShowScanModal(false);
+    setScanResult(null);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, {justifyContent: 'center'}]}>
@@ -1287,23 +1307,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     <SafeAreaView style={[styles.container, { paddingHorizontal: 16, paddingTop: 50 }]}> 
       <View style={styles.headerContainer}>
         <Text style={styles.screenTitle}>Dashboard</Text>
-      </View>
-      {/* --- My Diet Button and Countdown --- */}
-      <View style={{ marginBottom: 16 }}>
-        <TouchableOpacity
-          style={{ backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, alignItems: 'center' }}
-          onPress={handleOpenDiet}
-          disabled={dietLoading || !dietPdfUrl}
-        >
-          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>My Diet</Text>
-        </TouchableOpacity>
-        {dietLoading ? (
-          <Text style={{ color: COLORS.placeholder, marginTop: 8 }}>Loading diet info...</Text>
-        ) : dietError ? (
-          <Text style={{ color: 'red', marginTop: 8 }}>{dietError}</Text>
-        ) : (
-          <Text style={{ color: COLORS.text, marginTop: 8 }}>Days left until new diet: {daysLeft ?? '-'}</Text>
-        )}
       </View>
       {/* --- Single Rectangle Widget --- */}
       <SummaryWidget
@@ -1345,6 +1348,25 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       >
         <Text style={styles.routinesButtonText}>Routines</Text>
       </TouchableOpacity>
+      {/* My Diet Button and Countdown - moved below Routines */}
+      <View style={{ marginBottom: 16 }}>
+        <TouchableOpacity
+          style={{ backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, alignItems: 'center', opacity: dietPdfUrl ? 1 : 0.5 }}
+          onPress={handleOpenDiet}
+          disabled={!dietPdfUrl}
+        >
+          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 18 }}>My Diet</Text>
+        </TouchableOpacity>
+        {dietLoading ? (
+          <Text style={{ color: COLORS.placeholder, marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>Loading diet info...</Text>
+        ) : dietError ? (
+          <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>{dietError}</Text>
+        ) : (
+          <Text style={{ color: COLORS.primary, marginTop: 12, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
+            Days left until new diet: {daysLeft ?? '-'}
+          </Text>
+        )}
+      </View>
       {/* Log Food Modal */}
       <Modal
         visible={showFoodModal}
@@ -4154,7 +4176,10 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
           dieticianMessageStyles.messageBubble,
           isUserMessage ? dieticianMessageStyles.userMessage : dieticianMessageStyles.dieticianMessage
         ]}>
-          <Text style={dieticianMessageStyles.messageText}>{item.text}</Text>
+          <Text style={[
+            dieticianMessageStyles.messageText,
+            { color: isUserMessage ? '#111' : '#fff' }
+          ]}>{item.text}</Text>
         </View>
         <Text style={[dieticianMessageStyles.timestampText, { alignSelf: isUserMessage ? 'flex-end' : 'flex-start', marginLeft: isUserMessage ? 0 : 12, marginRight: isUserMessage ? 12 : 0 }]}>{timeString}</Text>
       </View>
@@ -4298,12 +4323,12 @@ const dieticianMessageStyles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   userMessage: {
-    backgroundColor: '#FFD700', // vibrant yellow
+    backgroundColor: '#FFD700', // yellow for user messages
     alignSelf: 'flex-end',
     borderBottomRightRadius: 4,
   },
   dieticianMessage: {
-    backgroundColor: '#00E0FF', // vibrant cyan
+    backgroundColor: '#3B82F6', // blue for dietician messages
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
   },
@@ -5658,6 +5683,155 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  // Upload Diet Screen Styles
+  uploadHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingTop: 50,
+    paddingHorizontal: 20,
+  },
+  uploadBackButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadBackButtonText: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  uploadScreenTitle: {
+    fontSize: 34,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
+  },
+  uploadErrorContainer: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  uploadErrorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  uploadSuccessContainer: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  uploadSuccessText: {
+    color: '#16A34A',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  userItem: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  selectedUserItem: {
+    backgroundColor: '#E0F2FE',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: COLORS.placeholder,
+    marginBottom: 4,
+  },
+  daysLeftText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  selectedIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  selectedIndicatorText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  uploadButtonContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  uploadButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  uploadButtonDisabled: {
+    backgroundColor: COLORS.placeholder,
+  },
+  uploadButtonText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  uploadModalSubtitle: {
+    fontSize: 14,
+    color: COLORS.placeholder,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  uploadModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    minWidth: 300,
+  },
 });
 
 export { 
@@ -5862,6 +6036,8 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       return;
     }
 
+    let unsubscribe: (() => void) | undefined;
+    const timer = setTimeout(() => {
       const cleanupPastAppointments = async () => {
         try {
           const now = new Date();
@@ -5884,7 +6060,6 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         }
       };
 
-      let unsubscribe: (() => void) | undefined;
       cleanupPastAppointments().then(() => {
         // Real-time listener for appointments - only for current user
         unsubscribe = firestore
@@ -5904,16 +6079,13 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
             // Don't throw error, just log it and continue
           });
       });
-
-      return () => {
-        if (unsubscribe) unsubscribe();
-      };
     }, 1000); // 1 second delay
 
     return () => {
       clearTimeout(timer);
+      if (unsubscribe) unsubscribe();
     };
-      }, [auth.currentUser?.uid, authReady]); // Add dependency on user ID and auth ready
+  }, [auth.currentUser?.uid, authReady]); // Add dependency on user ID and auth ready
 
   // Real-time listener for breaks
   React.useEffect(() => {
@@ -6066,7 +6238,10 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   const renderTimeSlot = (timeSlot: string, date: Date) => {
     const isPast = isPastTimeSlot(timeSlot, date);
     const isBooked = isSlotBooked(timeSlot, date);
-    const isBookedByMe = isSlotBookedByMe(timeSlot, date);
+    const isBookedByMe = appointments.some(appointment => {
+      const appointmentDate = new Date(appointment.date);
+      return appointmentDate.toDateString() === date.toDateString() && appointment.timeSlot === timeSlot && appointment.userId === auth.currentUser?.uid;
+    });
     const isSelected = selectedDate.toDateString() === date.toDateString() && selectedTimeSlot === timeSlot;
     const isBreak = isTimeSlotInBreak(timeSlot, date);
     
@@ -6557,7 +6732,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     return (
       <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
         <View style={styles.headerContainer}>
-          <Text style={styles.screenTitle}>Dietician Dashboard</Text>
+          <View style={{ width: 60 }} />
+          <Text style={styles.screenTitle}>Slot</Text>
+          <View style={{ width: 60 }} />
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -6569,10 +6746,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
       <View style={styles.headerContainer}>
-        <Text style={styles.screenTitle}>Dietician Dashboard</Text>
-        <Text style={{ fontSize: 12, color: '#666', textAlign: 'center', marginTop: 4 }}>
-          Tap any time slot to set it as a break. Grey slots are breaks, unavailable to all users.
-        </Text>
+        <View style={{ width: 60 }} />
+        <Text style={styles.screenTitle}>Slot</Text>
+        <View style={{ width: 60 }} />
       </View>
 
       <ScrollView 
@@ -6819,28 +6995,60 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [countdowns, setCountdowns] = useState<{ [userId: string]: number }>({});
   const [refresh, setRefresh] = useState(0);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    let isMounted = true;
+    async function fetchData() {
+      setLoading(true);
       try {
-        const userList = await listNonDieticianUsers();
-        setUsers(userList);
-        // Fetch countdowns for each user
+        // 1. Fetch all user profiles (excluding the dietician by email)
+        const usersSnap = await firestore.collection('user_profiles').get();
+        const allProfiles: any[] = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+        const dieticianEmail = 'nutricious4u@gmail.com';
+        // Filter out placeholder users and dietician
+        const filteredProfiles = allProfiles.filter(u => {
+          const isPlaceholder =
+            (u.firstName === 'User' && (!u.lastName || u.lastName === '')) &&
+            (!u.email || u.email.endsWith('@example.com'));
+          if (isPlaceholder) {
+            console.log('[UploadDietScreen] Skipping placeholder user:', u);
+          }
+          return u.email !== dieticianEmail && !isPlaceholder;
+        });
+        
+        // 2. Fetch diet countdowns for each user
         const countdownsObj: { [userId: string]: number } = {};
-        await Promise.all(userList.map(async (u: any) => {
-          const diet = await getUserDiet(u.userId);
-          countdownsObj[u.userId] = diet.daysLeft;
+        await Promise.all(filteredProfiles.map(async (u: any) => {
+          try {
+            const diet = await getUserDiet(u.userId);
+            countdownsObj[u.userId] = diet.daysLeft;
+          } catch (e) {
+            countdownsObj[u.userId] = 0;
+          }
         }));
-        setCountdowns(countdownsObj);
-      } catch (e) {
-        setErrorMsg('Failed to load users');
+        
+        if (isMounted) {
+          setUsers(filteredProfiles);
+          setCountdowns(countdownsObj);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('[UploadDietScreen] Error fetching users:', err);
+        if (isMounted) {
+          setUsers([]);
+          setLoading(false);
+        }
       }
-    };
-    fetchUsers();
+    }
+    fetchData();
+    return () => { isMounted = false; };
   }, [refresh]);
 
   const handleUserSelect = (user: any) => {
     setSelectedUser(user);
+    setShowUploadModal(true);
     setSuccessMsg('');
     setErrorMsg('');
   };
@@ -6862,10 +7070,12 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
         type: 'application/pdf',
       };
       // Assume dieticianId is available from auth context or similar
-      const dieticianId = firebase.auth().currentUser?.uid;
+      const dieticianId = firebase.auth().currentUser?.uid || '';
       await uploadDietPdf(selectedUser.userId, dieticianId, file);
       setSuccessMsg('Diet uploaded successfully!');
       setRefresh(r => r + 1);
+      setShowUploadModal(false);
+      setSelectedUser(null);
     } catch (e) {
       setErrorMsg('Failed to upload diet');
     } finally {
@@ -6874,29 +7084,113 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 16 }}>Upload Diet</Text>
-      {errorMsg ? <Text style={{ color: 'red' }}>{errorMsg}</Text> : null}
-      {successMsg ? <Text style={{ color: 'green' }}>{successMsg}</Text> : null}
-      <FlatList
-        data={users}
-        keyExtractor={item => item.userId}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={{ padding: 12, backgroundColor: selectedUser?.userId === item.userId ? '#e0e0e0' : '#fff', borderBottomWidth: 1, borderColor: '#eee' }}
-            onPress={() => handleUserSelect(item)}
-          >
-            <Text style={{ fontWeight: 'bold' }}>{item.firstName} {item.lastName}</Text>
-            <Text style={{ color: '#888' }}>{item.email}</Text>
-            <Text style={{ color: '#444', marginTop: 4 }}>Days left until new diet: {countdowns[item.userId] ?? '-'}</Text>
-          </TouchableOpacity>
-        )}
-      />
-      {selectedUser && (
-        <View style={{ marginTop: 16 }}>
-          <Button title={uploading ? 'Uploading...' : 'Upload New Diet PDF'} onPress={handleUpload} disabled={uploading} />
+    <SafeAreaView style={styles.container}>
+      {/* Header without back button */}
+      <View style={styles.uploadHeaderContainer}>
+        <Text style={styles.uploadScreenTitle}>Upload Diet</Text>
+      </View>
+
+      {/* Error and Success Messages */}
+      {errorMsg ? (
+        <View style={styles.uploadErrorContainer}>
+          <Text style={styles.uploadErrorText}>{errorMsg}</Text>
         </View>
+      ) : null}
+      {successMsg ? (
+        <View style={styles.uploadSuccessContainer}>
+          <Text style={styles.uploadSuccessText}>{successMsg}</Text>
+        </View>
+      ) : null}
+
+      {/* Users List */}
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={users}
+          keyExtractor={item => item.userId}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#888', marginTop: 40 }}>No users found.</Text>}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={{ 
+                padding: 18, 
+                borderBottomWidth: 1, 
+                borderColor: '#eee', 
+                backgroundColor: '#fff',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+              onPress={() => handleUserSelect(item)}
+            >
+                          <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 18 }}>
+                {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : 'Unknown User'}
+              </Text>
+              <Text style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
+                Days left until new diet: {countdowns[item.userId] ?? '-'}
+              </Text>
+            </View>
+              <View style={{ 
+                backgroundColor: COLORS.primary, 
+                borderRadius: 12, 
+                width: 24, 
+                height: 24, 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>+</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        />
       )}
+
+      {/* Upload Modal */}
+      <Modal
+        visible={showUploadModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowUploadModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.uploadModalContent}>
+            <Text style={styles.modalTitle}>
+              Upload Diet for {selectedUser?.firstName} {selectedUser?.lastName}
+            </Text>
+            <Text style={styles.uploadModalSubtitle}>
+              Select a PDF file to upload as the diet plan
+            </Text>
+            
+            <TouchableOpacity
+              style={[
+                styles.uploadButton,
+                uploading && styles.uploadButtonDisabled
+              ]}
+              onPress={handleUpload}
+              disabled={uploading}
+            >
+              <Text style={styles.uploadButtonText}>
+                {uploading ? 'Uploading...' : 'Select PDF File'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setShowUploadModal(false);
+                setSelectedUser(null);
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

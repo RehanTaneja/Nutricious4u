@@ -62,7 +62,10 @@ const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
   >
     <Tab.Screen name="Dashboard" component={isDietician ? DieticianDashboardScreen : DashboardScreen} />
     {isDietician ? (
-      <Tab.Screen name="UploadDiet" component={UploadDietScreen} options={{ title: 'Upload Diet' }} />
+      <>
+        <Tab.Screen name="Messages" component={DieticianMessagesListScreen} options={{ title: 'Messages' }} />
+        <Tab.Screen name="UploadDiet" component={UploadDietScreen} options={{ title: 'Upload Diet' }} />
+      </>
     ) : (
       <Tab.Screen name="Dietician" component={DieticianScreen} />
     )}
