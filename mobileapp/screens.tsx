@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
-import { 
+import {
   View, 
   Text, 
   StyleSheet, 
@@ -21,9 +21,11 @@ import {
   Keyboard,
   Modal,
   Button,
+  Image,
+  RefreshControl,
 } from 'react-native';
 import { auth } from './services/firebase';
-import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2 } from 'lucide-react-native';
+import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft } from 'lucide-react-native';
 import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -41,6 +43,13 @@ import * as Notifications from 'expo-notifications';
 import { Pedometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
+import * as ImagePicker from 'expo-image-picker';
+import { scanFoodPhoto } from './services/api';
+import Markdown from 'react-native-markdown-display';
+import { firestore } from './services/firebase';
+import { format, isToday, isYesterday } from 'date-fns';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet } from './services/api';
+import * as DocumentPicker from 'expo-document-picker';
 
 // Add activity level options and calculation utility at the top
 const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = [
@@ -209,6 +218,13 @@ const LoginSignupScreen = () => {
       default: '383526478160-e8eq7b8pr1bslp6tmbbs8b8sdno0jt12.apps.googleusercontent.com', // Optional: for Expo Go/dev
     }),
   });
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [phoneStep, setPhoneStep] = useState<'input' | 'otp'>('input');
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [phoneConfirm, setPhoneConfirm] = useState<any>(null);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -305,7 +321,38 @@ const LoginSignupScreen = () => {
         await AsyncStorage.removeItem('savedPassword');
       }
     } catch (error: any) {
-      setError('Wrong email or password. Please try again.');
+      // If login fails for dietician, try to create the account
+      if (
+        email.trim().toLowerCase() === 'nutricious4u@gmail.com' &&
+        password === 'Ekta1978' &&
+        (error.code === 'auth/user-not-found' || error.message?.toLowerCase().includes('no user record'))
+      ) {
+        try {
+          // Create the dietician account
+          const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+          const user = userCredential.user;
+          if (user) {
+            // Create user profile for dietician
+            await createUserProfile({
+              userId: user.uid,
+              firstName: 'Ekta',
+              lastName: 'Taneja',
+              age: 45,
+              gender: 'female',
+              email,
+              stepGoal: 10000,
+              caloriesBurnedGoal: 500
+            });
+          }
+          // Retry login
+          await auth.signInWithEmailAndPassword(email, password);
+          setError(null);
+        } catch (createErr: any) {
+          setError('Failed to create dietician account: ' + (createErr.message || 'Unknown error'));
+        }
+      } else {
+        setError('Wrong email or password. Please try again.');
+      }
     } finally {
       setLoadingLogin(false);
     }
@@ -332,6 +379,85 @@ const LoginSignupScreen = () => {
       }
     } finally {
       setForgotLoading(false);
+    }
+  };
+
+  // Phone Auth: Send OTP
+  const handleSendOtp = async () => {
+    setPhoneError(null);
+    if (!phoneNumber || !/^\+\d{10,15}$/.test(phoneNumber.trim())) {
+      setPhoneError('Please enter a valid phone number with country code.');
+      return;
+    }
+    setPhoneLoading(true);
+    try {
+      // @ts-ignore
+      const confirmation = await auth.signInWithPhoneNumber(phoneNumber.trim());
+      setPhoneConfirm(confirmation);
+      setPhoneStep('otp');
+    } catch (err: any) {
+      setPhoneError(err.message || 'Failed to send OTP.');
+    } finally {
+      setPhoneLoading(false);
+    }
+  };
+
+  // Phone Auth: Confirm OTP
+  const handleVerifyOtp = async () => {
+    setPhoneError(null);
+    if (!otp || otp.length < 4) {
+      setPhoneError('Please enter the OTP sent to your phone.');
+      return;
+    }
+    setPhoneLoading(true);
+    try {
+      if (!phoneConfirm) {
+        setPhoneError('No OTP request in progress.');
+        setPhoneStep('input');
+        return;
+      }
+      const result = await phoneConfirm.confirm(otp);
+      // result.user is the Firebase user
+      // Optionally, create user profile in backend if not exists
+      if (result && result.user) {
+        try {
+          await createUserProfile({
+            userId: result.user.uid,
+            firstName: '',
+            lastName: '',
+            age: 0,
+            gender: '',
+            email: result.user.email || '',
+            currentWeight: 0,
+            goalWeight: 0,
+            height: 0,
+            dietaryPreference: '',
+            favouriteCuisine: '',
+            allergies: '',
+            medicalConditions: '',
+            streakCount: 0,
+            lastFoodLogDate: '',
+            targetCalories: 0,
+            targetProtein: 0,
+            targetFat: 0,
+            activityLevel: '',
+            stepGoal: 10000,
+            caloriesBurnedGoal: 500
+          });
+        } catch (e) {
+          // Ignore if already exists or error
+        }
+      }
+      setShowPhoneModal(false);
+      setPhoneNumber('');
+      setOtp('');
+      setPhoneStep('input');
+      setPhoneError(null);
+      setPhoneConfirm(null);
+    } catch (err: any) {
+      setPhoneError(err.message || 'Invalid OTP.');
+    } finally {
+      setPhoneLoading(false);
     }
   };
 
@@ -479,6 +605,27 @@ const LoginSignupScreen = () => {
               >
                 <Text style={{ color: COLORS.text, fontWeight: 'bold', fontSize: 16 }}>Sign in with Google</Text>
               </TouchableOpacity>
+              {/* Phone Login Button */}
+              <TouchableOpacity
+                style={{
+                  marginTop: 16,
+                  backgroundColor: '#34A853',
+                  borderRadius: 20,
+                  paddingVertical: 14,
+                  paddingHorizontal: 24,
+                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  shadowColor: '#34A853',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 4,
+                  elevation: 4,
+                }}
+                onPress={() => setShowPhoneModal(true)}
+              >
+                <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>Login with Phone</Text>
+              </TouchableOpacity>
               {googleError && (
                 <Text style={{ color: 'red', marginTop: 8 }}>{googleError}</Text>
               )}
@@ -534,6 +681,71 @@ const LoginSignupScreen = () => {
                     <Text style={styles.errorButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+        {/* Phone Login Modal */}
+        <Modal
+          visible={showPhoneModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowPhoneModal(false)}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContainer}>
+                <Text style={styles.modalTitle}>Login with Phone</Text>
+                {phoneStep === 'input' ? (
+                  <>
+                    <Text style={styles.inputLabel}>Phone Number</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. +1234567890"
+                      value={phoneNumber}
+                      onChangeText={setPhoneNumber}
+                      keyboardType="phone-pad"
+                      autoFocus
+                    />
+                    {phoneError && <Text style={{ color: 'red', marginBottom: 8 }}>{phoneError}</Text>}
+                    <StyledButton
+                      title={phoneLoading ? 'Sending OTP...' : 'Send OTP'}
+                      onPress={handleSendOtp}
+                      disabled={phoneLoading}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.inputLabel}>Enter OTP</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="6-digit code"
+                      value={otp}
+                      onChangeText={setOtp}
+                      keyboardType="number-pad"
+                      autoFocus
+                    />
+                    {phoneError && <Text style={{ color: 'red', marginBottom: 8 }}>{phoneError}</Text>}
+                    <StyledButton
+                      title={phoneLoading ? 'Verifying...' : 'Verify OTP'}
+                      onPress={handleVerifyOtp}
+                      disabled={phoneLoading}
+                    />
+                  </>
+                )}
+                <TouchableOpacity
+                  style={{ marginTop: 16, alignSelf: 'center' }}
+                  onPress={() => {
+                    setShowPhoneModal(false);
+                    setPhoneNumber('');
+                    setOtp('');
+                    setPhoneStep('input');
+                    setPhoneError(null);
+                    setPhoneConfirm(null);
+                  }}
+                >
+                  <Text style={{ color: COLORS.primary, fontSize: 16 }}>Cancel</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </TouchableWithoutFeedback>
@@ -658,6 +870,66 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [showWorkoutError, setShowWorkoutError] = useState(false);
   const [workoutError, setWorkoutError] = useState('');
   const [workoutSummary, setWorkoutSummary] = useState<WorkoutLogSummaryResponse | null>(null);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<{calories: number, protein: number, fat: number} | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [showScanError, setShowScanError] = useState(false);
+  const [editScanName, setEditScanName] = useState('Photo Food');
+  const [editScanCalories, setEditScanCalories] = useState('');
+  const [editScanProtein, setEditScanProtein] = useState('');
+  const [editScanFat, setEditScanFat] = useState('');
+  const [scanFoodLoading, setScanFoodLoading] = useState(false);
+  const [dietPdfUrl, setDietPdfUrl] = useState<string | null>(null);
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [dietLoading, setDietLoading] = useState(false);
+  const [dietError, setDietError] = useState('');
+
+  useEffect(() => {
+    let unsubscribe: any;
+    const userId = firebase.auth().currentUser?.uid;
+    if (userId) {
+      const userDocRef = firestore.collection('user_profiles').doc(userId);
+      unsubscribe = userDocRef.onSnapshot((doc: any) => {
+        if (doc.exists) {
+          const data = doc.data();
+          setDietPdfUrl(data.dietPdfUrl || null);
+          if (data.lastDietUpload) {
+            const lastDt = new Date(data.lastDietUpload);
+            const days = Math.max(0, 7 - Math.floor((Date.now() - lastDt.getTime()) / (1000 * 60 * 60 * 24)));
+            setDaysLeft(days);
+          } else {
+            setDaysLeft(null);
+          }
+        }
+      }, (error: any) => {
+        setDietError('Failed to load diet info');
+      });
+    }
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleOpenDiet = async () => {
+    if (dietPdfUrl) {
+      // Open PDF in browser or PDF viewer
+      try {
+        await WebBrowser.openBrowserAsync(dietPdfUrl);
+      } catch (e) {
+        setDietError('Failed to open diet PDF');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (scanResult) {
+      setEditScanName('Photo Food');
+      setEditScanCalories(scanResult.calories?.toString() || '');
+      setEditScanProtein(scanResult.protein?.toString() || '');
+      setEditScanFat(scanResult.fat?.toString() || '');
+    }
+  }, [scanResult]);
 
   // Fetch user profile for targets whenever focused
   useEffect(() => {
@@ -869,6 +1141,115 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
+  // Handler for Scan Food button
+  const handleScanFood = () => {
+    setShowScanModal(true);
+    setScanResult(null);
+    setScanError(null);
+    setShowScanError(false);
+  };
+
+  // Pick image from gallery
+  const pickImageFromGallery = async () => {
+    setScanError(null);
+    setShowScanError(false);
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true, // Enable crop/rotate UI
+        quality: 0.7,
+      });
+      if (result.canceled) {
+        setScanError('No photo selected.');
+        setShowScanError(true);
+        return;
+      }
+      if (result.assets && result.assets.length > 0 && result.assets[0].uri) {
+        handleScanPhoto(result.assets[0].uri);
+      } else {
+        setScanError('No photo selected.');
+        setShowScanError(true);
+      }
+    } catch (e) {
+      setScanError('Failed to pick image.');
+      setShowScanError(true);
+    }
+  };
+
+  // Take photo with camera
+  const takePhoto = async () => {
+    setScanError(null);
+    setShowScanError(false);
+    try {
+      let result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true, // Enable crop/rotate UI
+        quality: 0.7,
+      });
+      if (result.canceled) {
+        setScanError('No photo taken.');
+        setShowScanError(true);
+        return;
+      }
+      if (result.assets && result.assets.length > 0 && result.assets[0].uri) {
+        handleScanPhoto(result.assets[0].uri);
+      } else {
+        setScanError('No photo taken.');
+        setShowScanError(true);
+      }
+    } catch (e) {
+      setScanError('Failed to take photo.');
+      setShowScanError(true);
+    }
+  };
+
+  // Upload photo to backend and get nutrition info
+  const handleScanPhoto = async (imageUri: string) => {
+    if (!imageUri) {
+      setScanError('Invalid image.');
+      setShowScanError(true);
+      return;
+    }
+    setScanLoading(true);
+    setScanResult(null);
+    setScanError(null);
+    setShowScanError(false);
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) throw new Error('User not authenticated');
+      const res = await scanFoodPhoto(imageUri, userId);
+      if (res && res.food && res.food.calories !== undefined) {
+        setScanResult(res.food);
+        // Do not auto-close modal; wait for user to press Log or Cancel
+      } else {
+        setScanError('Could not detect nutrition info.');
+        setShowScanError(true);
+      }
+    } catch (e: any) {
+      setScanError(e?.message || 'Failed to scan food. Please check your network connection.');
+      setShowScanError(true);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  // Handler for Log button in Scan Food modal
+  const handleLogScanResult = async () => {
+    if (!scanResult) return;
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    try {
+      // Log the food using the Gemini nutrition data
+      // Use a default name and serving size, or you can prompt the user for these
+      await logFood(userId, 'Scanned Food', '100');
+      await fetchSummary();
+    } catch (e) {
+      setScanError('Failed to log scanned food.');
+      setShowScanError(true);
+    }
+    setShowScanModal(false);
+    setScanResult(null);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, {justifyContent: 'center'}]}>
@@ -907,6 +1288,23 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       <View style={styles.headerContainer}>
         <Text style={styles.screenTitle}>Dashboard</Text>
       </View>
+      {/* --- My Diet Button and Countdown --- */}
+      <View style={{ marginBottom: 16 }}>
+        <TouchableOpacity
+          style={{ backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, alignItems: 'center' }}
+          onPress={handleOpenDiet}
+          disabled={dietLoading || !dietPdfUrl}
+        >
+          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>My Diet</Text>
+        </TouchableOpacity>
+        {dietLoading ? (
+          <Text style={{ color: COLORS.placeholder, marginTop: 8 }}>Loading diet info...</Text>
+        ) : dietError ? (
+          <Text style={{ color: 'red', marginTop: 8 }}>{dietError}</Text>
+        ) : (
+          <Text style={{ color: COLORS.text, marginTop: 8 }}>Days left until new diet: {daysLeft ?? '-'}</Text>
+        )}
+      </View>
       {/* --- Single Rectangle Widget --- */}
       <SummaryWidget
         todayData={todayData}
@@ -926,11 +1324,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.actionButton, { backgroundColor: COLORS.scanFood }]} 
-          disabled
+          onPress={handleScanFood}
         >
           <Camera color={COLORS.white} size={24} />
           <Text style={styles.actionButtonText}>Scan Food</Text>
-          <Text style={styles.comingSoonText}>Coming Soon</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.actionButton, { backgroundColor: COLORS.logWorkout }]}
@@ -1121,6 +1518,122 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             >
               <Text style={styles.bigCloseButtonText}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* Scan Food Modal */}
+      <Modal
+        visible={showScanModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowScanModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Scan Food</Text>
+            <Text style={styles.modalLabel}>Choose an option</Text>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: COLORS.primary }]}
+                onPress={pickImageFromGallery}
+                disabled={scanLoading || !!scanResult}
+              >
+                <Text style={styles.modalButtonText}>Upload from Gallery</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: COLORS.primaryDark }]}
+                onPress={takePhoto}
+                disabled={scanLoading || !!scanResult}
+              >
+                <Text style={styles.modalButtonText}>Take Photo</Text>
+              </TouchableOpacity>
+            </View>
+            {scanLoading && <ActivityIndicator color={COLORS.primary} style={{ marginTop: 16 }} />}
+            {scanResult && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.modalLabel}>Food Name:</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editScanName}
+                  onChangeText={setEditScanName}
+                  placeholder="Food Name"
+                />
+                <Text style={styles.modalLabel}>Calories:</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editScanCalories}
+                  onChangeText={setEditScanCalories}
+                  placeholder="Calories"
+                  keyboardType="numeric"
+                />
+                <Text style={styles.modalLabel}>Protein:</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editScanProtein}
+                  onChangeText={setEditScanProtein}
+                  placeholder="Protein (g)"
+                  keyboardType="numeric"
+                />
+                <Text style={styles.modalLabel}>Fat:</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editScanFat}
+                  onChangeText={setEditScanFat}
+                  placeholder="Fat (g)"
+                  keyboardType="numeric"
+                />
+                <View style={styles.modalButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, { backgroundColor: scanFoodLoading ? COLORS.placeholder : COLORS.primary, flex: 1, marginRight: 6 }]}
+                    onPress={handleDoneScanEdit}
+                    disabled={scanFoodLoading}
+                  >
+                    {scanFoodLoading ? (
+                      <ActivityIndicator color={COLORS.white} />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Done</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, { backgroundColor: COLORS.error, flex: 1, marginLeft: 6 }]}
+                    onPress={() => setShowScanModal(false)}
+                    disabled={scanFoodLoading}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {/* Error Popup for Scan Food */}
+            <Modal
+              visible={showScanError}
+              animationType="fade"
+              transparent
+              onRequestClose={() => setShowScanError(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.errorPopup}>
+                  <Text style={styles.errorTitle}>Error</Text>
+                  <Text style={styles.errorMessage}>{scanError || 'An error occurred while scanning food.'}</Text>
+                  <TouchableOpacity style={styles.errorButton} onPress={() => setShowScanError(false)}>
+                    <Text style={styles.errorButtonText}>Dismiss</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+            {/* Only show Cancel button if not showing scanResult */}
+            {!scanResult && (
+              <View style={styles.modalButtonRow}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: COLORS.error }]}
+                  onPress={() => setShowScanModal(false)}
+                  disabled={scanFoodLoading}
+                >
+                  <Text style={styles.modalButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <Text style={styles.poweredBy}>Powered by Google Gemini Vision</Text>
           </View>
         </View>
       </Modal>
@@ -1504,12 +2017,20 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDietician, setIsDietician] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const userId = auth.currentUser?.uid;
         if (!userId) return;
+        
+        // Check if user is dietician
+        const userDoc = await firestore.collection('users').doc(userId).get();
+        const userData = userDoc.data();
+        const isDieticianAccount = !!userData?.isDietician;
+        setIsDietician(isDieticianAccount);
+        
         const profile = await getUserProfile(userId);
         if (profile) {
           setUserProfile(profile);
@@ -1611,7 +2132,19 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
             </View>
           </>
         ) : (
-          <Text style={styles.noDataText}>No profile found. Please create your profile.</Text>
+          <>
+            {isDietician ? (
+              <View style={styles.settingsButtonRow}>
+                <StyledButton 
+                  title="Logout" 
+                  onPress={handleLogout}
+                  style={styles.settingsLogoutButton}
+                />
+              </View>
+            ) : (
+              <Text style={styles.noDataText}>No profile found. Please create your profile.</Text>
+            )}
+          </>
         )}
       </View>
     </SafeAreaView>
@@ -2707,7 +3240,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
       <View style={{ flex: 1 }}>
         <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
-        <Text style={{ color: COLORS.placeholder, fontSize: 15, marginTop: 4 }}>{new Date(item.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST</Text>
+        <Text style={dieticianMessageStyles.timestampText}>
+          {item.timestamp && !isNaN(new Date(item.timestamp).getTime())
+            ? format(new Date(item.timestamp), 'p')
+            : ''}
+        </Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
@@ -3401,6 +3938,498 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
+// --- Dietician Screen ---
+const DieticianScreen = ({ navigation }: { navigation: any }) => {
+  const [isDietician, setIsDietician] = React.useState(false);
+  React.useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    // Check Firestore profile for isDietician flag
+    firestore.collection('users').doc(user.uid).get().then(doc => {
+      const data = doc.data();
+      setIsDietician(!!data?.isDietician);
+    });
+  }, []);
+  if (isDietician) {
+    // Dietician version: show Messages page (not profile)
+    return <DieticianMessagesListScreen navigation={navigation} />;
+  }
+  return (
+    <SafeAreaView style={[styles.container, { flex: 1 }]}> 
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 50, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.dieticianHeaderContainer}>
+          <View style={styles.dieticianPhotoWrapper}>
+            <Image
+              source={require('./assets/dp.jpeg')}
+              style={styles.dieticianPhoto}
+              resizeMode="center"
+            />
+          </View>
+          <Text style={styles.dieticianName}>Dt. Ekta Taneja</Text>
+          <Text style={styles.dieticianTitle}>Your Personal Diet Expert</Text>
+          <View style={styles.dieticianButtonRow}>
+            <TouchableOpacity 
+              style={[styles.dieticianSquareButton, { backgroundColor: COLORS.primaryDark }]}
+              onPress={() => navigation.navigate('ScheduleAppointment')}
+            > 
+              <Text style={styles.dieticianButtonText}>Schedule{"\n"}Appointment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.dieticianSquareButton, { backgroundColor: COLORS.logFood }]} onPress={() => navigation.navigate('DieticianMessage', { userId: auth.currentUser?.uid })}>
+              <Text style={styles.dieticianButtonText}>Message</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.dieticianDescriptionContainer}>
+          <Text style={styles.dieticianDescription}>
+            Meet Dt. Ekta Taneja, your friendly diet expert! With lots of experience in helping people with weight and lifestyle issues, she thinks the kitchen is like a medicine cabinet. She believes in a simple idea:
+          </Text>
+          <Text style={styles.dieticianQuote}>
+            "If diet is wrong, medicine is of no use, if diet is correct, medicine is no need."
+          </Text>
+          <Text style={styles.dieticianDescription}>
+            She's all about <Text style={styles.dieticianHighlightBlack}>smart eating</Text>—no starving needed! If you want <Text style={styles.dieticianHighlightBlack}>easy and practical</Text> diet plans that work at home and help with weight stuff or other health things, she's the one to talk to!
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+// --- Dietician Message Screen ---
+const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
+  const [messages, setMessages] = React.useState<any[]>([]);
+  const [inputText, setInputText] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const flatListRef = React.useRef<FlatList<any>>(null);
+  const [inputHeight, setInputHeight] = React.useState(40);
+  const [userId, setUserId] = React.useState<string | null>(null);
+  const [isDietician, setIsDietician] = React.useState(false);
+  const [chatUserProfile, setChatUserProfile] = React.useState<any>(null);
+  const [initializing, setInitializing] = React.useState(true); // <-- new state
+  const [profileLoading, setProfileLoading] = React.useState(false);
+  const [profileLoaded, setProfileLoaded] = React.useState(false);
+
+  // Determine chat userId (for user: their own, for dietician: from route param)
+  React.useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    firestore.collection('users').doc(user.uid).get().then(doc => {
+      const data = doc.data();
+      const isDieticianAccount = !!data?.isDietician;
+      setIsDietician(isDieticianAccount);
+      if (isDieticianAccount) {
+        // Dietician must have a userId param to chat with a user
+        if (route?.params?.userId) {
+          setUserId(route.params.userId);
+        } else {
+          setUserId(null);
+        }
+      } else {
+        setUserId(user.uid || null);
+      }
+      setInitializing(false); // <-- set loading false after determining userId
+    });
+  }, []);
+
+  // Fetch user profile for chat header (for dietician)
+  React.useEffect(() => {
+    if (isDietician && userId) {
+      setProfileLoading(true);
+      setProfileLoaded(false);
+      firestore.collection('user_profiles').doc(userId).get().then(doc => {
+        if (doc.exists) setChatUserProfile(doc.data());
+        setProfileLoading(false);
+        setProfileLoaded(true);
+      }).catch(() => {
+        setProfileLoading(false);
+        setProfileLoaded(true);
+      });
+    }
+  }, [isDietician, userId]);
+
+  // Fetch messages from Firestore (last 7 days only)
+  React.useEffect(() => {
+    if (!userId) return;
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const unsubscribe = firestore
+      .collection('chats')
+      .doc(userId)
+      .collection('messages')
+      .where('timestamp', '>=', weekAgo)
+      .orderBy('timestamp', 'asc')
+      .onSnapshot(snapshot => {
+        const msgs: any[] = [];
+        snapshot.forEach(doc => {
+          msgs.push({ id: doc.id, ...doc.data() });
+        });
+        setMessages(msgs);
+      });
+    // Cleanup: delete messages older than 7 days
+    firestore
+      .collection('chats')
+      .doc(userId)
+      .collection('messages')
+      .where('timestamp', '<', weekAgo)
+      .get()
+      .then(snapshot => {
+        snapshot.forEach(doc => doc.ref.delete());
+      });
+    return () => unsubscribe();
+  }, [userId]);
+
+  React.useEffect(() => {
+    if (flatListRef.current) {
+      flatListRef.current.scrollToEnd({ animated: true });
+    }
+  }, [messages]);
+
+  // Send notification to recipient
+  const sendNotification = async (toDietician: boolean, message: string) => {
+    // For demo: local notification. For real: use FCM push with user tokens.
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: toDietician ? 'New message from user' : 'New message from dietician',
+        body: message,
+      },
+      trigger: null,
+    });
+  };
+
+  const handleSend = async () => {
+    if (!inputText.trim() || !userId) return;
+    setLoading(true);
+    const user = auth.currentUser;
+    const isSenderDietician = user?.email === 'nutricious4u@gmail.com';
+    const sender = isSenderDietician ? 'dietician' : 'user';
+    const messageData = {
+      text: inputText,
+      sender,
+      timestamp: new Date(),
+    };
+    // Add message to Firestore
+    await firestore.collection('chats').doc(userId).collection('messages').add(messageData);
+    // Update chat summary for sorting
+    await firestore.collection('chats').doc(userId).set({
+      userId,
+      lastMessage: inputText,
+      lastMessageTimestamp: new Date(),
+    }, { merge: true });
+    setInputText('');
+    setLoading(false);
+    // Send notification to recipient
+    await sendNotification(!isSenderDietician, inputText);
+  };
+
+  const renderMessage = ({ item }: { item: any }) => {
+    if (item.type === 'date') {
+      return (
+        <View style={{ alignItems: 'center', marginVertical: 8 }}>
+          <Text style={{ color: '#444', fontWeight: 'bold', backgroundColor: '#E0E7FF', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 8, fontSize: 13 }}>
+            --- {item.heading} ---
+          </Text>
+        </View>
+      );
+    }
+    const isUserMessage = item.sender === 'user';
+    let timeString = '';
+    if (item.timestamp) {
+      let dateObj;
+      if (typeof item.timestamp === 'object' && typeof item.timestamp.toDate === 'function') {
+        // Firestore Timestamp
+        dateObj = item.timestamp.toDate();
+      } else if (typeof item.timestamp === 'string' || typeof item.timestamp === 'number') {
+        dateObj = new Date(item.timestamp);
+      }
+      if (dateObj && !isNaN(dateObj.getTime())) {
+        timeString = format(dateObj, 'p');
+      }
+    }
+    return (
+      <View style={{ marginBottom: 2 }}>
+        <View style={[
+          dieticianMessageStyles.messageBubble,
+          isUserMessage ? dieticianMessageStyles.userMessage : dieticianMessageStyles.dieticianMessage
+        ]}>
+          <Text style={dieticianMessageStyles.messageText}>{item.text}</Text>
+        </View>
+        <Text style={[dieticianMessageStyles.timestampText, { alignSelf: isUserMessage ? 'flex-end' : 'flex-start', marginLeft: isUserMessage ? 0 : 12, marginRight: isUserMessage ? 12 : 0 }]}>{timeString}</Text>
+      </View>
+    );
+  };
+
+  // Chat header: show user name if dietician, else "Message Dietician"
+  let headerTitle = 'Message Dietician';
+  if (isDietician) {
+    if (initializing || profileLoading || !profileLoaded) {
+      headerTitle = 'Loading...';
+    } else if (chatUserProfile) {
+      if ((chatUserProfile.firstName && chatUserProfile.firstName !== 'User') || chatUserProfile.lastName) {
+        headerTitle = `${chatUserProfile.firstName || ''} ${chatUserProfile.lastName || ''}`.trim();
+      } else if (chatUserProfile.email) {
+        headerTitle = chatUserProfile.email;
+        console.log('[DieticianMessageScreen] Fallback to email for header:', chatUserProfile);
+      } else {
+        headerTitle = 'Unknown User';
+        console.log('[DieticianMessageScreen] Fallback to Unknown User for header:', chatUserProfile);
+      }
+    } else if (profileLoaded) {
+      headerTitle = 'Unknown User';
+      console.log('[DieticianMessageScreen] No chatUserProfile, fallback to Unknown User. Context:', { isDietician, chatUserProfile });
+    } else {
+      headerTitle = 'Loading...';
+    }
+  }
+  // If dietician and no userId, show a message and back button
+  if (!initializing && (!userId && isDietician)) {
+    return (
+      <SafeAreaView style={dieticianMessageStyles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#888', fontSize: 18, marginBottom: 20 }}>Select a user from the Messages list to start chatting.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12, backgroundColor: '#6EE7B7', borderRadius: 8 }}>
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={dieticianMessageStyles.container}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={dieticianMessageStyles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={dieticianMessageStyles.backButton}>
+            <ArrowLeft size={28} color="#6EE7B7" />
+          </TouchableOpacity>
+          <Text style={dieticianMessageStyles.headerTitle}>{headerTitle}</Text>
+        </View>
+        <FlatList
+          ref={flatListRef}
+          data={groupMessagesByDate(messages)}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id || item.heading}
+          contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 10, flexGrow: 1 }}
+        />
+        <View style={dieticianMessageStyles.inputContainer}>
+          <TextInput
+            style={[dieticianMessageStyles.chatInput, { height: Math.max(40, Math.min(inputHeight, 120)), color: '#111' }]}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Type a message..."
+            placeholderTextColor="#A1A1AA"
+            editable={!loading && !!userId && !initializing}
+            multiline
+            onContentSizeChange={e => setInputHeight(e.nativeEvent.contentSize.height)}
+            textAlignVertical="top"
+          />
+          <TouchableOpacity onPress={handleSend} style={dieticianMessageStyles.sendButton} disabled={loading || !userId || initializing || !inputText.trim()}>
+            <Send color="#6EE7B7" size={24} />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
+
+const dieticianMessageStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F0FFF4',
+    paddingTop: 0,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingBottom: 10,
+    paddingHorizontal: 10,
+    backgroundColor: '#F0FFF4',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    paddingRight: 16,
+    paddingVertical: 4,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#222',
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 32,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 120,
+    backgroundColor: '#F0FFF4',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    marginRight: 10,
+    fontSize: 16,
+    color: '#27272A',
+    borderWidth: 2,
+    borderColor: '#111',
+  },
+  sendButton: {
+    padding: 5,
+  },
+  messageBubble: {
+    padding: 12,
+    borderRadius: 18,
+    marginVertical: 4,
+    maxWidth: '90%',
+    flexWrap: 'wrap',
+  },
+  userMessage: {
+    backgroundColor: '#FFD700', // vibrant yellow
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 4,
+  },
+  dieticianMessage: {
+    backgroundColor: '#00E0FF', // vibrant cyan
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 16,
+    color: '#111',
+    flexWrap: 'wrap',
+    width: 'auto',
+    alignSelf: 'flex-start',
+  },
+  timestampText: {
+    fontSize: 11,
+    color: '#444',
+    marginLeft: 8,
+    marginTop: 2,
+    marginBottom: 6,
+    alignSelf: 'flex-end',
+  },
+});
+
+// --- Dietician Messages List Screen ---
+const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
+  const [loading, setLoading] = React.useState(true);
+  const [userList, setUserList] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    async function fetchData() {
+      setLoading(true);
+      try {
+        // 1. Fetch all user profiles (excluding the dietician by email)
+        const usersSnap = await firestore.collection('user_profiles').get();
+        const allProfiles: any[] = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+        const dieticianEmail = 'nutricious4u@gmail.com';
+        // Filter out placeholder users
+        const filteredProfiles = allProfiles.filter(u => {
+          const isPlaceholder =
+            (u.firstName === 'User' && (!u.lastName || u.lastName === '')) &&
+            (!u.email || u.email.endsWith('@example.com'));
+          if (isPlaceholder) {
+            console.log('[DieticianMessagesListScreen] Skipping placeholder user:', u);
+          }
+          return u.email !== dieticianEmail && !isPlaceholder;
+        });
+        // 2. Fetch all chat summaries
+        const chatsSnap = await firestore.collection('chats').get();
+        const chatsMap: Record<string, any> = {};
+        chatsSnap.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.userId) {
+            chatsMap[data.userId] = {
+              lastMessage: data.lastMessage,
+              lastMessageTimestamp: data.lastMessageTimestamp,
+            };
+          }
+        });
+        // 3. Merge: attach chat summary to each user
+        const merged = filteredProfiles.map(user => ({
+          ...user,
+          lastMessage: chatsMap[user.userId]?.lastMessage || '',
+          lastMessageTimestamp: chatsMap[user.userId]?.lastMessageTimestamp || null,
+        }));
+        // 4. Sort: most recent chat at top, users with no chat at bottom
+        merged.sort((a, b) => {
+          if (a.lastMessageTimestamp && b.lastMessageTimestamp) {
+            return b.lastMessageTimestamp.toDate() - a.lastMessageTimestamp.toDate();
+          } else if (a.lastMessageTimestamp) {
+            return -1;
+          } else if (b.lastMessageTimestamp) {
+            return 1;
+          } else {
+            return 0;
+          }
+        });
+        if (isMounted) {
+          setUserList(merged);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('[DieticianMessagesListScreen] Error fetching users or chats:', err);
+        if (isMounted) {
+          setUserList([]);
+          setLoading(false);
+        }
+      }
+    }
+    fetchData();
+    return () => { isMounted = false; };
+  }, []);
+
+  const renderItem = ({ item }: { item: any }) => (
+    <TouchableOpacity
+      style={{ padding: 18, borderBottomWidth: 1, borderColor: '#eee', backgroundColor: '#fff' }}
+      onPress={() => navigation.navigate('DieticianMessage', { userId: item.userId })}
+    >
+      <Text style={{ fontWeight: 'bold', fontSize: 18 }}>
+        {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : (item.email || 'Unknown User')}
+      </Text>
+      <Text style={{ color: '#888', marginTop: 4 }} numberOfLines={1}>
+        {item.lastMessage || 'No messages yet'}
+      </Text>
+      <Text style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+        {item.lastMessageTimestamp?.toDate ? item.lastMessageTimestamp.toDate().toLocaleString() : ''}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F0FFF4' }}>
+      <View style={{ paddingTop: 50, paddingHorizontal: 16, flex: 1 }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' }}>Messages</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#6EE7B7" style={{ marginTop: 40 }} />
+        ) : (
+          <FlatList
+            data={userList}
+            renderItem={renderItem}
+            keyExtractor={item => item.userId}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#888', marginTop: 40 }}>No users found.</Text>}
+          />
+        )}
+      </View>
+    </SafeAreaView>
+  );
+};
+
 // --- Stylesheet ---
 
 const styles = StyleSheet.create({
@@ -3944,6 +4973,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  cancelButton: {
+    backgroundColor: '#ff4444',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   chatbotContainer: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -4358,6 +5400,264 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 12,
   },
+  dieticianHeaderContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dieticianPhotoWrapper: {
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    borderWidth: 6,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  dieticianPhoto: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: COLORS.white,
+    transform: [{ scale: 1.58 }, { translateY: 28 }],
+  },
+  dieticianName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  dieticianTitle: {
+    fontSize: 20,
+    color: COLORS.text,
+    marginBottom: 16,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  dieticianDescriptionContainer: {
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 18,
+    padding: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dieticianDescription: {
+    fontSize: 18,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 28,
+    marginBottom: 10,
+  },
+  dieticianQuote: {
+    fontStyle: 'italic',
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.primaryDark,
+    textAlign: 'center',
+    marginVertical: 15,
+    paddingHorizontal: 10,
+    lineHeight: 30,
+  },
+  dieticianHighlightBlack: {
+    fontWeight: 'bold',
+    color: '#111',
+  },
+  dieticianButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 24,
+  },
+  dieticianSquareButton: {
+    flex: 1,
+    minWidth: 130,
+    height: 120,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 8,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  dieticianButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  timestampText: {
+    fontSize: 11,
+    color: '#444',
+    marginLeft: 8,
+    marginTop: 2,
+    marginBottom: 6,
+    alignSelf: 'flex-end',
+  },
+  // Schedule Appointment Screen Styles
+  scheduleContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.placeholder + '20',
+    paddingBottom: 12,
+  },
+  timeColumnHeader: {
+    width: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeColumnHeaderText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  dateColumnHeader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.text,
+    textAlign: 'center',
+  },
+  todayHeaderText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+  },
+  todayIndicator: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  todayIndicatorText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  timeRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  timeColumn: {
+    width: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeColumnText: {
+    fontSize: 12,
+    color: COLORS.placeholder,
+    fontWeight: '500',
+  },
+  timeSlot: {
+    flex: 1,
+    height: 40,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    marginHorizontal: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.placeholder + '20',
+  },
+  pastTimeSlot: {
+    backgroundColor: COLORS.placeholder + '20',
+    borderColor: COLORS.placeholder + '40',
+  },
+  bookedTimeSlot: {
+    backgroundColor: COLORS.placeholder + '30',
+    borderColor: COLORS.placeholder + '50',
+  },
+  breakTimeSlot: {
+    backgroundColor: '#6B7280', // Grey color for breaks
+    borderColor: '#4B5563',
+  },
+  selectedTimeSlot: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  timeSlotText: {
+    fontSize: 11,
+    color: COLORS.text,
+    fontWeight: '500',
+  },
+  pastTimeSlotText: {
+    color: COLORS.placeholder,
+  },
+  bookedTimeSlotText: {
+    color: COLORS.placeholder,
+    fontSize: 10,
+  },
+  breakTimeSlotText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  selectedTimeSlotText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  bookedUserText: {
+    color: COLORS.placeholder,
+    fontSize: 8,
+    marginTop: 2,
+  },
+  appointmentSummary: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  appointmentSummaryTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  appointmentSummaryText: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  // 1. Add new style for user's own booked slot
+  bookedByMeTimeSlot: {
+    backgroundColor: '#15803D', // dark green
+    borderColor: '#166534',
+  },
+  bookedByMeTimeSlotText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
 
 export { 
@@ -4370,7 +5670,12 @@ export {
   AccountSettingsScreen,
   NotificationSettingsScreen,
   TrackingDetailsScreen,
-  RoutineScreen // <-- export the new screen
+  RoutineScreen, // <-- export the new screen
+  DieticianScreen, // <-- export DieticianScreen
+  DieticianMessageScreen, // <-- export the new message screen
+  DieticianMessagesListScreen, // <-- export the messages list screen for dietician
+  ScheduleAppointmentScreen, // <-- export the schedule appointment screen
+  DieticianDashboardScreen // <-- export the dietician dashboard screen
 }; 
 
 // Firebase Auth error code to user-friendly message mapping
@@ -4396,3 +5701,1204 @@ function getFirebaseErrorMessage(error: any) {
 function safeNumber(n: any) {
   return typeof n === 'number' && !isNaN(n) ? n : 0;
 }
+
+// Helper to set isDietician: true for a user profile (run once for the dietician)
+export async function setDieticianFlagForUser(email: string) {
+  // Find user by email in Firestore 'users' collection
+  const snapshot = await firestore.collection('users').where('email', '==', email).get();
+  if (!snapshot.empty) {
+    const userDoc = snapshot.docs[0];
+    await userDoc.ref.update({ isDietician: true });
+    return true;
+  }
+  return false;
+}
+
+// Add a utility to group messages by date and insert date headings
+function groupMessagesByDate(messages: any[]) {
+  const groups: any[] = [];
+  let lastDate: string | null = null;
+  messages.forEach((msg) => {
+    let dateObj;
+    if (msg.timestamp) {
+      if (typeof msg.timestamp === 'object' && typeof msg.timestamp.toDate === 'function') {
+        dateObj = msg.timestamp.toDate();
+      } else if (typeof msg.timestamp === 'string' || typeof msg.timestamp === 'number') {
+        dateObj = new Date(msg.timestamp);
+      }
+    } else {
+      dateObj = new Date();
+    }
+    const dateKey = dateObj ? dateObj.toDateString() : '';
+    if (lastDate !== dateKey) {
+      let heading = dateObj ? format(dateObj, 'do MMMM yyyy') : '';
+      if (dateObj && isToday(dateObj)) heading = 'Today';
+      else if (dateObj && isYesterday(dateObj)) heading = 'Yesterday';
+      groups.push({ type: 'date', id: `date-${dateKey}`, heading });
+      lastDate = dateKey;
+    }
+    groups.push({ ...msg, type: 'message' });
+  });
+  return groups;
+}
+
+// --- Schedule Appointment Screen ---
+const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
+  const [selectedDate, setSelectedDate] = React.useState(new Date());
+  const [selectedTimeSlot, setSelectedTimeSlot] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [appointments, setAppointments] = React.useState<any[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = React.useState(true);
+  const [showSuccess, setShowSuccess] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState('');
+  const [breaks, setBreaks] = React.useState<any[]>([]); // Add breaks state for users
+  const [showBreakConfirmation, setShowBreakConfirmation] = React.useState(false);
+  const [breakConfirmationSlot, setBreakConfirmationSlot] = React.useState<{timeSlot: string, date: Date} | null>(null);
+  const [isAppointmentCancelledByBreak, setIsAppointmentCancelledByBreak] = React.useState(false);
+  const [authReady, setAuthReady] = React.useState(false);
+
+  // Check if user is authenticated
+  const isAuthenticated = !!auth.currentUser?.uid;
+
+  // Set auth ready after a delay to ensure authentication is complete
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setAuthReady(true);
+    }, 2000); // 2 second delay
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Suppress Firestore permission errors during authentication
+  const suppressFirestoreErrors = (operation: () => void) => {
+    try {
+      operation();
+    } catch (error) {
+      console.log('Suppressed Firestore error during authentication:', error);
+    }
+  };
+
+  // Generate time slots from 9am to 9pm
+  const timeSlots = React.useMemo(() => {
+    const slots = [];
+    for (let hour = 9; hour <= 21; hour++) {
+      const time = `${hour.toString().padStart(2, '0')}:00`;
+      slots.push(time);
+    }
+    return slots;
+  }, []);
+
+  // Generate week dates (7 days starting from today)
+  const weekDates = React.useMemo(() => {
+    const dates = [];
+    const today = new Date();
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  }, []);
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
+  };
+
+  const isPastDate = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    date.setHours(0, 0, 0, 0);
+    return date < today;
+  };
+
+  const isPastTimeSlot = (timeSlot: string, date: Date) => {
+    if (isPastDate(date)) return true;
+    if (!isToday(date)) return false;
+    
+    const now = new Date();
+    const currentHour = now.getHours();
+    const slotHour = parseInt(timeSlot.split(':')[0]);
+    return slotHour <= currentHour;
+  };
+
+  const isSlotBooked = (timeSlot: string, date: Date) => {
+    const dateString = date.toDateString();
+    return appointments.some(appointment => {
+      const appointmentDate = new Date(appointment.date);
+      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+    });
+  };
+
+  const getBookedUserInfo = (timeSlot: string, date: Date) => {
+    const dateString = date.toDateString();
+    const appointment = appointments.find(appointment => {
+      const appointmentDate = new Date(appointment.date);
+      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+    });
+    return appointment;
+  };
+
+    // Fetch appointments for the current week
+  React.useEffect(() => {
+    // Only set up listeners if user is authenticated and auth is ready
+    if (!isAuthenticated || !authReady) {
+      setAppointmentsLoading(false);
+      return;
+    }
+    
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      setAppointmentsLoading(false);
+      return;
+    }
+
+      const cleanupPastAppointments = async () => {
+        try {
+          const now = new Date();
+          const pastAppointmentsSnapshot = await firestore
+            .collection('appointments')
+            .where('date', '<', now.toISOString())
+            .get();
+
+          const batch = firestore.batch();
+          pastAppointmentsSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+
+          if (pastAppointmentsSnapshot.docs.length > 0) {
+            await batch.commit();
+            console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
+          }
+        } catch (error) {
+          console.error('Error cleaning up past appointments:', error);
+        }
+      };
+
+      let unsubscribe: (() => void) | undefined;
+      cleanupPastAppointments().then(() => {
+        // Real-time listener for appointments - only for current user
+        unsubscribe = firestore
+          .collection('appointments')
+          .where('userId', '==', userId)
+          .onSnapshot(snapshot => {
+            const appointmentsData = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            console.log('[ScheduleAppointment] Appointments updated:', appointmentsData.length, 'appointments');
+            setAppointments(appointmentsData);
+            setAppointmentsLoading(false);
+          }, error => {
+            console.error('Error listening to appointments:', error);
+            setAppointmentsLoading(false);
+            // Don't throw error, just log it and continue
+          });
+      });
+
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    }, 1000); // 1 second delay
+
+    return () => {
+      clearTimeout(timer);
+    };
+      }, [auth.currentUser?.uid, authReady]); // Add dependency on user ID and auth ready
+
+  // Real-time listener for breaks
+  React.useEffect(() => {
+    const unsubscribe = firestore
+      .collection('breaks')
+      .onSnapshot(snapshot => {
+        const breaksData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setBreaks(breaksData);
+      }, error => {
+        console.error('Error listening to breaks:', error);
+      });
+    return () => unsubscribe();
+  }, []);
+
+  const handleTimeSlotPress = (timeSlot: string, date: Date) => {
+    if (isPastTimeSlot(timeSlot, date) || isSlotBooked(timeSlot, date)) return;
+    
+    setSelectedDate(date);
+    setSelectedTimeSlot(timeSlot);
+  };
+
+  const handleScheduleAppointment = async () => {
+    if (!selectedTimeSlot) {
+      setSuccessMessage('Please select a time slot');
+      setShowSuccess(true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        setSuccessMessage('You must be logged in to schedule an appointment');
+        setShowSuccess(true);
+        return;
+      }
+
+      // Fetch user profile to get actual name
+      let userName = 'Unknown User';
+      try {
+        const userProfileDoc = await firestore.collection('user_profiles').doc(userId).get();
+        console.log('[Appointment Debug] User profile exists:', userProfileDoc.exists);
+        if (userProfileDoc.exists) {
+          const userData = userProfileDoc.data();
+          console.log('[Appointment Debug] User data:', userData);
+          if (userData?.firstName && userData?.lastName) {
+            userName = `${userData.firstName} ${userData.lastName}`;
+            console.log('[Appointment Debug] Using full name:', userName);
+          } else if (userData?.firstName) {
+            userName = userData.firstName;
+            console.log('[Appointment Debug] Using first name only:', userName);
+          } else {
+            userName = auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown User';
+            console.log('[Appointment Debug] Using fallback name:', userName);
+          }
+        } else {
+          userName = auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown User';
+          console.log('[Appointment Debug] No profile, using fallback:', userName);
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+        userName = auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown User';
+      }
+
+      // Create appointment data
+      const appointmentDate = new Date(selectedDate);
+      const [hour] = selectedTimeSlot.split(':');
+      appointmentDate.setHours(parseInt(hour), 0, 0, 0);
+      
+      const appointmentData = {
+        userId: userId,
+        userName: userName,
+        userEmail: auth.currentUser?.email || '',
+        date: appointmentDate.toISOString(),
+        timeSlot: selectedTimeSlot,
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+      };
+
+      // Save appointment to Firestore
+      await firestore.collection('appointments').add(appointmentData);
+      
+      setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
+      setShowSuccess(true);
+      // Optionally, refresh appointments
+      setAppointments([...appointments, appointmentData]);
+      setSelectedTimeSlot(null);
+    } catch (error) {
+      setSuccessMessage('Failed to schedule appointment. Please try again.');
+      setShowSuccess(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelAppointment = async (appointmentId: string) => {
+    setLoading(true);
+    try {
+      // Delete appointment from Firestore
+      await firestore.collection('appointments').doc(appointmentId).delete();
+      
+      // Remove from local state
+      setAppointments(appointments.filter(appt => appt.id !== appointmentId));
+      
+      setSuccessMessage('Appointment cancelled successfully');
+      setShowSuccess(true);
+    } catch (error) {
+      setSuccessMessage('Failed to cancel appointment. Please try again.');
+      setShowSuccess(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manual refresh function
+  const refreshAppointments = () => {
+    setAppointmentsLoading(true);
+    // The real-time listener will automatically update the appointments
+    // This just triggers the loading state
+  };
+
+  // Reset the cancelled by break flag when appointments change
+  React.useEffect(() => {
+    setIsAppointmentCancelledByBreak(false);
+  }, [appointments]);
+
+  // Check if a time slot is within any break
+  const isTimeSlotInBreak = (timeSlot: string, date?: Date) => {
+    const dateString = date ? date.toDateString() : null;
+    
+    return breaks.some(breakItem => {
+      const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
+      
+      // If it's a daily break (no specific date), apply to all days
+      if (!breakItem.specificDate) {
+        return timeInRange;
+      }
+      
+      // If it's a specific date break, only apply to that date
+      if (dateString && breakItem.specificDate === dateString) {
+        return timeInRange;
+      }
+      
+      return false;
+    });
+  };
+
+  const renderTimeSlot = (timeSlot: string, date: Date) => {
+    const isPast = isPastTimeSlot(timeSlot, date);
+    const isBooked = isSlotBooked(timeSlot, date);
+    const isBookedByMe = isSlotBookedByMe(timeSlot, date);
+    const isSelected = selectedDate.toDateString() === date.toDateString() && selectedTimeSlot === timeSlot;
+    const isBreak = isTimeSlotInBreak(timeSlot, date);
+    
+    return (
+      <TouchableOpacity
+        key={`${date.toDateString()}-${timeSlot}`}
+        style={[
+          styles.timeSlot,
+          isPast && styles.pastTimeSlot,
+          isBreak && styles.breakTimeSlot,
+          isBooked && !isBookedByMe && !isBreak && styles.bookedTimeSlot,
+          isBookedByMe && !isBreak && styles.bookedByMeTimeSlot,
+          isSelected && styles.selectedTimeSlot
+        ]}
+        onPress={() => handleTimeSlotPress(timeSlot, date)}
+        disabled={isPast || isBooked || isBreak}
+        activeOpacity={isPast || isBooked || isBreak ? 1 : 0.7}
+      >
+        <Text style={[
+          styles.timeSlotText,
+          isPast && styles.pastTimeSlotText,
+          isBreak && styles.breakTimeSlotText,
+          isBooked && !isBookedByMe && !isBreak && styles.bookedTimeSlotText,
+          isBookedByMe && !isBreak && styles.bookedByMeTimeSlotText,
+          isSelected && styles.selectedTimeSlotText
+        ]}>
+          {isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Schedule Appointment</Text>
+        <View style={{ minWidth: 40 }} />
+      </View>
+
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={appointmentsLoading}
+            onRefresh={refreshAppointments}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        <View style={styles.scheduleContainer}>
+          {/* Week Header */}
+          <View style={styles.weekHeader}>
+            <View style={styles.timeColumnHeader}>
+              <Text style={styles.timeColumnHeaderText}>Time</Text>
+            </View>
+            {weekDates.map((date) => (
+              <View key={date.toDateString()} style={styles.dateColumnHeader}>
+                <Text style={[
+                  styles.dateHeaderText,
+                  isToday(date) && styles.todayHeaderText
+                ]}>
+                  {formatDate(date)}
+                </Text>
+                {isToday(date) && (
+                  <View style={styles.todayIndicator}>
+                    <Text style={styles.todayIndicatorText}>Today</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* Time Slots Grid */}
+          {timeSlots.map((timeSlot) => (
+            <View key={timeSlot} style={styles.timeRow}>
+              <View style={styles.timeColumn}>
+                <Text style={styles.timeColumnText}>{timeSlot}</Text>
+              </View>
+              {weekDates.map((date) => renderTimeSlot(timeSlot, date))}
+            </View>
+          ))}
+        </View>
+
+        {/* Selected Appointment Summary */}
+        {selectedTimeSlot && (
+          <View style={styles.appointmentSummary}>
+            <Text style={styles.appointmentSummaryTitle}>Selected Appointment</Text>
+            <Text style={styles.appointmentSummaryText}>
+              {formatDate(selectedDate)} at {selectedTimeSlot}
+            </Text>
+            <StyledButton
+              title={loading ? "Scheduling..." : "Confirm Appointment"}
+              onPress={handleScheduleAppointment}
+              disabled={loading}
+              style={{ marginTop: 16 }}
+            />
+          </View>
+        )}
+
+        {/* User's Upcoming Appointment Status */}
+        <View style={styles.appointmentSummary}>
+          <Text style={styles.appointmentSummaryTitle}>Your Upcoming Appointment</Text>
+          {(() => {
+            const now = new Date();
+            const upcomingAppointments = appointments
+              .filter(appt => new Date(appt.date) > now)
+              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            
+            console.log('[ScheduleAppointment] Total appointments:', appointments.length, 'Upcoming:', upcomingAppointments.length);
+            
+            if (upcomingAppointments.length > 0) {
+              const nextAppointment = upcomingAppointments[0];
+              return (
+                <>
+                  <Text style={[styles.appointmentSummaryText, { color: '#000' }]}>
+                    {formatDate(new Date(nextAppointment.date))} at {nextAppointment.timeSlot}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => handleCancelAppointment(nextAppointment.id)}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel Appointment</Text>
+                  </TouchableOpacity>
+                </>
+              );
+            } else {
+              return (
+                <Text style={[styles.appointmentSummaryText, { color: '#666' }]}>
+                  No upcoming appointments
+                </Text>
+              );
+            }
+          })()}
+        </View>
+      </ScrollView>
+      {/* Success Popup */}
+      <Modal
+        visible={showSuccess && !isAppointmentCancelledByBreak}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowSuccess(false)}
+      >
+        <View style={styles.successPopupOverlay}>
+          <View style={styles.successPopup}>
+            <Text style={styles.successTitle}>Success</Text>
+            <Text style={styles.successMessage}>{successMessage}</Text>
+            <TouchableOpacity style={styles.successButton} onPress={() => { setShowSuccess(false); if (navigation.canGoBack()) navigation.goBack(); }}>
+              <Text style={styles.successButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+};
+
+// --- Dietician Dashboard Screen ---
+const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
+  const [appointments, setAppointments] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [weekDates, setWeekDates] = React.useState<Date[]>([]);
+  const [timeSlots] = React.useState(() => {
+    const slots = [];
+    for (let hour = 9; hour <= 21; hour++) {
+      const time = `${hour.toString().padStart(2, '0')}:00`;
+      slots.push(time);
+    }
+    return slots;
+  });
+  const [breaks, setBreaks] = React.useState<any[]>([]); // array of break objects with fromTime, toTime
+  const [breaksModalVisible, setBreaksModalVisible] = React.useState(false);
+  // Add state for new break time range selection
+  const [newBreakFromTime, setNewBreakFromTime] = React.useState<string | null>(null);
+  const [newBreakToTime, setNewBreakToTime] = React.useState<string | null>(null);
+  const [breaksLoading, setBreaksLoading] = React.useState(false);
+  const [showBreakConfirmation, setShowBreakConfirmation] = React.useState(false);
+  const [breakConfirmationSlot, setBreakConfirmationSlot] = React.useState<{timeSlot: string, date: Date} | null>(null);
+  const [showSuccessMessage, setShowSuccessMessage] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState('');
+
+  React.useEffect(() => {
+    // Generate week dates (7 days starting from today)
+    const dates = [];
+    const today = new Date();
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date);
+    }
+    setWeekDates(dates);
+  }, []);
+
+  React.useEffect(() => {
+    const cleanupPastAppointments = async () => {
+      try {
+        // Clean up past appointments first
+        const now = new Date();
+        const pastAppointmentsSnapshot = await firestore
+          .collection('appointments')
+          .where('date', '<', now.toISOString())
+          .get();
+
+        const batch = firestore.batch();
+        pastAppointmentsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+
+        if (pastAppointmentsSnapshot.docs.length > 0) {
+          await batch.commit();
+          console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
+        }
+      } catch (error) {
+        console.error('Error cleaning up past appointments:', error);
+      }
+    };
+
+    let unsubscribe: (() => void) | undefined;
+    cleanupPastAppointments().then(() => {
+      // Real-time listener for appointments
+      unsubscribe = firestore
+        .collection('appointments')
+        .onSnapshot(snapshot => {
+          const appointmentsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setAppointments(appointmentsData);
+          setLoading(false);
+        }, error => {
+          console.error('Error listening to appointments:', error);
+          setLoading(false);
+        });
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Real-time listener for breaks
+  React.useEffect(() => {
+    const unsubscribe = firestore
+      .collection('breaks')
+      .onSnapshot(snapshot => {
+        const breaksData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setBreaks(breaksData);
+      }, error => {
+        console.error('Error listening to breaks:', error);
+      });
+    return () => unsubscribe();
+  }, []);
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
+  };
+
+  // Helper function to get the next hour from a time slot
+  const getNextHour = (timeSlot: string) => {
+    const hour = parseInt(timeSlot.split(':')[0]);
+    const nextHour = hour + 1;
+    return `${nextHour.toString().padStart(2, '0')}:00`;
+  };
+
+  const isSlotBooked = (timeSlot: string, date: Date) => {
+    const dateString = date.toDateString();
+    return appointments.some(appointment => {
+      const appointmentDate = new Date(appointment.date);
+      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+    });
+  };
+
+  const getBookedUserInfo = (timeSlot: string, date: Date) => {
+    const dateString = date.toDateString();
+    const appointment = appointments.find(appointment => {
+      const appointmentDate = new Date(appointment.date);
+      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+    });
+    return appointment;
+  };
+
+  const renderTimeSlot = (timeSlot: string, date: Date) => {
+    const isBooked = isSlotBooked(timeSlot, date);
+    const isBreak = isTimeSlotInBreak(timeSlot, date);
+    const isProcessing = breaksLoading && breakConfirmationSlot !== null && 
+      breakConfirmationSlot.timeSlot === timeSlot && 
+      breakConfirmationSlot.date.toDateString() === date.toDateString();
+    
+    return (
+      <TouchableOpacity
+        key={`${date.toDateString()}-${timeSlot}`}
+        style={[
+          styles.timeSlot,
+          isBreak && styles.breakTimeSlot,
+          isBooked && !isBreak && styles.bookedTimeSlot,
+          isProcessing && { opacity: 0.6 }
+        ]}
+        disabled={isBreak || isProcessing}
+        onPress={() => handleSlotBreakToggle(timeSlot, date)}
+        activeOpacity={isBreak || isProcessing ? 1 : 0.7}
+      >
+        <Text style={[
+          styles.timeSlotText,
+          isBreak && styles.breakTimeSlotText,
+          (isBooked && !isBreak) && styles.bookedTimeSlotText
+        ]}>
+          {isProcessing ? '...' : isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  // Add a break
+  const handleAddBreak = async (fromTime: string, toTime: string, specificDate?: string) => {
+    setBreaksLoading(true);
+    try {
+      // For daily breaks, check overlap only with other daily breaks
+      if (!specificDate) {
+        const hasOverlap = breaks.some(breakItem => 
+          !breakItem.specificDate && (
+            (fromTime >= breakItem.fromTime && fromTime < breakItem.toTime) ||
+            (toTime > breakItem.fromTime && toTime <= breakItem.toTime) ||
+            (fromTime <= breakItem.fromTime && toTime >= breakItem.toTime)
+          )
+        );
+        
+        if (hasOverlap) {
+          console.error('Break time range overlaps with existing daily break');
+          return;
+        }
+      }
+      
+      await firestore.collection('breaks').add({ 
+        fromTime: fromTime, 
+        toTime: toTime,
+        specificDate: specificDate || null // null for daily breaks, date string for specific date breaks
+      });
+      setNewBreakFromTime(null);
+      setNewBreakToTime(null);
+    } catch (error) {
+      console.error('Error adding break:', error);
+    } finally {
+      setBreaksLoading(false);
+    }
+  };
+
+  // Remove a break
+  const handleRemoveBreak = async (breakId: string) => {
+    setBreaksLoading(true);
+    try {
+      await firestore.collection('breaks').doc(breakId).delete();
+      setSuccessMessage('Break removed successfully');
+      setShowSuccessMessage(true);
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Error removing break:', error);
+      setSuccessMessage('Error removing break. Please try again.');
+      setShowSuccessMessage(true);
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+    } finally {
+      setBreaksLoading(false);
+    }
+  };
+
+  // Check if a time slot is within any break
+  const isTimeSlotInBreak = (timeSlot: string, date?: Date) => {
+    const dateString = date ? date.toDateString() : null;
+    
+    return breaks.some(breakItem => {
+      const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
+      
+      // If it's a daily break (no specific date), apply to all days
+      if (!breakItem.specificDate) {
+        return timeInRange;
+      }
+      
+      // If it's a specific date break, only apply to that date
+      if (dateString && breakItem.specificDate === dateString) {
+        return timeInRange;
+      }
+      
+      return false;
+    });
+  };
+
+  // Toggle break on slot tap (for dietician) - simplified to single slot breaks
+  const handleSlotBreakToggle = async (timeSlot: string, date: Date) => {
+    // If already a break, remove it
+    if (isTimeSlotInBreak(timeSlot, date)) {
+      // Find the break that contains this time slot for this specific date
+      const breakItem = breaks.find(breakItem => {
+        const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
+        const dateMatches = !breakItem.specificDate || breakItem.specificDate === date.toDateString();
+        return timeInRange && dateMatches;
+      });
+      
+      if (breakItem) {
+        await handleRemoveBreak(breakItem.id);
+        console.log(`Removed break from ${breakItem.fromTime} to ${breakItem.toTime}`);
+      }
+      return;
+    }
+    
+    // Show confirmation popup for adding break
+    setBreakConfirmationSlot({ timeSlot, date });
+    setShowBreakConfirmation(true);
+  };
+
+  // Confirm adding break for a specific slot
+  const handleConfirmBreak = async () => {
+    if (!breakConfirmationSlot) return;
+    
+    const { timeSlot, date } = breakConfirmationSlot;
+    
+    try {
+      // If booked, cancel appointment and notify user
+      const dateString = date.toDateString();
+      const appt = appointments.find(appointment => {
+        const appointmentDate = new Date(appointment.date);
+        return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+      });
+      
+      if (appt) {
+        console.log(`[DieticianDashboard] Cancelling appointment:`, appt);
+        // Delete appointment
+        await firestore.collection('appointments').doc(appt.id).delete();
+        
+        // Add notification for user
+        await firestore.collection('notifications').add({
+          userId: appt.userId,
+          message: `Your appointment at ${timeSlot} on ${formatDate(date)} was cancelled due to a break.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+        });
+        
+        console.log(`[DieticianDashboard] Cancelled appointment for ${appt.userName} at ${timeSlot} on ${formatDate(date)}`);
+      }
+      
+      // Add break for this single time slot on this specific date (1 hour duration)
+      const endTime = getNextHour(timeSlot);
+      await handleAddBreak(timeSlot, endTime, date.toDateString());
+      
+      console.log(`Added break from ${timeSlot} to ${endTime} on ${formatDate(date)}`);
+      
+      setSuccessMessage(`Break added successfully from ${timeSlot} to ${endTime} on ${formatDate(date)}`);
+      setShowSuccessMessage(true);
+      
+      setShowBreakConfirmation(false);
+      setBreakConfirmationSlot(null);
+      
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Error confirming break:', error);
+      setSuccessMessage('Error adding break. Please try again.');
+      setShowSuccessMessage(true);
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.screenTitle}>Dietician Dashboard</Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
+      <View style={styles.headerContainer}>
+        <Text style={styles.screenTitle}>Dietician Dashboard</Text>
+        <Text style={{ fontSize: 12, color: '#666', textAlign: 'center', marginTop: 4 }}>
+          Tap any time slot to set it as a break. Grey slots are breaks, unavailable to all users.
+        </Text>
+      </View>
+
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={() => {
+              // Force refresh by cleaning up and restarting the listener
+              setLoading(true);
+            }}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        <View style={styles.scheduleContainer}>
+          {/* Week Header */}
+          <View style={styles.weekHeader}>
+            <View style={styles.timeColumnHeader}>
+              <Text style={styles.timeColumnHeaderText}>Time</Text>
+            </View>
+            {weekDates.map((date) => (
+              <View key={date.toDateString()} style={styles.dateColumnHeader}>
+                <Text style={[
+                  styles.dateHeaderText,
+                  isToday(date) && styles.todayHeaderText
+                ]}>
+                  {formatDate(date)}
+                </Text>
+                {isToday(date) && (
+                  <View style={styles.todayIndicator}>
+                    <Text style={styles.todayIndicatorText}>Today</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* Time Slots Grid */}
+          {timeSlots.map((timeSlot) => (
+            <View key={timeSlot} style={styles.timeRow}>
+              <View style={styles.timeColumn}>
+                <Text style={styles.timeColumnText}>{timeSlot}</Text>
+              </View>
+              {weekDates.map((date) => renderTimeSlot(timeSlot, date))}
+            </View>
+          ))}
+        </View>
+
+        {/* Summary */}
+        <View style={styles.appointmentSummary}>
+          <Text style={styles.appointmentSummaryTitle}>Appointment Summary</Text>
+          {appointments.length === 0 ? (
+            <Text style={[styles.appointmentSummaryText, { color: '#000' }]}>No appointments booked.</Text>
+          ) : (
+            appointments
+              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+              .map((appt, idx) => (
+                <Text key={idx} style={[styles.appointmentSummaryText, { color: '#000' }]}>
+                  {`${formatDate(new Date(appt.date))} at ${appt.timeSlot} - ${appt.userName}`}
+                </Text>
+              ))
+          )}
+        </View>
+        <View style={{ alignItems: 'center', marginVertical: 12 }}>
+          <TouchableOpacity
+            style={{ 
+              backgroundColor: breaksLoading ? '#ccc' : '#fbbf24', 
+              paddingVertical: 12, 
+              paddingHorizontal: 32, 
+              borderRadius: 8,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}
+            onPress={() => setBreaksModalVisible(true)}
+            disabled={breaksLoading}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+              {breaksLoading ? 'Processing...' : 'Manage Daily Breaks'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <Modal
+          visible={breaksModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setBreaksModalVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '90%', maxHeight: '80%' }}>
+              <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
+                <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>Manage Daily Breaks</Text>
+                        {/* List of current breaks */}
+        {breaks.length === 0 ? (
+          <Text style={{ color: '#888', marginBottom: 12, textAlign: 'center' }}>No breaks set.</Text>
+        ) : (
+          breaks.map((breakItem, idx) => (
+            <View key={breakItem.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16 }}>{breakItem.fromTime} - {breakItem.toTime}</Text>
+                <Text style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                  {breakItem.specificDate ? `Specific: ${new Date(breakItem.specificDate).toLocaleDateString()}` : 'Daily Break'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => handleRemoveBreak(breakItem.id)} style={{ marginLeft: 8, padding: 6 }}>
+                <Text style={{ color: '#ff4444', fontWeight: 'bold' }}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
+        {/* Add break UI */}
+        <View style={{ marginTop: 24, marginBottom: 8, paddingHorizontal: 8 }}>
+          <Text style={{ fontSize: 16, marginBottom: 12, textAlign: 'center' }}>Add New Break:</Text>
+          
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={{ fontSize: 14, marginRight: 8 }}>From:</Text>
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fafafa' }}>
+              <Picker
+                selectedValue={newBreakFromTime}
+                style={{ width: '100%', height: 44 }}
+                onValueChange={itemValue => setNewBreakFromTime(itemValue)}
+              >
+                <Picker.Item label="Select time" value={null} />
+                {timeSlots.map(slot => (
+                  <Picker.Item key={slot} label={slot} value={slot} />
+                ))}
+              </Picker>
+            </View>
+          </View>
+          
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={{ fontSize: 14, marginRight: 8 }}>To:</Text>
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fafafa' }}>
+              <Picker
+                selectedValue={newBreakToTime}
+                style={{ width: '100%', height: 44 }}
+                onValueChange={itemValue => setNewBreakToTime(itemValue)}
+              >
+                <Picker.Item label="Select time" value={null} />
+                {timeSlots.filter(slot => !newBreakFromTime || slot > newBreakFromTime).map(slot => (
+                  <Picker.Item key={slot} label={slot} value={slot} />
+                ))}
+              </Picker>
+            </View>
+          </View>
+          
+          <TouchableOpacity
+            style={{ 
+              backgroundColor: '#fbbf24', 
+              paddingVertical: 10, 
+              paddingHorizontal: 18, 
+              borderRadius: 8, 
+              alignItems: 'center',
+              opacity: (!newBreakFromTime || !newBreakToTime || breaksLoading) ? 0.6 : 1
+            }}
+            onPress={() => newBreakFromTime && newBreakToTime && handleAddBreak(newBreakFromTime, newBreakToTime)}
+            disabled={!newBreakFromTime || !newBreakToTime || breaksLoading}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Break</Text>
+          </TouchableOpacity>
+        </View>
+                <TouchableOpacity
+                  style={{ marginTop: 20, alignItems: 'center' }}
+                  onPress={() => setBreaksModalVisible(false)}
+                >
+                  <Text style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: 16 }}>Close</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        
+        {/* Break Confirmation Popup */}
+        <Modal
+          visible={showBreakConfirmation}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setShowBreakConfirmation(false)}
+        >
+          <View style={styles.successPopupOverlay}>
+            <View style={styles.successPopup}>
+              <Text style={styles.successTitle}>Confirm Break</Text>
+              <Text style={styles.successMessage}>
+                {breakConfirmationSlot ? 
+                  `Do you want to set ${breakConfirmationSlot.timeSlot} on ${formatDate(breakConfirmationSlot.date)} as unavailable?` :
+                  'Do you want to set this slot as unavailable?'
+                }
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                <TouchableOpacity 
+                  style={[styles.successButton, { backgroundColor: '#ff4444', marginRight: 8 }]} 
+                  onPress={() => setShowBreakConfirmation(false)}
+                >
+                  <Text style={styles.successButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.successButton, { backgroundColor: '#34D399' }]} 
+                  onPress={handleConfirmBreak}
+                >
+                  <Text style={styles.successButtonText}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        
+        {/* Success Message Popup */}
+        <Modal
+          visible={showSuccessMessage}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setShowSuccessMessage(false)}
+        >
+          <View style={styles.successPopupOverlay}>
+            <View style={styles.successPopup}>
+              <Text style={styles.successTitle}>Success</Text>
+              <Text style={styles.successMessage}>{successMessage}</Text>
+              <TouchableOpacity 
+                style={styles.successButton} 
+                onPress={() => setShowSuccessMessage(false)}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+// --- UploadDietScreen (Dietician) ---
+const UploadDietScreen = ({ navigation }: { navigation: any }) => {
+  const [users, setUsers] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [countdowns, setCountdowns] = useState<{ [userId: string]: number }>({});
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const userList = await listNonDieticianUsers();
+        setUsers(userList);
+        // Fetch countdowns for each user
+        const countdownsObj: { [userId: string]: number } = {};
+        await Promise.all(userList.map(async (u: any) => {
+          const diet = await getUserDiet(u.userId);
+          countdownsObj[u.userId] = diet.daysLeft;
+        }));
+        setCountdowns(countdownsObj);
+      } catch (e) {
+        setErrorMsg('Failed to load users');
+      }
+    };
+    fetchUsers();
+  }, [refresh]);
+
+  const handleUserSelect = (user: any) => {
+    setSelectedUser(user);
+    setSuccessMsg('');
+    setErrorMsg('');
+  };
+
+  const handleUpload = async () => {
+    if (!selectedUser) return;
+    try {
+      setUploading(true);
+      setSuccessMsg('');
+      setErrorMsg('');
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
+      if (result.canceled || !result.assets || !result.assets[0]) {
+        setUploading(false);
+        return;
+      }
+      const file = {
+        uri: result.assets[0].uri,
+        name: result.assets[0].name,
+        type: 'application/pdf',
+      };
+      // Assume dieticianId is available from auth context or similar
+      const dieticianId = firebase.auth().currentUser?.uid;
+      await uploadDietPdf(selectedUser.userId, dieticianId, file);
+      setSuccessMsg('Diet uploaded successfully!');
+      setRefresh(r => r + 1);
+    } catch (e) {
+      setErrorMsg('Failed to upload diet');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, padding: 16 }}>
+      <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 16 }}>Upload Diet</Text>
+      {errorMsg ? <Text style={{ color: 'red' }}>{errorMsg}</Text> : null}
+      {successMsg ? <Text style={{ color: 'green' }}>{successMsg}</Text> : null}
+      <FlatList
+        data={users}
+        keyExtractor={item => item.userId}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={{ padding: 12, backgroundColor: selectedUser?.userId === item.userId ? '#e0e0e0' : '#fff', borderBottomWidth: 1, borderColor: '#eee' }}
+            onPress={() => handleUserSelect(item)}
+          >
+            <Text style={{ fontWeight: 'bold' }}>{item.firstName} {item.lastName}</Text>
+            <Text style={{ color: '#888' }}>{item.email}</Text>
+            <Text style={{ color: '#444', marginTop: 4 }}>Days left until new diet: {countdowns[item.userId] ?? '-'}</Text>
+          </TouchableOpacity>
+        )}
+      />
+      {selectedUser && (
+        <View style={{ marginTop: 16 }}>
+          <Button title={uploading ? 'Uploading...' : 'Upload New Diet PDF'} onPress={handleUpload} disabled={uploading} />
+        </View>
+      )}
+    </SafeAreaView>
+  );
+};
+
+export { UploadDietScreen };

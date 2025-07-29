@@ -16,10 +16,20 @@ import { sendChatbotMessage } from './services/api';
 import { getUserProfile, UserProfile } from './services/api';
 import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
+import { format, isToday, isYesterday } from 'date-fns';
+
+interface Message {
+  id: string;
+  text: string;
+  sender: string;
+  timestamp?: string | number | Date;
+  type?: 'message' | 'date';
+  heading?: string;
+}
 
 export const ChatbotScreen = () => {
   const [messages, setMessages] = useState([
-    { id: '1', text: 'Hello! I am NutriBot, your personal nutrition assistant. I can provide diet and nutrition advice based on your profile. Please note: I am not a substitute for professional medical advice. Always consult a healthcare provider for medical decisions.', sender: 'bot' }
+    { id: '1', text: 'Hello! I am NutriBot, your personal nutrition assistant. I can provide diet and nutrition advice based on your profile. Please note: I am not a substitute for professional medical advice. Always consult a healthcare provider for medical decisions.', sender: 'bot', timestamp: Date.now() }
   ]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -67,12 +77,12 @@ export const ChatbotScreen = () => {
 
   const handleSend = async () => {
     if (inputText.trim().length === 0) return;
-    const newMessage = { id: Date.now().toString(), text: inputText, sender: 'user' };
+    const newMessage = { id: Date.now().toString(), text: inputText, sender: 'user', timestamp: Date.now() };
     setMessages(prevMessages => [...prevMessages, newMessage]);
     setInputText('');
     setLoading(true);
     // Add Typing... animation
-    setMessages(prevMessages => [...prevMessages, { id: 'typing', text: 'Typing...', sender: 'bot' }]);
+    setMessages(prevMessages => [...prevMessages, { id: 'typing', text: 'Typing...', sender: 'bot', timestamp: Date.now() }]);
     try {
       const userId = auth.currentUser?.uid || '';
       // Prepare chat history for backend (array of { sender, text })
@@ -90,38 +100,61 @@ export const ChatbotScreen = () => {
       );
       setMessages(prevMessages => [
         ...prevMessages.filter(m => m.id !== 'typing'),
-        { id: Date.now().toString(), text: botText, sender: 'bot' }
+        { id: Date.now().toString(), text: botText, sender: 'bot', timestamp: Date.now() }
       ]);
     } catch (err) {
       setMessages(prevMessages => [
         ...prevMessages.filter(m => m.id !== 'typing'),
-        { id: Date.now().toString(), text: 'Sorry, there was an error connecting to the nutrition assistant.', sender: 'bot' }
+        { id: Date.now().toString(), text: 'Sorry, there was an error connecting to the nutrition assistant.', sender: 'bot', timestamp: Date.now() }
       ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const renderMessage = ({ item }: { item: { id: string; text: string; sender: string } }) => {
-    const isUserMessage = item.sender === 'user';
-    if (item.id === 'typing') {
+  const groupMessagesByDate = (messages: Message[]): Message[] => {
+    const groups: Message[] = [];
+    let lastDate: string | null = null;
+    messages.forEach((msg: Message) => {
+      const date = msg.timestamp ? new Date(msg.timestamp) : new Date();
+      const dateKey = date.toDateString();
+      if (lastDate !== dateKey) {
+        let heading = format(date, 'MMMM d, yyyy');
+        if (isToday(date)) heading = 'Today';
+        else if (isYesterday(date)) heading = 'Yesterday';
+        groups.push({ type: 'date', id: `date-${dateKey}`, heading } as Message);
+        lastDate = dateKey;
+      }
+      groups.push({ ...msg, type: 'message' });
+    });
+    return groups;
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => {
+    if (item.type === 'date') {
       return (
-        <View style={[styles.messageBubble, styles.botMessage, { flexDirection: 'row', alignItems: 'center' }]}> 
-          <ActivityIndicator size="small" color="#6EE7B7" style={{ marginRight: 8 }} />
-          <Text style={styles.messageText}>{item.text}</Text>
+        <View style={{ alignItems: 'center', marginVertical: 8 }}>
+          <Text style={{ color: '#444', fontWeight: 'bold', backgroundColor: '#E0E7FF', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 8, fontSize: 13 }}>{item.heading}</Text>
         </View>
       );
     }
+    const isUserMessage = item.sender === 'user';
+    const bubbleStyle = [
+      styles.messageBubble,
+      isUserMessage ? styles.userMessage : styles.botMessage
+    ];
     return (
-      <View style={[
-        styles.messageBubble,
-        isUserMessage ? styles.userMessage : styles.botMessage
-      ]}>
-        {isUserMessage ? (
-          <Text style={styles.messageText}>{item.text}</Text>
-        ) : (
-          <Markdown style={{ body: styles.messageText }}>{item.text}</Markdown>
-        )}
+      <View style={{ marginBottom: 2 }}>
+        <View style={bubbleStyle}>
+          {isUserMessage ? (
+            <Text style={styles.messageText}>{item.text}</Text>
+          ) : (
+            <Markdown style={{ body: styles.messageText }}>{item.text}</Markdown>
+          )}
+        </View>
+        <Text style={styles.timestampText}>
+          {item.timestamp ? format(new Date(item.timestamp), 'p') : ''}
+        </Text>
       </View>
     );
   };
@@ -135,7 +168,7 @@ export const ChatbotScreen = () => {
       >
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={groupMessagesByDate(messages)}
           renderItem={renderMessage}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 10 }}
@@ -185,6 +218,8 @@ const styles = StyleSheet.create({
     marginRight: 10,
     fontSize: 16,
     color: '#27272A',
+    borderWidth: 2,
+    borderColor: '#111',
   },
   sendButton: {
     padding: 5,
@@ -197,20 +232,28 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   userMessage: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFD700', // vibrant yellow
     alignSelf: 'flex-end',
     borderBottomRightRadius: 4,
   },
   botMessage: {
-    backgroundColor: '#E6F8F0',
+    backgroundColor: '#00E0FF', // vibrant cyan
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 16,
-    color: '#27272A',
+    color: '#111',
     flexWrap: 'wrap',
     width: 'auto',
     alignSelf: 'flex-start',
+  },
+  timestampText: {
+    fontSize: 11,
+    color: '#444',
+    marginLeft: 8,
+    marginTop: 2,
+    marginBottom: 6,
+    alignSelf: 'flex-end',
   },
 }); 

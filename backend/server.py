@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File, Form, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -10,14 +10,17 @@ import asyncio
 import json
 from services.health_platform import HealthPlatformFactory
 from services.firebase_client import db as firestore_db
+# Add import for diet PDF upload
+from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
 import logging
 import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 import requests
-from google.generativeai.client import configure
 from google.generativeai.generative_models import GenerativeModel
+from google.generativeai.client import configure
 from google.generativeai.types import ContentDict
+import tempfile
 
 # Define all required Pydantic models before any usage
 class StatusCheck(BaseModel):
@@ -236,6 +239,37 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
     except Exception as e:
         logger.error(f"[GEMINI WORKOUT ERROR] Exception: {e}", exc_info=True)
         return {'calories': 'Error'}
+
+async def call_gemini_vision(image_path: str):
+    # Use Gemini Vision API to extract calories, protein, fat from the image
+    model = GenerativeModel('gemini-2.5-flash')
+    prompt = (
+        "You are a bot that gives us 3 comma separated numbers representing the calories, protein and fat in the food shown in this photo. Under no circumstances include any other text or extra numbers nor ask any further questions. If you can't give an exact value then give an estimate but only give numbers in the desired format. Only if the food item doesn't exist or can't be recognized will you say the word 'Error' and that's it."
+    )
+    with open(image_path, 'rb') as img_file:
+        image_bytes = img_file.read()
+    try:
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: model.generate_content([
+                {"mime_type": "image/jpeg", "data": image_bytes},
+                prompt
+            ])
+        )
+        raw = response.text.strip()
+        if raw.strip().lower() == "error":
+            return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": raw}
+        try:
+            part1, rest = raw.split(',', 1)
+            calories = float(part1.strip())
+            part2, rest = rest.split(',', 1)
+            protein = float(part2.strip())
+            fat = float(rest.strip())
+            return {"calories": calories, "protein": protein, "fat": fat, "raw": raw}
+        except Exception as e:
+            return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": raw}
+    except Exception as e:
+        return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": str(e)}
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
@@ -483,6 +517,16 @@ async def create_user_profile(profile: UserProfile):
         if not user_id:
             raise HTTPException(status_code=400, detail="userId is required")
 
+        # Prevent creating placeholder profiles
+        is_placeholder = (
+            profile_dict.get("firstName", "User") == "User" and
+            profile_dict.get("lastName", "") == "" and
+            (not profile_dict.get("email") or profile_dict.get("email", "").endswith("@example.com"))
+        )
+        if is_placeholder:
+            logger.warning(f"Attempted to create placeholder profile for user {user_id}: {profile_dict}")
+            raise HTTPException(status_code=400, detail="Cannot create placeholder user profile.")
+
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
         doc = await loop.run_in_executor(executor, doc_ref.get)
 
@@ -505,7 +549,17 @@ async def get_user_profile(user_id: str):
         doc = await loop.run_in_executor(executor, doc_ref.get)
         if not doc.exists:
             raise HTTPException(status_code=404, detail="User profile not found")
-        return doc.to_dict()
+        profile = doc.to_dict()
+        # Filter out placeholder profiles
+        is_placeholder = (
+            profile.get("firstName", "User") == "User" and
+            profile.get("lastName", "") == "" and
+            (not profile.get("email") or profile.get("email", "").endswith("@example.com"))
+        )
+        if is_placeholder:
+            logger.warning(f"Filtered out placeholder profile for user {user_id}: {profile}")
+            raise HTTPException(status_code=404, detail="User profile not found (placeholder)")
+        return profile
     except Exception as e:
         # Re-raise HTTPException so FastAPI can handle it, otherwise convert to 500
         if isinstance(e, HTTPException):
@@ -906,6 +960,89 @@ async def log_routine(user_id: str, routine_id: str):
         logger.error(f"Error logging routine: {e}")
         raise HTTPException(status_code=500, detail="Failed to log routine")
 
+# --- Diet PDF Upload Endpoint (Dietician Only) ---
+@api_router.post("/users/{user_id}/diet/upload")
+async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dietician_id: str = Form(...)):
+    """
+    Dietician uploads a new diet PDF for a user. Replaces previous diet, updates timestamp, and returns the new URL.
+    """
+    try:
+        # Read file data
+        file_data = await file.read()
+        
+        # Upload to Firebase Storage
+        pdf_url = upload_diet_pdf(user_id, file_data, file.filename)
+        
+        # Update Firestore with diet info and timestamp
+        diet_info = {
+            "dietPdfUrl": pdf_url,
+            "lastDietUpload": datetime.now().isoformat(),
+            "dieticianId": dietician_id
+        }
+        
+        firestore_db.collection("user_profiles").document(user_id).update(diet_info)
+        
+        # Send push notification to user
+        user_token = get_user_notification_token(user_id)
+        if user_token:
+            send_push_notification(
+                user_token,
+                "New Diet Has Arrived!",
+                "Your dietician has uploaded a new diet plan for you.",
+                {"type": "new_diet", "userId": user_id}
+            )
+            print(f"Sent new diet notification to user {user_id}")
+        
+        return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
+        
+    except Exception as e:
+        print(f"Error uploading diet: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Check Users with 1 Day Remaining (for scheduled jobs) ---
+@api_router.post("/diet/check-reminders")
+async def check_diet_reminders():
+    """
+    Check all users and notify dietician if any user has 1 day remaining.
+    This endpoint can be called by a scheduled job (cron, etc.)
+    """
+    try:
+        one_day_users = check_users_with_one_day_remaining()
+        return {
+            "success": True,
+            "users_with_one_day": len(one_day_users),
+            "users": one_day_users
+        }
+    except Exception as e:
+        print(f"Error checking diet reminders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Get User Diet PDF and Countdown ---
+@api_router.get("/users/{user_id}/diet")
+async def get_user_diet(user_id: str):
+    """
+    Returns the user's diet PDF URL and days left until new diet (7-day countdown).
+    """
+    doc = firestore_db.collection("user_profiles").document(user_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="User not found.")
+    data = doc.to_dict()
+    pdf_url = data.get("dietPdfUrl")
+    last_upload = data.get("lastDietUpload")
+    days_left = None
+    if last_upload:
+        last_dt = datetime.fromisoformat(last_upload)
+        days_left = max(0, 7 - (datetime.utcnow() - last_dt).days)
+    return {"dietPdfUrl": pdf_url, "daysLeft": days_left, "lastDietUpload": last_upload}
+
+# --- List All Users Except Dietician (for Dietician Upload Screen) ---
+@api_router.get("/users/non-dietician")
+async def get_non_dietician_users():
+    """
+    Returns a list of user profiles where isDietician is not True.
+    """
+    return list_non_dietician_users()
+
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -1060,6 +1197,62 @@ async def get_steps(platform: str, date: Optional[str] = None):
         return {"steps": steps, "date": start_date.strftime("%Y-%m-%d")}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/food/scan-photo")
+async def scan_food_photo(
+    userId: str = Form(...),
+    photo: UploadFile = File(...)
+):
+    if not userId:
+        raise HTTPException(status_code=400, detail="userId is required")
+    tmp_path = None
+    try:
+        # Limit file size (e.g., 5MB)
+        contents = await photo.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image too large. Please upload a photo under 5MB.")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+        try:
+            nutrition = await call_gemini_vision(tmp_path)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Gemini API timed out. Please try again.")
+        except Exception as e:
+            logger.error(f"[GEMINI CALL ERROR] {e}", exc_info=True)
+            raise HTTPException(status_code=502, detail="Failed to process image with Gemini. Please try again.")
+        if any(nutrition[k] == "Error" for k in ("calories", "protein", "fat")):
+            raise HTTPException(status_code=400, detail="Could not recognize food in the photo. Please try another photo.")
+        food = FoodItem(
+            name="Photo Food",
+            calories=float(nutrition["calories"]),
+            protein=float(nutrition["protein"]),
+            fat=float(nutrition["fat"]),
+            per_100g=True
+        )
+        log_entry = FoodLog(
+            userId=userId,
+            food=food,
+            servingSize="100"
+        )
+        loop = asyncio.get_event_loop()
+        def log_food_in_db():
+            log_entry.timestamp = datetime.utcnow()
+            firestore_db.collection(f"users/{userId}/food_logs").add(log_entry.dict())
+        await loop.run_in_executor(executor, log_food_in_db)
+        return log_entry.dict()
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[SCAN PHOTO] Unexpected error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while processing your request. Please try again.")
+    finally:
+        # Clean up temp file
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception as cleanup_err:
+            logger.warning(f"[CLEANUP] Failed to remove temp file: {cleanup_err}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -342,4 +342,46 @@ export const getWorkoutLogSummary = async (userId: string): Promise<WorkoutLogSu
   return response.data;
 };
 
+export async function scanFoodPhoto(imageUri: string, userId: string) {
+  const formData = new FormData();
+  formData.append('userId', userId);
+  formData.append('photo', {
+    uri: imageUri,
+    name: 'photo.jpg',
+    type: 'image/jpeg',
+  } as any);
+  const response = await fetch(`${API_URL}/food/scan-photo`, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  if (!response.ok) throw new Error('Failed to scan food photo');
+  return response.json();
+}
+
+// --- Diet PDF Upload (Dietician) ---
+export const uploadDietPdf = async (userId: string, dieticianId: string, file: any) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('dietician_id', dieticianId);
+  const response = await api.post(`/users/${userId}/diet/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+// --- Get User Diet PDF and Countdown ---
+export const getUserDiet = async (userId: string) => {
+  const response = await api.get(`/users/${userId}/diet`);
+  return response.data;
+};
+
+// --- List All Users Except Dietician ---
+export const listNonDieticianUsers = async () => {
+  const response = await api.get('/users/non-dietician');
+  return response.data;
+};
+
 export default api; 
