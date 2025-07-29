@@ -12,10 +12,11 @@ if (Constants.manifest?.debuggerHost) {
   console.log('[API] Using expoConfig.hostUri IP:', apiHost);
 }
 
-// Fallback: If still localhost or 127.0.0.1, use your computer's LAN IP
+// Fallback: If still localhost or 127.0.0.1, use a common LAN IP
 if (apiHost === 'localhost' || apiHost === '127.0.0.1') {
-  apiHost = '192.168.1.5'; // <-- Replace with your computer's LAN IP
-  console.log('[API] Fallback to hardcoded LAN IP:', apiHost);
+  // Try to get the actual IP from the logs or use a common one
+  apiHost = '172.16.0.28'; // Based on the logs showing this IP
+  console.log('[API] Fallback to LAN IP:', apiHost);
 }
 
 export const API_URL = `http://${apiHost}:8000/api`;

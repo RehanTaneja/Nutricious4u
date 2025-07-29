@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import asyncio
 import json
 from services.health_platform import HealthPlatformFactory
-from services.firebase_client import db as firestore_db
+from services.firebase_client import db as firestore_db, bucket
 # Add import for diet PDF upload
 from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
 import logging
@@ -84,6 +84,9 @@ class UserProfile(BaseModel):
     targetFat: Optional[float] = None
     stepGoal: Optional[int] = None
     caloriesBurnedGoal: Optional[int] = None
+    dietPdfUrl: Optional[str] = None
+    lastDietUpload: Optional[str] = None
+    dieticianId: Optional[str] = None
 
 class UpdateUserProfile(BaseModel):
     firstName: Optional[str] = None
@@ -967,20 +970,45 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
     Dietician uploads a new diet PDF for a user. Replaces previous diet, updates timestamp, and returns the new URL.
     """
     try:
+        print(f"Starting diet upload for user {user_id} by dietician {dietician_id}")
+        print(f"File: {file.filename}, Size: {file.size} bytes")
+        
         # Read file data
         file_data = await file.read()
+        print(f"Read {len(file_data)} bytes from file")
         
         # Upload to Firebase Storage
+        print(f"Calling upload_diet_pdf with user_id={user_id}, filename={file.filename}")
         pdf_url = upload_diet_pdf(user_id, file_data, file.filename)
+        print(f"Upload completed. PDF URL: {pdf_url}")
         
-        # Update Firestore with diet info and timestamp
+        # Store the filename in Firestore instead of the signed URL (which expires)
+        # The signed URL will be generated when needed by the PDF serving endpoint
         diet_info = {
-            "dietPdfUrl": pdf_url,
+            "dietPdfUrl": file.filename,  # Store filename, not signed URL
             "lastDietUpload": datetime.now().isoformat(),
             "dieticianId": dietician_id
         }
         
-        firestore_db.collection("user_profiles").document(user_id).update(diet_info)
+        print(f"Updating Firestore with diet info: {diet_info}")
+        try:
+            # Use executor for Firestore operations
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                # Update the document
+                await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).update(diet_info))
+                print(f"Successfully updated Firestore for user {user_id}")
+                
+                # Verify the update
+                updated_doc = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).get())
+                if updated_doc.exists:
+                    updated_data = updated_doc.to_dict()
+                    print(f"Verified Firestore update - dietPdfUrl: {updated_data.get('dietPdfUrl')}")
+                else:
+                    print(f"ERROR: User document {user_id} not found after update")
+        except Exception as firestore_error:
+            print(f"ERROR updating Firestore: {firestore_error}")
+            raise firestore_error
         
         # Send push notification to user
         user_token = get_user_notification_token(user_id)
@@ -997,6 +1025,8 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         
     except Exception as e:
         print(f"Error uploading diet: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Check Users with 1 Day Remaining (for scheduled jobs) ---
@@ -1031,9 +1061,122 @@ async def get_user_diet(user_id: str):
     last_upload = data.get("lastDietUpload")
     days_left = None
     if last_upload:
-        last_dt = datetime.fromisoformat(last_upload)
-        days_left = max(0, 7 - (datetime.utcnow() - last_dt).days)
-    return {"dietPdfUrl": pdf_url, "daysLeft": days_left, "lastDietUpload": last_upload}
+        try:
+            # Handle timezone-aware datetime strings
+            if last_upload.endswith('Z'):
+                # Convert UTC timezone to naive datetime
+                last_upload = last_upload.replace('Z', '+00:00')
+            last_dt = datetime.fromisoformat(last_upload)
+            days_left = max(0, 7 - (datetime.utcnow() - last_dt).days)
+        except ValueError as e:
+            print(f"Error parsing lastDietUpload date: {e}")
+            days_left = None
+    return {
+        "dietPdfUrl": pdf_url, 
+        "daysLeft": days_left, 
+        "lastDietUpload": last_upload,
+        "hasDiet": pdf_url is not None
+    }
+
+# --- Serve PDF from Firestore ---
+@api_router.get("/users/{user_id}/diet/pdf")
+async def get_user_diet_pdf(user_id: str):
+    """
+    Serves the PDF data from Firebase Storage for viewing.
+    """
+    try:
+        # First, get the user's profile to find the dietPdfUrl
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found.")
+        
+        user_data = user_doc.to_dict()
+        diet_pdf_url = user_data.get("dietPdfUrl")
+        
+        if not diet_pdf_url:
+            raise HTTPException(status_code=404, detail="No diet PDF found for this user. Please ask your dietician to upload a diet plan.")
+        
+        # If it's a Firebase Storage signed URL, download and serve the content directly
+        if diet_pdf_url.startswith('https://storage.googleapis.com/'):
+            try:
+                import requests
+                response = requests.get(diet_pdf_url)
+                if response.status_code == 200:
+                    from fastapi.responses import Response
+                    return Response(
+                        content=response.content,
+                        media_type="application/pdf",
+                        headers={
+                            "Content-Disposition": f"inline; filename=diet.pdf",
+                            "Cache-Control": "public, max-age=3600"
+                        }
+                    )
+                else:
+                    raise HTTPException(status_code=404, detail="Failed to fetch PDF from Firebase Storage.")
+            except Exception as e:
+                print(f"Error fetching from Firebase Storage: {e}")
+                raise HTTPException(status_code=404, detail="Failed to fetch PDF from Firebase Storage.")
+        
+        # If it's a firestore:// URL, try to get from diet_pdfs collection
+        if diet_pdf_url.startswith('firestore://'):
+            doc = firestore_db.collection("diet_pdfs").document(user_id).get()
+            if not doc.exists:
+                raise HTTPException(status_code=404, detail="Diet PDF not found in Firestore.")
+            
+            data = doc.to_dict()
+            pdf_data = data.get("pdf_data")
+            content_type = data.get("content_type", "application/pdf")
+            
+            if not pdf_data:
+                raise HTTPException(status_code=404, detail="PDF data not found.")
+            
+            # Decode base64 data
+            import base64
+            pdf_bytes = base64.b64decode(pdf_data)
+            
+            # Return PDF as response
+            from fastapi.responses import Response
+            return Response(
+                content=pdf_bytes,
+                media_type=content_type,
+                headers={"Content-Disposition": f"inline; filename={data.get('filename', 'diet.pdf')}"}
+            )
+        
+        # If it's just a filename, try to get from Firebase Storage
+        if diet_pdf_url.endswith('.pdf'):
+            try:
+                # Try to get the blob from Firebase Storage
+                blob_path = f"diets/{user_id}/{diet_pdf_url}"
+                blob = bucket.blob(blob_path)
+                
+                if not blob.exists():
+                    raise HTTPException(status_code=404, detail="Diet PDF not found in Storage.")
+                
+                # Download the PDF content and serve it directly with inline disposition
+                pdf_content = blob.download_as_bytes()
+                
+                from fastapi.responses import Response
+                return Response(
+                    content=pdf_content,
+                    media_type="application/pdf",
+                    headers={
+                        "Content-Disposition": f"inline; filename={diet_pdf_url}",
+                        "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
+                    }
+                )
+                
+            except Exception as storage_error:
+                print(f"Storage error: {storage_error}")
+                raise HTTPException(status_code=404, detail="Diet PDF not found in Storage.")
+        
+        # If we can't handle the URL format, return an error
+        raise HTTPException(status_code=400, detail="Invalid diet PDF URL format.")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error serving PDF: {e}")
+        raise HTTPException(status_code=500, detail="Failed to serve PDF.")
 
 # --- List All Users Except Dietician (for Dietician Upload Screen) ---
 @api_router.get("/users/non-dietician")

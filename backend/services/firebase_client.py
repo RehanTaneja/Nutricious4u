@@ -20,7 +20,7 @@ try:
 
     cred = credentials.Certificate(cred_path)
     firebase_admin.initialize_app(cred, {
-        'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-63158.appspot.com')
+        'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-diet-storage')
     })
     db = firestore.client()
     bucket = storage.bucket()
@@ -40,15 +40,39 @@ def upload_diet_pdf(user_id: str, file_data: bytes, filename: str) -> str:
     Uploads a diet PDF to Firebase Storage for a user and returns the download URL.
     """
     try:
+        print(f"Attempting to upload PDF for user {user_id} with filename {filename}")
         blob_path = f"diets/{user_id}/{filename}"
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_data, content_type='application/pdf')
-        # Make the file publicly accessible (or use token-based access if preferred)
-        blob.make_public()
-        return blob.public_url
+        
+        # For uniform bucket-level access, we need to generate a signed URL instead of making public
+        # Generate a signed URL that expires in 7 days (maximum allowed)
+        from datetime import timedelta
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(days=7),
+            method="GET"
+        )
+        print(f"Successfully uploaded PDF to Storage. Signed URL: {signed_url}")
+        return signed_url
     except Exception as e:
-        print(f"Failed to upload diet PDF: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upload diet PDF.")
+        print(f"Failed to upload diet PDF to Storage: {e}")
+        # Fallback: store in Firestore as base64 for now
+        try:
+            import base64
+            pdf_base64 = base64.b64encode(file_data).decode('utf-8')
+            doc_ref = db.collection('diet_pdfs').document(user_id)
+            doc_ref.set({
+                'filename': filename,
+                'pdf_data': pdf_base64,
+                'uploaded_at': datetime.now().isoformat(),
+                'content_type': 'application/pdf'
+            })
+            print(f"Stored PDF in Firestore as fallback for user {user_id}")
+            return f"firestore://diet_pdfs/{user_id}"
+        except Exception as fallback_error:
+            print(f"Fallback storage also failed: {fallback_error}")
+            raise HTTPException(status_code=500, detail="Failed to upload diet PDF.")
 
 # --- List All Users Except Dietician ---
 def list_non_dietician_users():

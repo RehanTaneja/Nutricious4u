@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow diet PDF uploads and downloads
+    match /diets/{userId}/{fileName} {
+      allow read, write: if true; // Allow public access for diet PDFs
+    }
+    
+    // Default rule - deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

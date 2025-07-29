@@ -50,6 +50,8 @@ import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
 import { uploadDietPdf, listNonDieticianUsers, getUserDiet } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
+import { WebView } from 'react-native-webview';
+
 
 // Add activity level options and calculation utility at the top
 const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = [
@@ -168,7 +170,7 @@ interface StyledButtonProps {
 const StyledButton = ({ title, onPress, style, disabled = false }: StyledButtonProps) => (
   <TouchableOpacity 
     style={[styles.button, disabled && styles.disabledButton, style]} 
-    onPress={onPress}
+    onPress={onPress} 
     disabled={disabled}
     activeOpacity={0.8}
   >
@@ -881,28 +883,50 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [editScanFat, setEditScanFat] = useState('');
   const [scanFoodLoading, setScanFoodLoading] = useState(false);
   const [dietPdfUrl, setDietPdfUrl] = useState<string | null>(null);
-  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [daysLeft, setDaysLeft] = useState<{ days: number; hours: number } | null>(null);
   const [dietLoading, setDietLoading] = useState(false);
   const [dietError, setDietError] = useState('');
+  const [showDietPdf, setShowDietPdf] = useState(false);
 
   useEffect(() => {
     let unsubscribe: any;
     const userId = firebase.auth().currentUser?.uid;
     if (userId) {
+      console.log('[Firestore Debug] Setting up listener for userId:', userId);
       const userDocRef = firestore.collection('user_profiles').doc(userId);
-      unsubscribe = userDocRef.onSnapshot((doc: any) => {
+      console.log('[Firestore Debug] Document path:', userDocRef.path);
+      
+      // Force a fresh read first
+      userDocRef.get().then((doc: any) => {
+        console.log('[Firestore Debug] Direct get - Document exists:', doc.exists);
         if (doc.exists) {
           const data = doc.data();
+          console.log('[Firestore Debug] Direct get - dietPdfUrl:', data.dietPdfUrl);
+        }
+      });
+      
+      unsubscribe = userDocRef.onSnapshot((doc: any) => {
+        console.log('[Firestore Debug] Snapshot received for document:', doc.id);
+        console.log('[Firestore Debug] Document exists:', doc.exists);
+        if (doc.exists) {
+          const data = doc.data();
+          console.log('[Firestore Debug] Received user data:', data);
+          console.log('[Firestore Debug] dietPdfUrl from Firestore:', data.dietPdfUrl);
           setDietPdfUrl(data.dietPdfUrl || null);
           if (data.lastDietUpload) {
             const lastDt = new Date(data.lastDietUpload);
-            const days = Math.max(0, 7 - Math.floor((Date.now() - lastDt.getTime()) / (1000 * 60 * 60 * 24)));
-            setDaysLeft(days);
+            const timeDiff = Date.now() - lastDt.getTime();
+            const totalHours = 7 * 24; // 7 days in hours
+            const remainingHours = Math.max(0, totalHours - Math.floor(timeDiff / (1000 * 60 * 60)));
+            const days = Math.floor(remainingHours / 24);
+            const hours = remainingHours % 24;
+            setDaysLeft({ days, hours });
           } else {
             setDaysLeft(null);
           }
         }
       }, (error: any) => {
+        console.error('[Firestore Debug] Error listening to user profile:', error);
         setDietError('Failed to load diet info');
       });
     }
@@ -911,15 +935,59 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     };
   }, []);
 
-  const handleOpenDiet = async () => {
+  const handleOpenDiet = () => {
     if (dietPdfUrl) {
-      // Open PDF in browser or PDF viewer
-      try {
-        await WebBrowser.openBrowserAsync(dietPdfUrl);
-      } catch (e) {
-        setDietError('Failed to open diet PDF');
-      }
+      console.log('Opening diet PDF with URL:', dietPdfUrl);
+      const pdfUrl = getPdfUrl();
+      console.log('Final PDF URL for WebView:', pdfUrl);
+      setShowDietPdf(true);
     }
+  };
+
+  // Helper function to get the correct PDF URL
+  const getPdfUrl = () => {
+    if (!dietPdfUrl) return null;
+    
+    console.log('getPdfUrl called with dietPdfUrl:', dietPdfUrl);
+    
+    // If it's a Firebase Storage signed URL, use it directly
+    if (dietPdfUrl.startsWith('https://storage.googleapis.com/')) {
+      console.log('Using Firebase Storage URL directly:', dietPdfUrl);
+      return dietPdfUrl;
+    }
+    
+    // If it's a firestore:// URL, use the backend endpoint
+    if (dietPdfUrl.startsWith('firestore://')) {
+      const userId = firebase.auth().currentUser?.uid;
+      const url = `${API_URL}/users/${userId}/diet/pdf`;
+      console.log('Using backend endpoint for firestore URL:', url);
+      return url;
+    }
+    
+    // If it's just a filename or any other format, use the backend endpoint
+    const userId = firebase.auth().currentUser?.uid;
+    const url = `${API_URL}/users/${userId}/diet/pdf`;
+    console.log('Using backend endpoint for filename:', url);
+    return url;
+  };
+
+  // Helper function to create a PDF viewer HTML
+  const createPdfViewerHtml = (pdfUrl: string) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { margin: 0; padding: 0; }
+            #pdf-viewer { width: 100%; height: 100vh; }
+          </style>
+        </head>
+        <body>
+          <embed id="pdf-viewer" src="${pdfUrl}" type="application/pdf" />
+        </body>
+      </html>
+    `;
   };
 
   useEffect(() => {
@@ -1350,23 +1418,340 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       </TouchableOpacity>
       {/* My Diet Button and Countdown - moved below Routines */}
       <View style={{ marginBottom: 16 }}>
-        <TouchableOpacity
-          style={{ backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, alignItems: 'center', opacity: dietPdfUrl ? 1 : 0.5 }}
-          onPress={handleOpenDiet}
-          disabled={!dietPdfUrl}
-        >
-          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 18 }}>My Diet</Text>
-        </TouchableOpacity>
+                                <TouchableOpacity
+                          style={{ 
+                            backgroundColor: dietPdfUrl ? COLORS.primary : COLORS.placeholder, 
+                            padding: 12, 
+                            borderRadius: 8, 
+                            alignItems: 'center',
+                            opacity: dietPdfUrl ? 1 : 0.5
+                          }}
+                          onPress={handleOpenDiet}
+                          disabled={!dietPdfUrl}
+                        >
+                          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 18 }}>My Diet</Text>
+                        </TouchableOpacity>
         {dietLoading ? (
           <Text style={{ color: COLORS.placeholder, marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>Loading diet info...</Text>
         ) : dietError ? (
           <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>{dietError}</Text>
         ) : (
           <Text style={{ color: COLORS.primary, marginTop: 12, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
-            Days left until new diet: {daysLeft ?? '-'}
+            {daysLeft ? `${daysLeft.days}D ${daysLeft.hours}H` : '-'}
           </Text>
         )}
       </View>
+      <Modal
+        visible={showDietPdf}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowDietPdf(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff', zIndex: 2 }}>
+            <TouchableOpacity onPress={() => setShowDietPdf(false)} style={{ padding: 8, marginRight: 8 }}>
+              <Text style={{ fontSize: 22, color: COLORS.primary }}>Close</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text }}>My Diet PDF</Text>
+          </View>
+                      <View style={{ flex: 1 }}>
+              {dietPdfUrl ? (
+                (() => {
+                  const pdfUrl = getPdfUrl();
+                  return pdfUrl ? (
+                    <WebView
+                      source={{ 
+                        html: `
+                          <!DOCTYPE html>
+                          <html>
+                            <head>
+                              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                              <title>PDF Viewer</title>
+                              <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                              <style>
+                                body { 
+                                  margin: 0; 
+                                  padding: 0; 
+                                  font-family: Arial, sans-serif;
+                                  background-color: #f0f0f0;
+                                }
+                                .container {
+                                  width: 100%;
+                                  height: 100vh;
+                                  display: flex;
+                                  flex-direction: column;
+                                }
+                                                          .header {
+                            display: none;
+                          }
+                                .pdf-container {
+                                  flex: 1;
+                                  background: white;
+                                  overflow: auto;
+                                  position: relative;
+                                  touch-action: manipulation;
+                                }
+                                                          .page-wrapper {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            padding: 20px 0;
+                          }
+                          .page-canvas {
+                            display: block;
+                            margin: 0 auto 20px auto;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                            touch-action: manipulation;
+                          }
+                                .loading {
+                                  display: flex;
+                                  justify-content: center;
+                                  align-items: center;
+                                  height: 100%;
+                                  font-size: 18px;
+                                  color: #666;
+                                }
+                                .error {
+                                  display: flex;
+                                  justify-content: center;
+                                  align-items: center;
+                                  height: 100%;
+                                  font-size: 16px;
+                                  color: #d32f2f;
+                                  text-align: center;
+                                  padding: 20px;
+                                }
+                                                          .page-indicator {
+                            background: rgba(0, 0, 0, 0.7);
+                            color: white;
+                            padding: 8px 16px;
+                            text-align: center;
+                            position: fixed;
+                            top: 20px;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            border-radius: 20px;
+                            z-index: 1000;
+                            font-size: 14px;
+                          }
+                          .page-info {
+                            margin: 0;
+                            font-size: 14px;
+                            color: white;
+                          }
+                              </style>
+                            </head>
+                            <body>
+                              <div class="container">
+                                <div class="header">
+                                  <h3>Diet PDF Viewer</h3>
+                                </div>
+                                <div class="pdf-container" id="pdf-container">
+                                  <div class="loading">Loading PDF...</div>
+                                </div>
+                                                          <div class="page-indicator">
+                            <span class="page-info">
+                              Page <span id="page-num">1</span> of <span id="page-count">1</span>
+                            </span>
+                          </div>
+                              </div>
+                              
+                              <script>
+                                // Set up PDF.js worker
+                                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                                
+                                                          let pdfDoc = null;
+                          let currentScale = 1.5;
+                          const minScale = 0.5;
+                          const maxScale = 3.0;
+                          let allPages = [];
+                          let isZooming = false;
+                          let zoomTimeout = null;
+                                
+                                const container = document.getElementById('pdf-container');
+                                
+                                // Touch handling variables
+                                let initialDistance = 0;
+                                let initialScale = 1.5;
+                                let isPinching = false;
+                                
+                                                          // Render all pages for vertical scrolling
+                          async function renderAllPages() {
+                            const pageWrapper = document.createElement('div');
+                            pageWrapper.className = 'page-wrapper';
+                            
+                            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                              const page = await pdfDoc.getPage(pageNum);
+                              const viewport = page.getViewport({scale: currentScale});
+                              
+                              const canvas = document.createElement('canvas');
+                              canvas.className = 'page-canvas';
+                              canvas.height = viewport.height;
+                              canvas.width = viewport.width;
+                              
+                              const ctx = canvas.getContext('2d');
+                              const renderContext = {
+                                canvasContext: ctx,
+                                viewport: viewport
+                              };
+                              
+                              await page.render(renderContext).promise;
+                              pageWrapper.appendChild(canvas);
+                              
+                              // Add touch listeners to each canvas
+                              addTouchListeners(canvas);
+                            }
+                            
+                            container.innerHTML = '';
+                            container.appendChild(pageWrapper);
+                            
+                            // Update page indicator
+                            document.getElementById('page-count').textContent = pdfDoc.numPages;
+                            document.getElementById('page-num').textContent = '1';
+                            
+                            // Add scroll listener for page tracking
+                            container.addEventListener('scroll', updateCurrentPage);
+                          }
+                          
+                          // Update current page based on scroll position
+                          function updateCurrentPage() {
+                            const scrollTop = container.scrollTop;
+                            const containerHeight = container.clientHeight;
+                            const pageHeight = container.scrollHeight / pdfDoc.numPages;
+                            
+                            const currentPage = Math.floor(scrollTop / pageHeight) + 1;
+                            const clampedPage = Math.max(1, Math.min(currentPage, pdfDoc.numPages));
+                            
+                            document.getElementById('page-num').textContent = clampedPage;
+                          }
+                          
+                          // Touch event handlers for pinch-to-zoom
+                          function getDistance(touch1, touch2) {
+                            const dx = touch1.clientX - touch2.clientX;
+                            const dy = touch1.clientY - touch2.clientY;
+                            return Math.sqrt(dx * dx + dy * dy);
+                          }
+                          
+                          function handleTouchStart(e) {
+                            if (e.touches.length === 2) {
+                              isPinching = true;
+                              initialDistance = getDistance(e.touches[0], e.touches[1]);
+                              initialScale = currentScale;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }
+                          
+                          function handleTouchMove(e) {
+                            if (isPinching && e.touches.length === 2) {
+                              const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                              const scaleFactor = currentDistance / initialDistance;
+                              const newScale = initialScale * scaleFactor;
+                              
+                              if (newScale >= minScale && newScale <= maxScale) {
+                                currentScale = newScale;
+                                isZooming = true;
+                                
+                                // Clear previous timeout
+                                if (zoomTimeout) {
+                                  clearTimeout(zoomTimeout);
+                                }
+                                
+                                // Debounce the render to prevent lag
+                                zoomTimeout = setTimeout(() => {
+                                  renderAllPages();
+                                  isZooming = false;
+                                }, 100);
+                              }
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }
+                          
+                          function handleTouchEnd(e) {
+                            if (e.touches.length < 2) {
+                              isPinching = false;
+                            }
+                          }
+                          
+                          // Add touch event listeners to canvas
+                          function addTouchListeners(canvas) {
+                            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+                            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+                            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+                          }
+                                
+                                
+                                
+                                // Load the PDF
+                                fetch('${pdfUrl}')
+                                  .then(response => {
+                                    if (!response.ok) {
+                                      throw new Error('Failed to load PDF');
+                                    }
+                                    return response.arrayBuffer();
+                                  })
+                                  .then(data => {
+                                    return pdfjsLib.getDocument({data: data}).promise;
+                                  })
+                                                              .then(pdf => {
+                              pdfDoc = pdf;
+                              
+                              // Render all pages for vertical scrolling
+                              renderAllPages();
+                            })
+                                  .catch(error => {
+                                    console.error('Error loading PDF:', error);
+                                    container.innerHTML = '<div class="error">Error loading PDF. Please try again.</div>';
+                                  });
+                              </script>
+                            </body>
+                          </html>
+                        `
+                      }}
+                      style={{ flex: 1, width: '100%' }}
+                      startInLoadingState
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      allowsInlineMediaPlayback={true}
+                      mediaPlaybackRequiresUserAction={false}
+                      onError={(syntheticEvent) => {
+                        const { nativeEvent } = syntheticEvent;
+                        console.log('WebView error: ', nativeEvent);
+                      }}
+                      onHttpError={(syntheticEvent) => {
+                        const { nativeEvent } = syntheticEvent;
+                        console.log('WebView HTTP error: ', nativeEvent);
+                      }}
+                      onLoadEnd={(syntheticEvent) => {
+                        const { nativeEvent } = syntheticEvent;
+                        console.log('WebView loaded: ', nativeEvent);
+                      }}
+                      onLoadStart={(syntheticEvent) => {
+                        const { nativeEvent } = syntheticEvent;
+                        console.log('WebView loading URL: ', nativeEvent.url);
+                      }}
+                      onMessage={(event) => {
+                        console.log('WebView message: ', event.nativeEvent.data);
+                      }}
+                      onNavigationStateChange={(navState) => {
+                        console.log('WebView navigation state: ', navState);
+                      }}
+                    />
+                  ) : (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                      <Text>Invalid diet PDF URL.</Text>
+                    </View>
+                  );
+                })()
+              ) : (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <Text>No diet PDF available.</Text>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
       {/* Log Food Modal */}
       <Modal
         visible={showFoodModal}
@@ -2587,7 +2972,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </ScrollView>
         {/* Success Popup: match LoginSettingsScreen style exactly */}
-        <Modal
+      <Modal
           visible={showSuccessPopup}
           animationType="fade"
           transparent
@@ -2601,8 +2986,8 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
                 onPress={() => setShowSuccessPopup(false)}
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+          </View>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -3260,7 +3645,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
   const renderItem = ({ item }: { item: any }) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
-      <View style={{ flex: 1 }}>
+          <View style={{ flex: 1 }}>
         <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
         <Text style={dieticianMessageStyles.timestampText}>
           {item.timestamp && !isNaN(new Date(item.timestamp).getTime())
@@ -4212,12 +4597,12 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   if (!initializing && (!userId && isDietician)) {
     return (
       <SafeAreaView style={dieticianMessageStyles.container}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text style={{ color: '#888', fontSize: 18, marginBottom: 20 }}>Select a user from the Messages list to start chatting.</Text>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12, backgroundColor: '#6EE7B7', borderRadius: 8 }}>
             <Text style={{ color: '#fff', fontWeight: 'bold' }}>Back</Text>
           </TouchableOpacity>
-        </View>
+              </View>
       </SafeAreaView>
     );
   }
@@ -4449,9 +4834,9 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
             keyExtractor={item => item.userId}
             ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#888', marginTop: 40 }}>No users found.</Text>}
           />
-        )}
-      </View>
-    </SafeAreaView>
+            )}
+          </View>
+        </SafeAreaView>
   );
 };
 
@@ -5001,10 +5386,10 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#ff4444',
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     borderRadius: 8,
-    marginTop: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButtonText: {
     color: '#fff',
@@ -5796,14 +6181,11 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
   },
   uploadButtonDisabled: {
     backgroundColor: COLORS.placeholder,
@@ -5831,6 +6213,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     minWidth: 300,
+  },
+  viewDietButton: {
+    backgroundColor: '#FFA500', // Orange color
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewDietButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
@@ -6993,10 +7388,12 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [uploading, setUploading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [countdowns, setCountdowns] = useState<{ [userId: string]: number }>({});
+  const [countdowns, setCountdowns] = useState<{ [userId: string]: { days: number; hours: number } }>({});
   const [refresh, setRefresh] = useState(0);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -7018,14 +7415,33 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
           return u.email !== dieticianEmail && !isPlaceholder;
         });
         
-        // 2. Fetch diet countdowns for each user
-        const countdownsObj: { [userId: string]: number } = {};
+        // 2. Fetch diet countdowns and PDF URLs for each user
+        const countdownsObj: { [userId: string]: { days: number; hours: number } } = {};
         await Promise.all(filteredProfiles.map(async (u: any) => {
           try {
-            const diet = await getUserDiet(u.userId);
-            countdownsObj[u.userId] = diet.daysLeft;
+            const userDoc = await firestore.collection('user_profiles').doc(u.userId).get();
+            if (userDoc.exists) {
+              const data = userDoc.data();
+              // Add dietPdfUrl to the user object
+              u.dietPdfUrl = data?.dietPdfUrl || null;
+              if (data?.lastDietUpload) {
+                const lastDt = new Date(data.lastDietUpload);
+                const timeDiff = Date.now() - lastDt.getTime();
+                const totalHours = 7 * 24; // 7 days in hours
+                const remainingHours = Math.max(0, totalHours - Math.floor(timeDiff / (1000 * 60 * 60)));
+                const days = Math.floor(remainingHours / 24);
+                const hours = remainingHours % 24;
+                countdownsObj[u.userId] = { days, hours };
+              } else {
+                countdownsObj[u.userId] = { days: 0, hours: 0 };
+              }
+            } else {
+              u.dietPdfUrl = null;
+              countdownsObj[u.userId] = { days: 0, hours: 0 };
+            }
           } catch (e) {
-            countdownsObj[u.userId] = 0;
+            u.dietPdfUrl = null;
+            countdownsObj[u.userId] = { days: 0, hours: 0 };
           }
         }));
         
@@ -7053,6 +7469,62 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     setErrorMsg('');
   };
 
+  // Helper function to get the correct PDF URL for a user
+  const getPdfUrlForUser = (user: any) => {
+    if (!user?.dietPdfUrl) return null;
+    
+    // If it's a Firebase Storage signed URL, use it directly
+    if (user.dietPdfUrl.startsWith('https://storage.googleapis.com/')) {
+      return user.dietPdfUrl;
+    }
+    
+    // For any other format, use the backend endpoint
+    return `${API_URL}/users/${user.userId}/diet/pdf`;
+  };
+
+  // Helper function to create a PDF viewer HTML
+  const createPdfViewerHtml = (pdfUrl: string) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { margin: 0; padding: 0; }
+            #pdf-viewer { width: 100%; height: 100vh; }
+          </style>
+        </head>
+        <body>
+          <embed id="pdf-viewer" src="${pdfUrl}" type="application/pdf" />
+        </body>
+      </html>
+    `;
+  };
+
+  const handleViewDiet = async () => {
+    if (!selectedUser) return;
+    try {
+      const userDoc = await firestore.collection('user_profiles').doc(selectedUser.userId).get();
+      if (userDoc.exists) {
+        const data = userDoc.data();
+        if (data?.dietPdfUrl) {
+          const url = getPdfUrlForUser({ ...selectedUser, dietPdfUrl: data.dietPdfUrl });
+          if (url) {
+            setPdfUrl(url);
+            setShowPdfModal(true);
+          } else {
+            alert('Invalid diet PDF URL.');
+          }
+        } else {
+          alert('No diet PDF available for this user.');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to open diet PDF:', e);
+      alert('Failed to open diet PDF.');
+    }
+  };
+
   const handleUpload = async () => {
     if (!selectedUser) return;
     try {
@@ -7071,7 +7543,12 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       };
       // Assume dieticianId is available from auth context or similar
       const dieticianId = firebase.auth().currentUser?.uid || '';
-      await uploadDietPdf(selectedUser.userId, dieticianId, file);
+      const uploadResult = await uploadDietPdf(selectedUser.userId, dieticianId, file);
+      
+      // The backend has already updated the Firestore document with the new dietPdfUrl
+      // We just need to refresh the user data to get the updated information
+      setRefresh(r => r + 1);
+      
       setSuccessMsg('Diet uploaded successfully!');
       setRefresh(r => r + 1);
       setShowUploadModal(false);
@@ -7132,7 +7609,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : 'Unknown User'}
               </Text>
               <Text style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
-                Days left until new diet: {countdowns[item.userId] ?? '-'}
+                Days Until New Diet: {countdowns[item.userId] ? `${countdowns[item.userId].days}D ${countdowns[item.userId].hours}H` : '-'}
               </Text>
             </View>
               <View style={{ 
@@ -7169,27 +7646,363 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             <TouchableOpacity
               style={[
                 styles.uploadButton,
-                uploading && styles.uploadButtonDisabled
+                uploading && styles.uploadButtonDisabled,
+                { 
+                  width: '100%', 
+                  marginBottom: 12,
+                  minHeight: 48,
+                  justifyContent: 'center'
+                }
               ]}
               onPress={handleUpload}
               disabled={uploading}
             >
-              <Text style={styles.uploadButtonText}>
-                {uploading ? 'Uploading...' : 'Select PDF File'}
+              <Text style={styles.viewDietButtonText}>
+                {uploading ? 'Uploading...' : 'Select PDF'}
               </Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.cancelButton}
+              style={[
+                styles.viewDietButton,
+                { 
+                  width: '100%', 
+                  marginBottom: 12,
+                  minHeight: 48,
+                  justifyContent: 'center',
+                  backgroundColor: selectedUser?.dietPdfUrl ? '#FFA500' : COLORS.placeholder,
+                  opacity: selectedUser?.dietPdfUrl ? 1 : 0.5
+                }
+              ]}
+              onPress={handleViewDiet}
+              disabled={!selectedUser?.dietPdfUrl}
+            >
+              <Text style={styles.viewDietButtonText}>View Current Diet</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.cancelButton,
+                { 
+                  width: '100%',
+                  minHeight: 48,
+                  justifyContent: 'center'
+                }
+              ]}
               onPress={() => {
                 setShowUploadModal(false);
                 setSelectedUser(null);
               }}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.viewDietButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* PDF Viewer Modal */}
+      <Modal
+        visible={showPdfModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowPdfModal(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff', zIndex: 2 }}>
+            <TouchableOpacity onPress={() => setShowPdfModal(false)} style={{ padding: 8, marginRight: 8 }}>
+              <Text style={{ fontSize: 22, color: COLORS.primary }}>Close</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text }}>
+              Diet PDF - {selectedUser?.firstName} {selectedUser?.lastName}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            {pdfUrl ? (
+              <WebView
+                source={{ 
+                  html: `
+                    <!DOCTYPE html>
+                    <html>
+                      <head>
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>PDF Viewer</title>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                        <style>
+                          body { 
+                            margin: 0; 
+                            padding: 0; 
+                            font-family: Arial, sans-serif;
+                            background-color: #f0f0f0;
+                          }
+                          .container {
+                            width: 100%;
+                            height: 100vh;
+                            display: flex;
+                            flex-direction: column;
+                          }
+                          .header {
+                            display: none;
+                          }
+                          .pdf-container {
+                            flex: 1;
+                            background: white;
+                            overflow: auto;
+                            position: relative;
+                            touch-action: manipulation;
+                            scroll-behavior: smooth;
+                          }
+                          .page-wrapper {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            padding: 20px 0;
+                          }
+                          .page-canvas {
+                            display: block;
+                            margin: 0 auto 20px auto;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                            touch-action: manipulation;
+                          }
+                          .loading {
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            height: 100%;
+                            font-size: 18px;
+                            color: #666;
+                          }
+                          .error {
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            height: 100%;
+                            font-size: 16px;
+                            color: #d32f2f;
+                            text-align: center;
+                            padding: 20px;
+                          }
+                          .page-indicator {
+                            background: rgba(0, 0, 0, 0.7);
+                            color: white;
+                            padding: 8px 16px;
+                            text-align: center;
+                            position: fixed;
+                            top: 20px;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            border-radius: 20px;
+                            z-index: 1000;
+                            font-size: 14px;
+                          }
+                          .page-info {
+                            margin: 0;
+                            font-size: 14px;
+                            color: white;
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="container">
+                          <div class="header">
+                            <h3>Diet PDF Viewer</h3>
+                          </div>
+                          <div class="pdf-container" id="pdf-container">
+                            <div class="loading">Loading PDF...</div>
+                          </div>
+                          <div class="page-indicator">
+                            <span class="page-info">
+                              Page <span id="page-num">1</span> of <span id="page-count">1</span>
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <script>
+                          // Set up PDF.js worker
+                          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                          
+                          let pdfDoc = null;
+                          let currentScale = 1.5;
+                          const minScale = 0.5;
+                          const maxScale = 3.0;
+                          let allPages = [];
+                          let isZooming = false;
+                          let zoomTimeout = null;
+                          
+                          const container = document.getElementById('pdf-container');
+                          
+                          // Touch handling variables
+                          let initialDistance = 0;
+                          let initialScale = 1.5;
+                          let isPinching = false;
+                          
+                          // Render all pages for vertical scrolling
+                          async function renderAllPages() {
+                            const pageWrapper = document.createElement('div');
+                            pageWrapper.className = 'page-wrapper';
+                            
+                            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                              const page = await pdfDoc.getPage(pageNum);
+                              const viewport = page.getViewport({scale: currentScale});
+                              
+                              const canvas = document.createElement('canvas');
+                              canvas.className = 'page-canvas';
+                              canvas.height = viewport.height;
+                              canvas.width = viewport.width;
+                              
+                              const ctx = canvas.getContext('2d');
+                              const renderContext = {
+                                canvasContext: ctx,
+                                viewport: viewport
+                              };
+                              
+                              await page.render(renderContext).promise;
+                              pageWrapper.appendChild(canvas);
+                              
+                              // Add touch listeners to each canvas
+                              addTouchListeners(canvas);
+                            }
+                            
+                            container.innerHTML = '';
+                            container.appendChild(pageWrapper);
+                            
+                            // Update page indicator
+                            document.getElementById('page-count').textContent = pdfDoc.numPages;
+                            document.getElementById('page-num').textContent = '1';
+                            
+                            // Add scroll listener for page tracking
+                            container.addEventListener('scroll', updateCurrentPage);
+                          }
+                          
+                          // Update current page based on scroll position
+                          function updateCurrentPage() {
+                            const scrollTop = container.scrollTop;
+                            const containerHeight = container.clientHeight;
+                            const pageHeight = container.scrollHeight / pdfDoc.numPages;
+                            
+                            const currentPage = Math.floor(scrollTop / pageHeight) + 1;
+                            const clampedPage = Math.max(1, Math.min(currentPage, pdfDoc.numPages));
+                            
+                            document.getElementById('page-num').textContent = clampedPage;
+                          }
+                          
+                          // Touch event handlers for pinch-to-zoom
+                          function getDistance(touch1, touch2) {
+                            const dx = touch1.clientX - touch2.clientX;
+                            const dy = touch1.clientY - touch2.clientY;
+                            return Math.sqrt(dx * dx + dy * dy);
+                          }
+                          
+                          function handleTouchStart(e) {
+                            if (e.touches.length === 2) {
+                              isPinching = true;
+                              initialDistance = getDistance(e.touches[0], e.touches[1]);
+                              initialScale = currentScale;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }
+                          
+                          function handleTouchMove(e) {
+                            if (isPinching && e.touches.length === 2) {
+                              const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                              const scaleFactor = currentDistance / initialDistance;
+                              const newScale = initialScale * scaleFactor;
+                              
+                              if (newScale >= minScale && newScale <= maxScale) {
+                                currentScale = newScale;
+                                isZooming = true;
+                                
+                                // Clear previous timeout
+                                if (zoomTimeout) {
+                                  clearTimeout(zoomTimeout);
+                                }
+                                
+                                // Debounce the render to prevent lag
+                                zoomTimeout = setTimeout(() => {
+                                  renderAllPages();
+                                  isZooming = false;
+                                }, 100);
+                              }
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }
+                          
+                          function handleTouchEnd(e) {
+                            if (e.touches.length < 2) {
+                              isPinching = false;
+                            }
+                          }
+                          
+                          // Add touch event listeners to canvas
+                          function addTouchListeners(canvas) {
+                            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+                            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+                            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+                          }
+                          
+                          // Load the PDF
+                          fetch('${pdfUrl}')
+                            .then(response => {
+                              if (!response.ok) {
+                                throw new Error('Failed to load PDF');
+                              }
+                              return response.arrayBuffer();
+                            })
+                            .then(data => {
+                              return pdfjsLib.getDocument({data: data}).promise;
+                            })
+                            .then(pdf => {
+                              pdfDoc = pdf;
+                              
+                              // Render all pages for vertical scrolling
+                              renderAllPages();
+                            })
+                            .catch(error => {
+                              console.error('Error loading PDF:', error);
+                              container.innerHTML = '<div class="error">Error loading PDF. Please try again.</div>';
+                            });
+                        </script>
+                      </body>
+                    </html>
+                  `
+                }}
+                style={{ flex: 1, width: '100%' }}
+                startInLoadingState
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={false}
+                scrollEnabled={false}
+                bounces={false}
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+                automaticallyAdjustContentInsets={false}
+                contentInsetAdjustmentBehavior="never"
+                onError={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.log('WebView error: ', nativeEvent);
+                }}
+                onHttpError={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.log('WebView HTTP error: ', nativeEvent);
+                }}
+                onLoadEnd={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.log('WebView loaded: ', nativeEvent);
+                }}
+                onLoadStart={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.log('WebView loading URL: ', nativeEvent.url);
+                }}
+              />
+            ) : (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <Text>Loading PDF...</Text>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );

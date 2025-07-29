@@ -30,14 +30,17 @@
     "lucide-react-native": "^0.522.0",
     "react": "19.0.0",
     "react-native": "0.79.4",
+    "react-native-blob-util": "^0.22.2",
     "react-native-confetti-cannon": "^1.5.2",
     "react-native-dotenv": "^3.4.11",
     "react-native-gesture-handler": "^2.26.0",
     "react-native-keyboard-aware-scroll-view": "^0.9.5",
     "react-native-markdown-display": "^7.0.2",
+    "react-native-pdf": "^6.7.7",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-svg": "^15.11.2",
+    "react-native-webview": "13.13.5",
     "react-native-wheel-picker-expo": "^0.5.4"
   },
   "devDependencies": {
