@@ -12,6 +12,8 @@ from services.health_platform import HealthPlatformFactory
 from services.firebase_client import db as firestore_db, bucket
 # Add import for diet PDF upload
 from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
+# Add import for PDF RAG service
+from services.pdf_rag_service import pdf_rag_service
 import logging
 import os
 import warnings
@@ -681,6 +683,7 @@ async def log_workout_item(log: dict):
 async def chatbot_message(request: ChatMessageRequest):
     """
     Accepts chat history, user profile, and user message. Returns Gemini's response.
+    Now includes RAG functionality to read and understand the user's diet PDF.
     """
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API key not configured on server.")
@@ -699,6 +702,21 @@ async def chatbot_message(request: ChatMessageRequest):
                 if v:
                     system_prompt += f"{k}: {v}\n"
         system_prompt += '\nNever change or update user information. Only use it for context.'
+
+        # Enhance prompt with diet PDF context using RAG
+        diet_pdf_url = profile.get("dietPdfUrl") if profile else None
+        if diet_pdf_url:
+            try:
+                system_prompt = pdf_rag_service.enhance_chatbot_prompt(
+                    request.userId, 
+                    diet_pdf_url, 
+                    firestore_db, 
+                    system_prompt
+                )
+                logger.info(f"[CHATBOT] Enhanced prompt with diet PDF for user {request.userId}")
+            except Exception as e:
+                logger.warning(f"[CHATBOT] Failed to enhance prompt with diet PDF: {e}")
+                # Continue with original prompt if RAG enhancement fails
 
         # Format chat history for Gemini using dicts (SDK may accept these directly)
         # If the SDK requires Content objects, you may need to convert them here.

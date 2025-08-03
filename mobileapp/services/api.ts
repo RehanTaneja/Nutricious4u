@@ -87,6 +87,9 @@ export interface UserProfile {
   activityLevel?: string;
   stepGoal?: number;
   caloriesBurnedGoal?: number;
+  dietPdfUrl?: string; // URL to the user's diet PDF
+  lastDietUpload?: string; // Timestamp of last diet upload
+  dieticianId?: string; // ID of the dietician who uploaded the diet
 }
 
 export interface UpdateUserProfile {

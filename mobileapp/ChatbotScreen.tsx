@@ -70,6 +70,7 @@ export const ChatbotScreen = () => {
       if (userProfile.targetCalories) prompt += `Calories Goal: ${userProfile.targetCalories} kcal\n`;
       if (userProfile.stepGoal) prompt += `Steps Goal: ${userProfile.stepGoal}\n`;
       if (userProfile.caloriesBurnedGoal) prompt += `Calories Burned Goal: ${userProfile.caloriesBurnedGoal}\n`;
+      if (userProfile.dietPdfUrl) prompt += `Diet PDF Available: Yes\n`;
     }
     prompt += '\nNever change or update user information. Only use it for context.';
     return prompt;
