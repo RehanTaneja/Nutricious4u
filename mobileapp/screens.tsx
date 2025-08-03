@@ -48,7 +48,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -1436,9 +1436,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         ) : dietError ? (
           <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>{dietError}</Text>
         ) : (
-          <Text style={{ color: COLORS.primary, marginTop: 12, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
-            {daysLeft ? `${daysLeft.days}D ${daysLeft.hours}H` : '-'}
-          </Text>
+          <>
+            <Text style={{ color: COLORS.text, marginTop: 12, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
+              Time Until next diet
+            </Text>
+            <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
+              {daysLeft ? `${daysLeft.days} days ${daysLeft.hours} hours` : '-'}
+            </Text>
+          </>
         )}
       </View>
       <Modal
@@ -3371,12 +3376,30 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
 
-  const DEFAULT_NOTIFICATIONS: { message: string; hour: number; minute: number }[] = [
-    { message: "Good morning, don't forget to have a glass of water!!", hour: 8, minute: 0 },
-    { message: "It's lunch time", hour: 14, minute: 0 },
-    { message: "Time for a healthy snack!", hour: 17, minute: 0 },
-    { message: "Time to wind down. Prepare for a restful sleep!", hour: 22, minute: 0 },
-  ];
+
+
+  // Diet notification management
+  const [dietNotifications, setDietNotifications] = useState<any[]>([]);
+  const [loadingDietNotifications, setLoadingDietNotifications] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingNotification, setEditingNotification] = useState<any>(null);
+  const [editTime, setEditTime] = useState('');
+  const [editMessage, setEditMessage] = useState('');
+
+  // Combine user notifications and diet notifications into a single list
+  const combinedNotifications = [
+    ...notifications.map(n => ({ ...n, type: 'user' })),
+    ...dietNotifications.map(n => ({ ...n, type: 'diet' }))
+  ].sort((a, b) => {
+    // Sort by time (HH:MM format)
+    const timeA = a.time || '00:00';
+    const timeB = b.time || '00:00';
+    return timeA.localeCompare(timeB);
+  });
 
   // Helper to convert IST hour/minute to local time
   function getLocalTimeFromIST(hour: number, minute: number): Date {
@@ -3393,6 +3416,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
   useEffect(() => {
     loadNotifications();
+    loadDietNotifications();
     // Request notification permissions only
     (async () => {
       const { status } = await Notifications.getPermissionsAsync();
@@ -3435,62 +3459,12 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         if (parsed.length > 0) {
           setNotifications(parsed);
         } else {
-          // No notifications: inject defaults
-          const defaults: any[] = [];
-          for (const def of DEFAULT_NOTIFICATIONS) {
-            const localTime = getLocalTimeFromIST(def.hour, def.minute);
-            let scheduledId = null;
-            // @ts-ignore
-            const trigger: any = {
-              type: 'calendar',
-              hour: localTime.getHours(),
-              minute: localTime.getMinutes(),
-              repeats: true,
-            };
-            try {
-              scheduledId = await Notifications.scheduleNotificationAsync({
-                content: { title: 'Reminder', body: def.message },
-                trigger,
-              });
-            } catch (e) {}
-            defaults.push({
-              id: Date.now().toString() + Math.random().toString().slice(2, 8),
-              message: def.message,
-              time: localTime.toISOString(),
-              scheduledId,
-            });
-          }
-          setNotifications(defaults);
-          await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(defaults));
+          // No notifications: start with empty array
+          setNotifications([]);
         }
       } else {
-        // No notifications at all: inject defaults
-        const defaults: any[] = [];
-        for (const def of DEFAULT_NOTIFICATIONS) {
-          const localTime = getLocalTimeFromIST(def.hour, def.minute);
-          let scheduledId = null;
-          // @ts-ignore
-          const trigger: any = {
-            type: 'calendar',
-            hour: localTime.getHours(),
-            minute: localTime.getMinutes(),
-            repeats: true,
-          };
-          try {
-            scheduledId = await Notifications.scheduleNotificationAsync({
-              content: { title: 'Reminder', body: def.message },
-              trigger,
-            });
-          } catch (e) {}
-          defaults.push({
-            id: Date.now().toString() + Math.random().toString().slice(2, 8),
-            message: def.message,
-            time: localTime.toISOString(),
-            scheduledId,
-          });
-        }
-        setNotifications(defaults);
-        await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(defaults));
+        // No notifications at all: start with empty array
+        setNotifications([]);
       }
     } catch (e) {
       setNotifications([]);
@@ -3536,6 +3510,113 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     await saveNotifications(newList);
     console.log('[Notifications] Deleted notification with id:', id);
   };
+
+  // Diet notification functions
+  const loadDietNotifications = async () => {
+    setLoadingDietNotifications(true);
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const response = await getDietNotifications(userId);
+      setDietNotifications(response.notifications || []);
+      console.log('[Diet Notifications] Loaded:', response.notifications?.length || 0);
+    } catch (error) {
+      console.error('[Diet Notifications] Error loading:', error);
+    } finally {
+      setLoadingDietNotifications(false);
+    }
+  };
+
+  const handleExtractDietNotifications = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const response = await extractDietNotifications(userId);
+      if (response.notifications && response.notifications.length > 0) {
+        setDietNotifications(response.notifications);
+        console.log('[Diet Notifications] Extracted:', response.notifications.length);
+        // Show custom success modal
+        setSuccessMessage(`Successfully extracted ${response.notifications.length} timed activities from your diet plan! 🎉`);
+        setShowSuccessModal(true);
+      } else {
+        Alert.alert(
+          'No Activities Found', 
+          'No timed activities were found in your diet PDF. Make sure your diet plan includes specific times for activities.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('[Diet Notifications] Error extracting:', error);
+      setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
+      setShowErrorModal(true);
+    }
+  };
+
+  const handleDeleteDietNotification = async (notificationId: string) => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      await deleteDietNotification(userId, notificationId);
+      setDietNotifications(prev => prev.filter(n => n.id !== notificationId));
+      console.log('[Diet Notifications] Deleted:', notificationId);
+    } catch (error) {
+      console.error('[Diet Notifications] Error deleting:', error);
+      setErrorMessage('Failed to delete notification.');
+      setShowErrorModal(true);
+    }
+  };
+
+  const handleEditDietNotification = (notification: any) => {
+    setEditingNotification(notification);
+    setEditTime(notification.time);
+    setEditMessage(notification.message);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      if (!editingNotification || !editTime || !editMessage) {
+        setErrorMessage('Please fill in all fields.');
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Validate time format (HH:MM)
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(editTime)) {
+        setErrorMessage('Please enter a valid time in HH:MM format (e.g., 08:30).');
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Update the notification in local state
+      setDietNotifications(prev => prev.map(n => 
+        n.id === editingNotification.id 
+          ? { ...n, time: editTime, message: editMessage }
+          : n
+      ));
+
+      // Close modal
+      setShowEditModal(false);
+      setEditingNotification(null);
+      setEditTime('');
+      setEditMessage('');
+
+      // Show success message
+      setSuccessMessage('Notification updated successfully!');
+      setShowSuccessModal(true);
+
+    } catch (error) {
+      console.error('[Diet Notifications] Error editing:', error);
+      setErrorMessage('Failed to update notification.');
+      setShowErrorModal(true);
+    }
+  };
+
+
 
   const handleSave = async () => {
     if (!message.trim()) {
@@ -3645,21 +3726,37 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
   const renderItem = ({ item }: { item: any }) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
-          <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
-        <Text style={dieticianMessageStyles.timestampText}>
-          {item.timestamp && !isNaN(new Date(item.timestamp).getTime())
-            ? format(new Date(item.timestamp), 'p')
-            : ''}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+          <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
+            {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
+          </Text>
+        </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
-          <Pencil color={COLORS.primary} size={22} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item.id)}>
-          <Trash2 color={COLORS.error} size={22} />
-        </TouchableOpacity>
+        {item.type === 'diet' ? (
+          <>
+            <TouchableOpacity 
+              onPress={() => handleEditDietNotification(item)}
+              style={{ marginRight: 12 }}
+            >
+              <Pencil color={COLORS.primary} size={18} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
+              <Trash2 color={COLORS.error} size={18} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
+              <Pencil color={COLORS.primary} size={22} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDelete(item.id)}>
+              <Trash2 color={COLORS.error} size={22} />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
@@ -3676,30 +3773,54 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         </View>
         {loading ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
-        ) : notifications.length === 0 ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: COLORS.placeholder, fontSize: 18, textAlign: 'center' }}>
-              You have no notifications yet.
-            </Text>
-            <TouchableOpacity style={styles.addNotificationButton} onPress={openAddModal}>
-              <Text style={styles.addNotificationButtonText}>Add Notification</Text>
-            </TouchableOpacity>
-          </View>
         ) : (
           <>
-            <FlatList
-              data={notifications}
-              keyExtractor={item => item.id}
-              renderItem={renderItem}
-              ListFooterComponent={
+            {/* Diet Extraction Button */}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 16, color: COLORS.placeholder, marginBottom: 12 }}>
+                Extract timed activities from your diet PDF
+              </Text>
+              <TouchableOpacity 
+                style={[styles.addNotificationButton, { backgroundColor: COLORS.primary }]} 
+                onPress={handleExtractDietNotifications}
+              >
+                <Text style={styles.addNotificationButtonText}>
+                  {loadingDietNotifications ? 'Extracting...' : 'Extract from Diet PDF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Combined Notifications List */}
+            {combinedNotifications.length === 0 ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40 }}>
+                <Text style={{ color: COLORS.placeholder, fontSize: 18, textAlign: 'center' }}>
+                  You have no notifications yet.
+                </Text>
                 <TouchableOpacity style={styles.addNotificationButton} onPress={openAddModal}>
-                  <Text style={styles.addNotificationButtonText}>Add Notification</Text>
+                  <Text style={styles.addNotificationButtonText}>Add Custom Notification</Text>
                 </TouchableOpacity>
-              }
-              contentContainerStyle={{ paddingBottom: 0 }}
-            />
+              </View>
+            ) : (
+              <FlatList
+                data={combinedNotifications}
+                keyExtractor={(item, index) => `${item.type}_${item.id}_${index}`}
+                renderItem={renderItem}
+                ListHeaderComponent={
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text, marginBottom: 16 }}>
+                    All Notifications ({combinedNotifications.length})
+                  </Text>
+                }
+                ListFooterComponent={
+                  <TouchableOpacity style={styles.addNotificationButton} onPress={openAddModal}>
+                    <Text style={styles.addNotificationButtonText}>Add Custom Notification</Text>
+                  </TouchableOpacity>
+                }
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            )}
           </>
         )}
+
         {/* Add/Edit Modal */}
         <Modal
           visible={showModal}
@@ -3753,6 +3874,170 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                     onPress={() => setShowModal(false)}
                   >
                     <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* Custom Success Modal */}
+        <Modal
+          visible={showSuccessModal}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setShowSuccessModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContainer, { backgroundColor: COLORS.primary, borderColor: COLORS.primaryDark }]}>
+              <Text style={[styles.modalTitle, { color: COLORS.white }]}>Success! 🎉</Text>
+              <Text style={[styles.modalLabel, { color: COLORS.white, textAlign: 'center', marginTop: 16 }]}>
+                {successMessage}
+              </Text>
+              <TouchableOpacity
+                style={{ 
+                  backgroundColor: COLORS.white, 
+                  marginTop: 24,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 8,
+                  minWidth: 100,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3
+                }}
+                onPress={() => setShowSuccessModal(false)}
+              >
+                <Text style={{ 
+                  color: COLORS.primary,
+                  fontSize: 16,
+                  fontWeight: '600'
+                }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Custom Error Modal */}
+        <Modal
+          visible={showErrorModal}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setShowErrorModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContainer, { backgroundColor: COLORS.error, borderColor: COLORS.error }]}>
+              <Text style={[styles.modalTitle, { color: COLORS.white }]}>Error ⚠️</Text>
+              <Text style={[styles.modalLabel, { color: COLORS.white, textAlign: 'center', marginTop: 16 }]}>
+                {errorMessage}
+              </Text>
+              <TouchableOpacity
+                style={{ 
+                  backgroundColor: COLORS.white, 
+                  marginTop: 24,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 8,
+                  minWidth: 100,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3
+                }}
+                onPress={() => setShowErrorModal(false)}
+              >
+                <Text style={{ 
+                  color: COLORS.error,
+                  fontSize: 16,
+                  fontWeight: '600'
+                }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Edit Diet Notification Modal */}
+        <Modal
+          visible={showEditModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowEditModal(false)}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContainer}>
+                <Text style={styles.modalTitle}>Edit Diet Notification</Text>
+                
+                <Text style={styles.modalLabel}>Message</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editMessage}
+                  onChangeText={setEditMessage}
+                  placeholder="Enter notification message"
+                  maxLength={100}
+                />
+                
+                <Text style={styles.modalLabel}>Time</Text>
+                <TouchableOpacity
+                  style={[styles.modalInput, { justifyContent: 'center', height: 48 }]}
+                  onPress={() => {
+                    // Parse current time or default to 8:00 AM
+                    const [hours, minutes] = editTime.split(':').map(Number);
+                    const currentTime = new Date();
+                    currentTime.setHours(hours || 8, minutes || 0, 0, 0);
+                    setTime(currentTime);
+                    setShowTimePicker(true);
+                  }}
+                >
+                  <Text style={{ color: COLORS.text, fontSize: 16 }}>
+                    {editTime || '08:00'}
+                  </Text>
+                </TouchableOpacity>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={time}
+                    mode="time"
+                    is24Hour={true}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      setShowTimePicker(false);
+                      if (selectedDate) {
+                        setTime(selectedDate);
+                        const hours = selectedDate.getHours().toString().padStart(2, '0');
+                        const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+                        setEditTime(`${hours}:${minutes}`);
+                      }
+                    }}
+                  />
+                )}
+                
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, { 
+                      backgroundColor: COLORS.placeholder,
+                      flex: 0.48
+                    }]}
+                    onPress={() => {
+                      setShowEditModal(false);
+                      setEditingNotification(null);
+                      setEditTime('');
+                      setEditMessage('');
+                    }}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.modalButton, { 
+                      backgroundColor: COLORS.primary,
+                      flex: 0.48
+                    }]}
+                    onPress={handleSaveEdit}
+                  >
+                    <Text style={styles.modalButtonText}>Save</Text>
                   </TouchableOpacity>
                 </View>
               </View>

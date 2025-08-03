@@ -382,6 +382,27 @@ export const getUserDiet = async (userId: string) => {
   return response.data;
 };
 
+// --- Diet Notification Management ---
+export const extractDietNotifications = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/diet/notifications/extract`);
+  return response.data;
+};
+
+export const getDietNotifications = async (userId: string) => {
+  const response = await api.get(`/users/${userId}/diet/notifications`);
+  return response.data;
+};
+
+export const deleteDietNotification = async (userId: string, notificationId: string) => {
+  const response = await api.delete(`/users/${userId}/diet/notifications/${notificationId}`);
+  return response.data;
+};
+
+export const testDietNotification = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/diet/notifications/test`);
+  return response.data;
+};
+
 // --- List All Users Except Dietician ---
 export const listNonDieticianUsers = async () => {
   const response = await api.get('/users/non-dietician');

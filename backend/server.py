@@ -14,6 +14,8 @@ from services.firebase_client import db as firestore_db, bucket
 from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
 # Add import for PDF RAG service
 from services.pdf_rag_service import pdf_rag_service
+# Add import for diet notification service
+from services.diet_notification_service import diet_notification_service
 import logging
 import os
 import warnings
@@ -1028,6 +1030,28 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             print(f"ERROR updating Firestore: {firestore_error}")
             raise firestore_error
         
+        # Extract notifications from the new diet PDF
+        try:
+            notifications = diet_notification_service.extract_and_create_notifications(
+                user_id, file.filename, firestore_db
+            )
+            
+            if notifications:
+                # Store notifications in Firestore
+                user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+                await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
+                    "diet_notifications": notifications,
+                    "extracted_at": datetime.now().isoformat(),
+                    "diet_pdf_url": file.filename
+                }, merge=True))
+                
+                print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
+            else:
+                print(f"No timed activities found in new diet PDF for user {user_id}")
+                
+        except Exception as e:
+            print(f"Error extracting notifications from new diet PDF: {e}")
+        
         # Send push notification to user
         user_token = get_user_notification_token(user_id)
         if user_token:
@@ -1203,6 +1227,182 @@ async def get_non_dietician_users():
     Returns a list of user profiles where isDietician is not True.
     """
     return list_non_dietician_users()
+
+# --- Diet Notification Endpoints ---
+@api_router.post("/users/{user_id}/diet/notifications/extract")
+async def extract_diet_notifications(user_id: str):
+    """
+    Extract timed activities from user's diet PDF and create notifications.
+    """
+    try:
+        # Get user profile to find diet PDF URL
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        diet_pdf_url = user_data.get("dietPdfUrl")
+        
+        if not diet_pdf_url:
+            raise HTTPException(status_code=404, detail="No diet PDF found for this user")
+        
+        # Extract notifications from diet PDF
+        notifications = diet_notification_service.extract_and_create_notifications(
+            user_id, diet_pdf_url, firestore_db
+        )
+        
+        if not notifications:
+            return {
+                "message": "No timed activities found in diet PDF",
+                "notifications": []
+            }
+        
+        # Store notifications in Firestore for the user
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        user_notifications_ref.set({
+            "diet_notifications": notifications,
+            "extracted_at": datetime.now().isoformat(),
+            "diet_pdf_url": diet_pdf_url
+        }, merge=True)
+        
+        logger.info(f"Extracted {len(notifications)} notifications from diet PDF for user {user_id}")
+        
+        return {
+            "message": f"Successfully extracted {len(notifications)} timed activities from diet PDF",
+            "notifications": notifications
+        }
+        
+    except Exception as e:
+        logger.error(f"Error extracting diet notifications for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {e}")
+
+@api_router.get("/users/{user_id}/diet/notifications")
+async def get_diet_notifications(user_id: str):
+    """
+    Get all diet notifications for a user.
+    """
+    try:
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        doc = user_notifications_ref.get()
+        
+        if not doc.exists:
+            return {"notifications": []}
+        
+        data = doc.to_dict()
+        notifications = data.get("diet_notifications", [])
+        
+        return {
+            "notifications": notifications,
+            "extracted_at": data.get("extracted_at"),
+            "diet_pdf_url": data.get("diet_pdf_url")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting diet notifications for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get diet notifications: {e}")
+
+@api_router.get("/users/{user_id}/diet/raw-text")
+async def get_diet_raw_text(user_id: str):
+    """
+    Get raw extracted text from diet PDF for debugging.
+    """
+    try:
+        # Get user's diet PDF URL
+        user_doc = firestore_db.collection("users").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        diet_pdf_url = user_data.get("dietPdfUrl")
+        
+        if not diet_pdf_url:
+            raise HTTPException(status_code=404, detail="No diet PDF found for user")
+        
+        # Extract raw text
+        raw_text = pdf_rag_service.get_diet_pdf_text(user_id, diet_pdf_url, firestore_db)
+        
+        if not raw_text:
+            raise HTTPException(status_code=404, detail="Failed to extract text from diet PDF")
+        
+        return {"raw_text": raw_text}
+    except Exception as e:
+        logger.error(f"Error getting raw diet text for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get raw diet text")
+
+@api_router.delete("/users/{user_id}/diet/notifications/{notification_id}")
+async def delete_diet_notification(user_id: str, notification_id: str):
+    """
+    Delete a specific diet notification for a user.
+    """
+    try:
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        doc = user_notifications_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="No notifications found for this user")
+        
+        data = doc.to_dict()
+        notifications = data.get("diet_notifications", [])
+        
+        # Find and remove the notification
+        updated_notifications = [n for n in notifications if n.get("id") != notification_id]
+        
+        if len(updated_notifications) == len(notifications):
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        # Update Firestore
+        user_notifications_ref.set({
+            "diet_notifications": updated_notifications,
+            "updated_at": datetime.now().isoformat()
+        }, merge=True)
+        
+        logger.info(f"Deleted diet notification {notification_id} for user {user_id}")
+        
+        return {"message": "Notification deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting diet notification for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete diet notification: {e}")
+
+@api_router.post("/users/{user_id}/diet/notifications/test")
+async def test_diet_notification(user_id: str):
+    """
+    Send a test notification to verify the user's notification setup.
+    """
+    try:
+        # Get user's diet notifications
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        doc = user_notifications_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="No diet notifications found for this user")
+        
+        data = doc.to_dict()
+        notifications = data.get("diet_notifications", [])
+        
+        if not notifications:
+            raise HTTPException(status_code=404, detail="No diet notifications found")
+        
+        # Send test notification using the first notification
+        test_notification = notifications[0]
+        success = diet_notification_service.send_immediate_notification(user_id, test_notification)
+        
+        if success:
+            return {
+                "message": "Test notification sent successfully",
+                "notification": test_notification
+            }
+        else:
+            # Return a more informative error message
+            return {
+                "message": "Test notification prepared but not sent (no notification token found)",
+                "notification": test_notification,
+                "warning": "User needs to enable notifications in the app settings"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error sending test notification for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send test notification: {e}")
 
 # Include the router in the main app
 app.include_router(api_router)
