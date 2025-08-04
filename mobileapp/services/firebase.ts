@@ -10,6 +10,7 @@ import {
   APP_ID 
 } from '@env';
 import * as Notifications from 'expo-notifications';
+import { logger } from '../utils/logger';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -38,7 +39,12 @@ if (!firebase.apps.length) {
 export const auth = firebase.auth();
 export const firestore = firebase.firestore();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
-export default firebase; 
+
+// Configure Google Sign-In
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
+
+export default firebase;
 
 export async function registerForPushNotificationsAsync() {
   let token;
@@ -50,11 +56,11 @@ export async function registerForPushNotificationsAsync() {
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
+      logger.log('Failed to get push token for push notification!');
       return;
     }
     token = (await Notifications.getExpoPushTokenAsync()).data;
-    console.log('Expo push token:', token);
+    logger.log('Expo push token:', token);
     
     // Save token to Firestore
     const user = auth.currentUser;
@@ -62,10 +68,10 @@ export async function registerForPushNotificationsAsync() {
       await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
         expoPushToken: token 
       }, { merge: true });
-      console.log('Saved expoPushToken to Firestore');
+      logger.log('Saved expoPushToken to Firestore');
     }
   } catch (e) {
-    console.log('Error registering for push notifications:', e);
+    logger.log('Error registering for push notifications:', e);
   }
   return token;
 }
@@ -73,15 +79,15 @@ export async function registerForPushNotificationsAsync() {
 // Add notification listener for diet notifications
 export function setupDietNotificationListener() {
   const subscription = Notifications.addNotificationReceivedListener(notification => {
-    console.log('Notification received:', notification);
+    logger.log('Notification received:', notification);
     
     // Handle diet-related notifications
     const data = notification.request.content.data;
     if (data?.type === 'new_diet') {
-      console.log('New diet notification received for user:', data.userId);
+      logger.log('New diet notification received for user:', data.userId);
       // You can add custom handling here if needed
     } else if (data?.type === 'diet_reminder') {
-      console.log('Diet reminder notification received for dietician');
+      logger.log('Diet reminder notification received for dietician');
       // You can add custom handling here if needed
     }
   });

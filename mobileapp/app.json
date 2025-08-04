@@ -1,11 +1,10 @@
 {
   "expo": {
     "name": "Nutricious4u",
-    "displayName": "Nutricious4u",
     "slug": "mobileapp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.jpeg",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -19,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.jpeg",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -29,8 +28,14 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "nutricious4u",
+    "owner": "rehantaneja",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/56c008a1-a0af-423d-b407-f55c95410861"
+    },
     "plugins": [
-      "expo-notifications",
       [
         "expo-build-properties",
         {
@@ -41,7 +46,19 @@
             "googleServicesFile": "./GoogleService-Info.plist"
           }
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff"
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "56c008a1-a0af-423d-b407-f55c95410861"
+      }
+    }
   }
 }

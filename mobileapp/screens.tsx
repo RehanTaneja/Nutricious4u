@@ -212,14 +212,17 @@ const LoginSignupScreen = () => {
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
-  WebBrowser.maybeCompleteAuthSession();
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: Platform.select({
-      android: '383526478160-29on25eqdhqukfukt4uirp4iqjdbeor4.apps.googleusercontent.com',
-      ios: '383526478160-em6g7gb6qov60mds6aanjfg1r7rqbqer.apps.googleusercontent.com',
-      default: '383526478160-e8eq7b8pr1bslp6tmbbs8b8sdno0jt12.apps.googleusercontent.com', // Optional: for Expo Go/dev
-    }),
-  });
+  // Google Sign-In using Firebase
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleError(null);
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await firebase.auth().signInWithPopup(provider);
+      // User signed in successfully
+    } catch (error: any) {
+      setGoogleError(error.message || 'Google sign-in failed.');
+    }
+  };
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
@@ -228,20 +231,7 @@ const LoginSignupScreen = () => {
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [phoneConfirm, setPhoneConfirm] = useState<any>(null);
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      if (id_token) {
-        const credential = firebase.auth.GoogleAuthProvider.credential(id_token);
-        firebase.auth().signInWithCredential(credential)
-          .catch((error) => {
-            setGoogleError(error.message || 'Google sign-in failed.');
-          });
-      }
-    } else if (response?.type === 'error') {
-      setGoogleError('Google sign-in was cancelled or failed.');
-    }
-  }, [response]);
+
 
   useEffect(() => {
     // Check for saved credentials and auto-login if present
@@ -599,11 +589,7 @@ const LoginSignupScreen = () => {
                   shadowRadius: 4,
                   elevation: 4,
                 }}
-                disabled={!request}
-                onPress={() => {
-                  setGoogleError(null);
-                  promptAsync();
-                }}
+                onPress={handleGoogleSignIn}
               >
                 <Text style={{ color: COLORS.text, fontWeight: 'bold', fontSize: 16 }}>Sign in with Google</Text>
               </TouchableOpacity>
@@ -2072,7 +2058,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
     setError('');
     setSearchResults([]);
     try {
-      // Use the new backend endpoint for USDA search
+      // Use the backend endpoint for food search
       const response = await fetch(`${API_URL}/food/search?query=${encodeURIComponent(searchQuery)}`);
       if (!response.ok) throw new Error('Failed to fetch food data.');
       const data = await response.json();

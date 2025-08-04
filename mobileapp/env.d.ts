@@ -6,4 +6,5 @@ declare module '@env' {
     export const MESSAGING_SENDER_ID: string;
     export const APP_ID: string;
     export const GEMINI_API_KEY: string;
+    export const PRODUCTION_BACKEND_URL: string;
   }

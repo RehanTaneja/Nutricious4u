@@ -1,26 +1,37 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { PRODUCTION_BACKEND_URL } from '@env';
+import { logger } from '../utils/logger';
 
+// Environment-based API URL configuration
 let apiHost = 'localhost';
 
-if (Constants.manifest?.debuggerHost) {
-  apiHost = Constants.manifest.debuggerHost.split(':')[0];
-  console.log('[API] Using debuggerHost IP:', apiHost);
-} else if (Constants.expoConfig?.hostUri) {
-  apiHost = Constants.expoConfig.hostUri.split(':')[0];
-  console.log('[API] Using expoConfig.hostUri IP:', apiHost);
-}
+// For production builds, use environment variable or default to your production backend
+if (__DEV__) {
+  // Development: Use localhost or LAN IP
+  if (Constants.manifest?.debuggerHost) {
+    apiHost = Constants.manifest.debuggerHost.split(':')[0];
+    logger.log('[API] Using debuggerHost IP:', apiHost);
+  } else if (Constants.expoConfig?.hostUri) {
+    apiHost = Constants.expoConfig.hostUri.split(':')[0];
+    logger.log('[API] Using expoConfig.hostUri IP:', apiHost);
+  }
 
-// Fallback: If still localhost or 127.0.0.1, use a common LAN IP
-if (apiHost === 'localhost' || apiHost === '127.0.0.1') {
-  // Try to get the actual IP from the logs or use a common one
-  apiHost = '172.16.0.28'; // Based on the logs showing this IP
-  console.log('[API] Fallback to LAN IP:', apiHost);
+  // Fallback: If still localhost or 127.0.0.1, use a common LAN IP
+  if (apiHost === 'localhost' || apiHost === '127.0.0.1') {
+    apiHost = '172.16.0.28'; // Based on the logs showing this IP
+    logger.log('[API] Fallback to LAN IP:', apiHost);
+  }
+} else {
+  // Production: Use environment variable or a proper production URL
+  // You should set PRODUCTION_BACKEND_URL in your .env file for production
+  apiHost = PRODUCTION_BACKEND_URL || 'your-production-backend-url.com';
+  logger.log('[API] Using production backend:', apiHost);
 }
 
 export const API_URL = `http://${apiHost}:8000/api`;
-console.log('[API] Final API_URL:', API_URL);
+logger.log('[API] Final API_URL:', API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
@@ -34,10 +45,31 @@ const api = axios.create({
 api.interceptors.response.use(
   response => response,
   error => {
-    console.log('[API] Axios error:', error);
-    if (error.message === 'Network Error') {
-      console.error('Network Error - Please check your connection or the server status');
+    logger.log('[API] Axios error:', error);
+    if (error.message === 'Network Error' || error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+      logger.error('Network Error - Backend server is not available');
+      // Return a mock response to prevent app crashes
+      return Promise.resolve({ 
+        data: { 
+          error: 'Backend not available',
+          message: 'The backend server is not currently available. Please ensure your backend is deployed and accessible.',
+          isBackendError: true
+        }, 
+        status: 503 
+      });
     }
+    return Promise.reject(error);
+  }
+);
+
+// Add request interceptor for better error handling
+api.interceptors.request.use(
+  config => {
+    logger.log('[API] Making request to:', config.url);
+    return config;
+  },
+  error => {
+    logger.log('[API] Request error:', error);
     return Promise.reject(error);
   }
 );
@@ -120,12 +152,12 @@ export async function searchFood(query: string): Promise<FoodItem[]> {
 
 export const logFood = async (userId: string, foodName: string, servingSize: string = "100") => {
   try {
-    console.log('[logFood] Request payload:', { userId, foodName, servingSize });
+    logger.log('[logFood] Request payload:', { userId, foodName, servingSize });
     const response = await api.post('/food/log', { userId, foodName, servingSize });
-    console.log('[logFood] Response:', response.data);
+    logger.log('[logFood] Response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('[logFood] Error:', error);
+    logger.error('[logFood] Error:', error);
     throw error;
   }
 };
@@ -145,18 +177,18 @@ export const logWorkout = async (workoutData: {
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[logWorkout] Attempt ${attempt}/${maxRetries} - Request payload:`, workoutData);
+      logger.log(`[logWorkout] Attempt ${attempt}/${maxRetries} - Request payload:`, workoutData);
       const response = await api.post('/workout/log', workoutData);
-      console.log('[logWorkout] Response:', response.data);
+      logger.log('[logWorkout] Response:', response.data);
       return response.data;
     } catch (error: any) {
       lastError = error;
-      console.error(`[logWorkout] Attempt ${attempt} failed:`, error);
+      logger.error(`[logWorkout] Attempt ${attempt} failed:`, error);
       
       // If it's a timeout or network error, retry
       if (error.code === 'ECONNABORTED' || error.message === 'Network Error') {
         if (attempt < maxRetries) {
-          console.log(`[logWorkout] Retrying in ${attempt * 1000}ms...`);
+          logger.log(`[logWorkout] Retrying in ${attempt * 1000}ms...`);
           await new Promise(resolve => setTimeout(resolve, attempt * 1000));
           continue;
         }
@@ -168,20 +200,20 @@ export const logWorkout = async (workoutData: {
   }
   
   // If all attempts failed, try a fallback approach
-  console.log('[logWorkout] All attempts failed, trying fallback...');
+  logger.log('[logWorkout] All attempts failed, trying fallback...');
   try {
     // Try with a simpler endpoint or different approach
     const fallbackResponse = await api.post('/api/workouts/log', {
       workout_id: workoutData.exerciseId,
       duration: workoutData.duration
     });
-    console.log('[logWorkout] Fallback response:', fallbackResponse.data);
+    logger.log('[logWorkout] Fallback response:', fallbackResponse.data);
     return {
       ...workoutData,
       calories: fallbackResponse.data.calories_burned || 100
     };
   } catch (fallbackError) {
-    console.error('[logWorkout] Fallback also failed:', fallbackError);
+    logger.error('[logWorkout] Fallback also failed:', fallbackError);
     throw lastError; // Throw the original error
   }
 };
@@ -204,12 +236,12 @@ export interface LogSummaryResponse {
 
 export const getLogSummary = async (userId: string): Promise<LogSummaryResponse> => {
   try {
-    console.log('[getLogSummary] Request for userId:', userId);
+    logger.log('[getLogSummary] Request for userId:', userId);
     const response = await api.get(`/food/log/summary/${userId}`);
-    console.log('[getLogSummary] Response:', response.data);
+    logger.log('[getLogSummary] Response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('[getLogSummary] Error:', error);
+    logger.error('[getLogSummary] Error:', error);
     throw error;
   }
 }
@@ -220,7 +252,7 @@ export const createUserProfile = async (profile: UserProfile): Promise<UserProfi
     const response = await axios.post(`${API_URL}/users/profile`, profile);
     return response.data;
   } catch (error) {
-    console.error('Error creating user profile:', error);
+    logger.error('Error creating user profile:', error);
     throw error;
   }
 };
@@ -234,7 +266,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       // No profile exists for this user
       return null;
     }
-    console.error('Error getting user profile:', error);
+    logger.error('Error getting user profile:', error);
     throw error;
   }
 }
@@ -244,7 +276,7 @@ export const updateUserProfile = async (userId: string, profileUpdate: UpdateUse
     const response = await axios.patch(`${API_URL}/users/${userId}/profile`, profileUpdate);
     return response.data;
   } catch (error) {
-    console.error('Error updating user profile:', error);
+    logger.error('Error updating user profile:', error);
     throw error;
   }
 };
@@ -275,7 +307,7 @@ export const sendChatbotMessage = async (
     });
     return response.data.bot_message;
   } catch (error) {
-    console.error('[sendChatbotMessage] Error:', error);
+    logger.error('[sendChatbotMessage] Error:', error);
     throw error;
   }
 };

@@ -1,15 +1,22 @@
 rules_version = '2';
-
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow diet PDF uploads and downloads
-    match /diets/{userId}/{fileName} {
-      allow read, write: if true; // Allow public access for diet PDFs
+    // Users can upload their own diet PDFs
+    match /diet_pdfs/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
     }
     
-    // Default rule - deny all other access
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Users can upload their own profile images
+    match /profile_images/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
+    }
+    
+    // Dietician can access all diet PDFs
+    match /diet_pdfs/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true;
     }
   }
 }

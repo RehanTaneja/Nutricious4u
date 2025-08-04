@@ -84,6 +84,7 @@ export default function App() {
   const [forceReload, setForceReload] = useState(0);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribe: any;
@@ -91,110 +92,123 @@ export default function App() {
     let dietNotificationSubscription: any;
     
     const checkAuthAndProfile = async () => {
-      setCheckingAuth(true);
-      
-      // Register for push notifications
-      await registerForPushNotificationsAsync();
-      
-      // Set up diet notification listener
-      dietNotificationSubscription = setupDietNotificationListener();
-      
-      unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-        console.log('[AuthStateChanged] firebaseUser:', firebaseUser);
-        if (firebaseUser) {
-          setUser(firebaseUser);
-          setCheckingProfile(true);
+      try {
+        setCheckingAuth(true);
+        setError(null);
+        
+        // Register for push notifications
+        await registerForPushNotificationsAsync();
+        
+        // Set up diet notification listener
+        dietNotificationSubscription = setupDietNotificationListener();
+        
+        unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
           try {
-            // Always fetch Firestore user doc
-            const userDocRef = firestore.collection('users').doc(firebaseUser.uid);
-            let userDoc = await userDocRef.get();
-            let userData = userDoc.data();
-            console.log('[Dietician Debug] userDoc.exists:', userDoc.exists, 'userData:', userData);
-            // If not present, create for dietician
-            if (!userDoc.exists && firebaseUser.email === 'nutricious4u@gmail.com') {
-              await userDocRef.set({
-                isDietician: true,
-                firstName: 'Ekta',
-                lastName: 'Taneja',
-                email: firebaseUser.email
-              });
-              userDoc = await userDocRef.get();
-              userData = userDoc.data();
-              setForceReload(x => x + 1); // force re-render
-              console.log('[Dietician Debug] Created dietician userDoc:', userData);
-            }
-            const isDieticianAccount = !!userData?.isDietician;
-            setIsDietician(isDieticianAccount);
-            // Debug log
-            console.log('[Dietician Check]', {
-              email: firebaseUser.email,
-              isDieticianAccount,
-              userData,
-              hasCompletedQuiz,
-              checkingAuth,
-              checkingProfile
-            });
-            
-            // Set up real-time notification listener for non-dietician users
-            if (!isDieticianAccount) {
-              notificationUnsubscribe = firestore
-                .collection('notifications')
-                .where('userId', '==', firebaseUser.uid)
-                .where('read', '==', false)
-                .onSnapshot(snapshot => {
-                  snapshot.docChanges().forEach(change => {
-                    if (change.type === 'added') {
-                      const notification = change.doc.data();
-                      // Mark notification as read immediately to prevent re-triggering
-                      firestore.collection('notifications').doc(change.doc.id).update({
-                        read: true
-                      });
-                      
-                      setNotificationMessage(notification.message);
-                      setShowNotification(true);
-                    }
-                  });
-                }, error => {
-                  console.error('Error listening to notifications:', error);
-                });
-            }
-            
-            // Dietician skips quiz
-            if (isDieticianAccount) {
-              setHasCompletedQuiz(true);
-              console.log('[Dietician Debug] Skipping quiz for dietician');
-            } else {
-              const profile = await getUserProfile(firebaseUser.uid);
-              const isQuizComplete = !!(profile && profile.currentWeight && profile.height);
-              setHasCompletedQuiz(isQuizComplete);
-              await AsyncStorage.setItem('hasCompletedQuiz', isQuizComplete ? 'true' : 'false');
-              console.log('[Dietician Debug] User quiz status:', isQuizComplete);
-            }
-          } catch (e) {
-            setHasCompletedQuiz(false);
-            await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-            console.log('[Dietician Debug] Error in checkAuthAndProfile:', e);
-          }
-          setCheckingProfile(false);
-        } else {
-          setUser(null);
-          setHasCompletedQuiz(false);
-          setIsDietician(false);
-          // Only check for saved credentials and auto-login on app start, not on every logout
-          const savedEmail = await AsyncStorage.getItem('savedEmail');
-          const savedPassword = await AsyncStorage.getItem('savedPassword');
-          if (savedEmail && savedPassword) {
+          console.log('[AuthStateChanged] firebaseUser:', firebaseUser);
+          if (firebaseUser) {
+            setUser(firebaseUser);
+            setCheckingProfile(true);
             try {
-              await auth.signInWithEmailAndPassword(savedEmail, savedPassword);
-              return;
+              // Always fetch Firestore user doc
+              const userDocRef = firestore.collection('users').doc(firebaseUser.uid);
+              let userDoc = await userDocRef.get();
+              let userData = userDoc.data();
+              console.log('[Dietician Debug] userDoc.exists:', userDoc.exists, 'userData:', userData);
+              // If not present, create for dietician
+              if (!userDoc.exists && firebaseUser.email === 'nutricious4u@gmail.com') {
+                await userDocRef.set({
+                  isDietician: true,
+                  firstName: 'Ekta',
+                  lastName: 'Taneja',
+                  email: firebaseUser.email
+                });
+                userDoc = await userDocRef.get();
+                userData = userDoc.data();
+                setForceReload(x => x + 1); // force re-render
+                console.log('[Dietician Debug] Created dietician userDoc:', userData);
+              }
+              const isDieticianAccount = !!userData?.isDietician;
+              setIsDietician(isDieticianAccount);
+              // Debug log
+              console.log('[Dietician Check]', {
+                email: firebaseUser.email,
+                isDieticianAccount,
+                userData,
+                hasCompletedQuiz,
+                checkingAuth,
+                checkingProfile
+              });
+              
+              // Set up real-time notification listener for non-dietician users
+              if (!isDieticianAccount) {
+                notificationUnsubscribe = firestore
+                  .collection('notifications')
+                  .where('userId', '==', firebaseUser.uid)
+                  .where('read', '==', false)
+                  .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                      if (change.type === 'added') {
+                        const notification = change.doc.data();
+                        // Mark notification as read immediately to prevent re-triggering
+                        firestore.collection('notifications').doc(change.doc.id).update({
+                          read: true
+                        });
+                        
+                        setNotificationMessage(notification.message);
+                        setShowNotification(true);
+                      }
+                    });
+                  }, error => {
+                    console.error('Error listening to notifications:', error);
+                  });
+              }
+              
+              // Dietician skips quiz
+              if (isDieticianAccount) {
+                setHasCompletedQuiz(true);
+                console.log('[Dietician Debug] Skipping quiz for dietician');
+              } else {
+                const profile = await getUserProfile(firebaseUser.uid);
+                const isQuizComplete = !!(profile && profile.currentWeight && profile.height);
+                setHasCompletedQuiz(isQuizComplete);
+                await AsyncStorage.setItem('hasCompletedQuiz', isQuizComplete ? 'true' : 'false');
+                console.log('[Dietician Debug] User quiz status:', isQuizComplete);
+              }
             } catch (e) {
-              // Auto-login failed, proceed to show login screen.
-              console.log('[Dietician Debug] Auto-login failed:', e);
+              setHasCompletedQuiz(false);
+              await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+              console.log('[Dietician Debug] Error in checkAuthAndProfile:', e);
+            }
+            setCheckingProfile(false);
+          } else {
+            setUser(null);
+            setHasCompletedQuiz(false);
+            setIsDietician(false);
+            // Only check for saved credentials and auto-login on app start, not on every logout
+            const savedEmail = await AsyncStorage.getItem('savedEmail');
+            const savedPassword = await AsyncStorage.getItem('savedPassword');
+            if (savedEmail && savedPassword) {
+              try {
+                await auth.signInWithEmailAndPassword(savedEmail, savedPassword);
+                return;
+              } catch (e) {
+                // Auto-login failed, proceed to show login screen.
+                console.log('[Dietician Debug] Auto-login failed:', e);
+              }
             }
           }
+          setCheckingAuth(false);
+        } catch (innerError) {
+          console.error('Error in auth state change:', innerError);
+          setCheckingAuth(false);
+          setCheckingProfile(false);
         }
-        setCheckingAuth(false);
       });
+      } catch (error) {
+        console.error('Error in checkAuthAndProfile:', error);
+        setCheckingAuth(false);
+        setCheckingProfile(false);
+      }
     };
     
     checkAuthAndProfile();

@@ -152,8 +152,7 @@ logger = logging.getLogger(__name__)
 env_path = Path(__file__).parent / '.env'
 load_dotenv(env_path)
 
-# USDA API Key only
-USDA_API_KEY = os.environ.get('USDA_API_KEY')
+
 
 # Vertex AI Gemini setup
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -306,31 +305,7 @@ async def get_status_checks():
         logger.error(f"Error fetching status checks: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch status checks")
 
-@api_router.get("/food/search", response_model=FoodSearchResponse)
-async def usda_food_search(query: str = Query(..., min_length=1)):
-    """Search for foods using the USDA FoodData Central API."""
-    api_key = USDA_API_KEY
-    url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-    params = {
-        "api_key": api_key,
-        "query": query,
-        "pageSize": 10
-    }
-    resp = requests.get(url, params=params)
-    resp.raise_for_status()
-    data = resp.json()
-    foods = []
-    for item in data.get("foods", []):
-        nutrients = {n["nutrientName"].lower(): n["value"] for n in item.get("foodNutrients", [])}
-        food_item = FoodItem(
-            name=item["description"].title(),
-            calories=nutrients.get("energy", 0),
-            protein=nutrients.get("protein", 0),
-            fat=nutrients.get("total lipid (fat)", 0),
-            per_100g=True
-        )
-        foods.append(food_item)
-    return FoodSearchResponse(foods=foods)
+
 
 @api_router.post("/food/log", response_model=FoodLog)
 async def log_food_item(request: FoodLogRequest):
