@@ -9,54 +9,115 @@ import json
 from datetime import datetime, timedelta
 
 # Initialize Firebase using environment variables
-try:
-    # Check if we have the service account credentials in environment variables
-    service_account_info = {
-        "type": "service_account",
-        "project_id": os.getenv('FIREBASE_PROJECT_ID'),
-        "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
-        "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
-        "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
-        "client_id": os.getenv('FIREBASE_CLIENT_ID'),
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL'),
-        "universe_domain": "googleapis.com"
-    }
-    
-    # If environment variables are not set, try to use the file
-    if not service_account_info.get('project_id'):
-        current_dir = os.path.dirname(__file__)
-        cred_path = os.path.abspath(os.path.join(current_dir, 'firebase_service_account.json'))
+def initialize_firebase():
+    """Initialize Firebase with proper error handling and fallback mechanisms"""
+    try:
+        print("🔥 Initializing Firebase...")
         
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-        else:
-            raise FileNotFoundError(f"Service account key not found at the expected path: {cred_path}")
-    else:
+        # Check if we have the service account credentials in environment variables
+        service_account_info = {
+            "type": "service_account",
+            "project_id": os.getenv('FIREBASE_PROJECT_ID'),
+            "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
+            "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+            "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
+            "client_id": os.getenv('FIREBASE_CLIENT_ID'),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL'),
+            "universe_domain": "googleapis.com"
+        }
+        
+        print(f"📋 Firebase Project ID: {service_account_info['project_id']}")
+        print(f"📧 Firebase Client Email: {service_account_info['client_email']}")
+        print(f"🔑 Firebase Private Key ID: {service_account_info['private_key_id']}")
+        print(f"🔐 Firebase Private Key: {'*' * min(len(service_account_info['private_key']), 20)}...")
+        
+        # Validate required fields
+        required_fields = ['project_id', 'private_key', 'client_email', 'private_key_id']
+        missing_fields = [field for field in required_fields if not service_account_info.get(field)]
+        
+        if missing_fields:
+            print(f"⚠️  Missing required Firebase environment variables: {missing_fields}")
+            raise ValueError(f"Missing required Firebase environment variables: {missing_fields}")
+        
+        # Ensure private key is properly formatted
+        private_key = service_account_info['private_key']
+        if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+            print("⚠️  Private key doesn't start with proper header, attempting to fix...")
+            # Try to fix the private key format
+            if '-----BEGIN PRIVATE KEY-----' in private_key:
+                # Extract the key content
+                start = private_key.find('-----BEGIN PRIVATE KEY-----')
+                end = private_key.find('-----END PRIVATE KEY-----') + len('-----END PRIVATE KEY-----')
+                private_key = private_key[start:end]
+            else:
+                # Try to wrap the key properly
+                private_key = f"-----BEGIN PRIVATE KEY-----\n{private_key}\n-----END PRIVATE KEY-----"
+        
+        service_account_info['private_key'] = private_key
+        
+        print("✅ Using environment variables for Firebase")
         cred = credentials.Certificate(service_account_info)
-    
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-diet-storage')
-    })
-    db = firestore.client()
-    bucket = storage.bucket()
-    print("Firebase initialized successfully.")
-except Exception as e:
-    print(f"!!!!!!!!!! FIREBASE INITIALIZATION FAILED !!!!!!!!!!")
-    print(f"Failed to initialize Firebase: {e}")
+        
+        # Initialize Firebase app
+        firebase_admin.initialize_app(cred, {
+            'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-diet-storage')
+        })
+        
+        db = firestore.client()
+        bucket = storage.bucket()
+        print("✅ Firebase initialized successfully.")
+        return db, bucket
+        
+    except Exception as e:
+        print(f"!!!!!!!!!! FIREBASE INITIALIZATION FAILED !!!!!!!!!!")
+        print(f"Failed to initialize Firebase: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try fallback to file-based credentials
+        try:
+            print("🔄 Trying fallback to file-based credentials...")
+            current_dir = os.path.dirname(__file__)
+            cred_path = os.path.abspath(os.path.join(current_dir, 'firebase_service_account.json'))
+            
+            if os.path.exists(cred_path):
+                print(f"📄 Using service account file: {cred_path}")
+                cred = credentials.Certificate(cred_path)
+                firebase_admin.initialize_app(cred, {
+                    'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-diet-storage')
+                })
+                db = firestore.client()
+                bucket = storage.bucket()
+                print("✅ Firebase initialized successfully with file-based credentials.")
+                return db, bucket
+            else:
+                print(f"❌ Service account file not found at: {cred_path}")
+                return None, None
+        except Exception as fallback_error:
+            print(f"❌ Fallback initialization also failed: {fallback_error}")
+            return None, None
+
+# Initialize Firebase at module level
+db, bucket = initialize_firebase()
+
+# Check if initialization was successful
+if db is None or bucket is None:
+    print("❌ Firebase initialization failed completely")
+    # Don't raise exception here, let the application start but handle errors in endpoints
     db = None
     bucket = None
-
-if db is None or bucket is None:
-    raise HTTPException(status_code=500, detail="Firestore or Storage is not initialized. Check server logs for details.")
 
 # --- Diet PDF Upload Helper ---
 def upload_diet_pdf(user_id: str, file_data: bytes, filename: str) -> str:
     """
     Uploads a diet PDF to Firebase Storage for a user and returns the download URL.
     """
+    if db is None or bucket is None:
+        raise HTTPException(status_code=500, detail="Firebase is not initialized. Please check server configuration.")
+    
     try:
         print(f"Attempting to upload PDF for user {user_id} with filename {filename}")
         blob_path = f"diets/{user_id}/{filename}"
@@ -97,6 +158,9 @@ def list_non_dietician_users():
     """
     Returns a list of user profiles where isDietician is not True.
     """
+    if db is None:
+        raise HTTPException(status_code=500, detail="Firebase is not initialized. Please check server configuration.")
+    
     try:
         users_ref = db.collection("user_profiles")
         users = users_ref.where("isDietician", "!=", True).stream()
@@ -107,6 +171,10 @@ def list_non_dietician_users():
 
 # --- Get User Notification Token ---
 def get_user_notification_token(user_id: str) -> str:
+    if db is None:
+        print("Firebase not initialized, cannot get notification token")
+        return None
+    
     try:
         doc = db.collection("user_profiles").document(user_id).get()
         if not doc.exists:
@@ -168,6 +236,10 @@ def get_dietician_notification_token() -> str:
     """
     Get the notification token for the dietician account
     """
+    if db is None:
+        print("Firebase not initialized, cannot get dietician notification token")
+        return None
+    
     try:
         # Find the dietician user
         users_ref = db.collection("user_profiles")
@@ -187,6 +259,10 @@ def check_users_with_one_day_remaining():
     """
     Check all users and notify dietician if any user has 1 day remaining
     """
+    if db is None:
+        print("Firebase not initialized, cannot check users with one day remaining")
+        return []
+    
     try:
         users_ref = db.collection("user_profiles")
         users = users_ref.where("isDietician", "!=", True).stream()

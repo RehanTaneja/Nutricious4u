@@ -9,9 +9,24 @@ from datetime import datetime, timedelta
 import asyncio
 import json
 from services.health_platform import HealthPlatformFactory
-from services.firebase_client import db as firestore_db, bucket
-# Add import for diet PDF upload
-from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
+
+# Import Firebase with error handling
+try:
+    from services.firebase_client import db as firestore_db, bucket
+    from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
+    FIREBASE_AVAILABLE = True
+    print("✅ Firebase client imported successfully")
+except Exception as e:
+    print(f"⚠️  Firebase client import failed: {e}")
+    firestore_db = None
+    bucket = None
+    upload_diet_pdf = None
+    list_non_dietician_users = None
+    get_user_notification_token = None
+    send_push_notification = None
+    check_users_with_one_day_remaining = None
+    FIREBASE_AVAILABLE = False
+
 # Add import for PDF RAG service
 from services.pdf_rag_service import pdf_rag_service
 # Add import for diet notification service
@@ -25,6 +40,15 @@ from google.generativeai.generative_models import GenerativeModel
 from google.generativeai.client import configure
 from google.generativeai.types import ContentDict
 import tempfile
+
+# Helper function to check Firebase availability
+def check_firebase_availability():
+    """Check if Firebase is available and return appropriate error response if not"""
+    if not FIREBASE_AVAILABLE or firestore_db is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Firebase service is currently unavailable. Please try again later."
+        )
 
 # Define all required Pydantic models before any usage
 class StatusCheck(BaseModel):
@@ -152,12 +176,28 @@ logger = logging.getLogger(__name__)
 env_path = Path(__file__).parent / '.env'
 load_dotenv(env_path)
 
+# Add startup logging
+print("🚀 Starting Nutricious4u Backend Server...")
+print(f"📁 Current directory: {os.getcwd()}")
+print(f"🔧 Environment file path: {env_path}")
+print(f"📦 Environment file exists: {env_path.exists()}")
 
+# Check critical environment variables
+critical_vars = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY']
+for var in critical_vars:
+    value = os.getenv(var)
+    if value:
+        print(f"✅ {var}: {'*' * min(len(value), 10)}...")
+    else:
+        print(f"❌ {var}: NOT SET")
 
 # Vertex AI Gemini setup
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     configure(api_key=GEMINI_API_KEY)
+    print("✅ Gemini API configured")
+else:
+    print("⚠️  Gemini API key not found")
 
 async def get_nutrition_from_gemini(food_name, quantity):
     if not GEMINI_API_KEY:
@@ -492,6 +532,7 @@ async def get_workout_log_summary(user_id: str):
 @api_router.post("/users/profile", response_model=UserProfile)
 async def create_user_profile(profile: UserProfile):
     """Create a new user profile."""
+    check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
         profile_dict = profile.dict()
@@ -525,6 +566,7 @@ async def create_user_profile(profile: UserProfile):
 @api_router.get("/users/{user_id}/profile", response_model=UserProfile)
 async def get_user_profile(user_id: str):
     """Get a user's profile."""
+    check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
@@ -552,6 +594,7 @@ async def get_user_profile(user_id: str):
 @api_router.patch("/users/{user_id}/profile", response_model=UserProfile)
 async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
     """Update a user's profile. If not found, create it with defaults."""
+    check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
         update_dict = profile_update.model_dump(exclude_unset=True)
@@ -1385,7 +1428,30 @@ app.include_router(api_router)
 # Add a health check endpoint at root level
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+    try:
+        # Basic health check
+        firebase_status = "connected" if FIREBASE_AVAILABLE and firestore_db else "disconnected"
+        
+        return {
+            "status": "healthy", 
+            "timestamp": datetime.utcnow(),
+            "firebase": firebase_status,
+            "gemini": "configured" if GEMINI_API_KEY else "not_configured",
+            "services": {
+                "firebase": firebase_status,
+                "gemini": "configured" if GEMINI_API_KEY else "not_configured",
+                "pdf_rag": "available" if 'pdf_rag_service' in globals() else "not_available",
+                "diet_notifications": "available" if 'diet_notification_service' in globals() else "not_available"
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.utcnow(),
+            "firebase": "error",
+            "gemini": "error"
+        }
 
 # Load workout data
 WORKOUTS_DATA = {
@@ -1592,4 +1658,6 @@ async def scan_food_photo(
 
 if __name__ == "__main__":
     import uvicorn
+    print("🎉 Server initialization complete!")
+    print("🌐 Starting server on http://0.0.0.0:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
