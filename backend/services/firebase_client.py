@@ -14,6 +14,24 @@ def initialize_firebase():
     try:
         print("🔥 Initializing Firebase...")
         
+        # Debug: Print all Firebase environment variables
+        print("🔍 Debugging Firebase environment variables:")
+        firebase_vars = [
+            'FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY_ID', 'FIREBASE_PRIVATE_KEY',
+            'FIREBASE_CLIENT_EMAIL', 'FIREBASE_CLIENT_ID', 'FIREBASE_CLIENT_X509_CERT_URL',
+            'FIREBASE_STORAGE_BUCKET'
+        ]
+        
+        for var in firebase_vars:
+            value = os.getenv(var)
+            if value:
+                if 'PRIVATE_KEY' in var:
+                    print(f"  ✅ {var}: {'*' * min(len(value), 20)}...")
+                else:
+                    print(f"  ✅ {var}: {value[:50]}{'...' if len(value) > 50 else ''}")
+            else:
+                print(f"  ❌ {var}: NOT SET")
+        
         # Check if we have the service account credentials in environment variables
         service_account_info = {
             "type": "service_account",
@@ -109,6 +127,10 @@ if db is None or bucket is None:
     # Don't raise exception here, let the application start but handle errors in endpoints
     db = None
     bucket = None
+
+# Export the initialize function for reinitialization
+__all__ = ['db', 'bucket', 'initialize_firebase', 'upload_diet_pdf', 'list_non_dietician_users', 
+           'get_user_notification_token', 'send_push_notification', 'check_users_with_one_day_remaining']
 
 # --- Diet PDF Upload Helper ---
 def upload_diet_pdf(user_id: str, file_data: bytes, filename: str) -> str:
