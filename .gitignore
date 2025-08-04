@@ -83,3 +83,28 @@ agenthub/agents/youtube/db
 # Mobile development
 android-sdk/ 
 backend/services/firebase_service_account.json
+
+# Security - Firebase and API keys
+**/firebase_service_account.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/*.pem
+**/*.key
+**/*_key.json
+**/*credentials.json
+**/*token.json
+**/*secret.json
+
+# Environment variables
+.env*
+*.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Private keys and certificates
+**/*private*
+**/*cert*
+**/*.p12
+**/*.pfx

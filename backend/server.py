@@ -50,30 +50,6 @@ def check_firebase_availability():
             detail="Firebase service is currently unavailable. Please try again later."
         )
 
-# Function to reinitialize Firebase after environment variables are loaded
-def reinitialize_firebase():
-    """Reinitialize Firebase after environment variables are loaded"""
-    global firestore_db, bucket, FIREBASE_AVAILABLE
-    
-    try:
-        # Import Firebase client again after environment variables are loaded
-        from services.firebase_client import initialize_firebase
-        db, bucket = initialize_firebase()
-        
-        if db is not None and bucket is not None:
-            firestore_db = db
-            FIREBASE_AVAILABLE = True
-            print("✅ Firebase reinitialized successfully with environment variables")
-            return True
-        else:
-            print("❌ Firebase reinitialization failed")
-            FIREBASE_AVAILABLE = False
-            return False
-    except Exception as e:
-        print(f"❌ Firebase reinitialization error: {e}")
-        FIREBASE_AVAILABLE = False
-        return False
-
 # Define all required Pydantic models before any usage
 class StatusCheck(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -206,14 +182,18 @@ print(f"📁 Current directory: {os.getcwd()}")
 print(f"🔧 Environment file path: {env_path}")
 print(f"📦 Environment file exists: {env_path.exists()}")
 
-# Check critical environment variables
-critical_vars = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY']
+# Check critical environment variables (only show if missing)
+critical_vars = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID']
+missing_vars = []
 for var in critical_vars:
     value = os.getenv(var)
-    if value:
-        print(f"✅ {var}: {'*' * min(len(value), 10)}...")
-    else:
-        print(f"❌ {var}: NOT SET")
+    if not value:
+        missing_vars.append(var)
+
+if missing_vars:
+    print(f"⚠️  Missing environment variables: {missing_vars}")
+else:
+    print("✅ All critical environment variables are set")
 
 # Vertex AI Gemini setup
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -223,13 +203,8 @@ if GEMINI_API_KEY:
 else:
     print("⚠️  Gemini API key not found")
 
-# Reinitialize Firebase after environment variables are loaded
-print("🔄 Reinitializing Firebase with environment variables...")
-firebase_reinitialized = reinitialize_firebase()
-if firebase_reinitialized:
-    print("✅ Firebase successfully reinitialized with environment variables")
-else:
-    print("⚠️  Firebase reinitialization failed, will use fallback or file-based credentials")
+# Firebase is now handled automatically in the firebase_client.py
+# No need for reinitialization since it has multiple fallback mechanisms
 
 async def get_nutrition_from_gemini(food_name, quantity):
     if not GEMINI_API_KEY:

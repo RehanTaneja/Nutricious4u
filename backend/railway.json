@@ -11,6 +11,8 @@
     "restartPolicyMaxRetries": 10
   },
   "files": [
-    "services/firebase_service_account.json"
+    "services/firebase_service_account.json",
+    "services/*.py",
+    "*.py"
   ]
 } 
