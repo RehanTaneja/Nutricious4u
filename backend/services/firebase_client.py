@@ -8,17 +8,35 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-# Build a robust path to the service account file
-# This starts from the location of the current file (__file__)
-# and navigates to the 'backend' directory to find the JSON file.
+# Initialize Firebase using environment variables
 try:
-    current_dir = os.path.dirname(__file__)
-    cred_path = os.path.abspath(os.path.join(current_dir, 'firebase_service_account.json'))
-
-    if not os.path.exists(cred_path):
-        raise FileNotFoundError(f"Service account key not found at the expected path: {cred_path}")
-
-    cred = credentials.Certificate(cred_path)
+    # Check if we have the service account credentials in environment variables
+    service_account_info = {
+        "type": "service_account",
+        "project_id": os.getenv('FIREBASE_PROJECT_ID'),
+        "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
+        "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+        "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
+        "client_id": os.getenv('FIREBASE_CLIENT_ID'),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL'),
+        "universe_domain": "googleapis.com"
+    }
+    
+    # If environment variables are not set, try to use the file
+    if not service_account_info.get('project_id'):
+        current_dir = os.path.dirname(__file__)
+        cred_path = os.path.abspath(os.path.join(current_dir, 'firebase_service_account.json'))
+        
+        if os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+        else:
+            raise FileNotFoundError(f"Service account key not found at the expected path: {cred_path}")
+    else:
+        cred = credentials.Certificate(service_account_info)
+    
     firebase_admin.initialize_app(cred, {
         'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'nutricious4u-diet-storage')
     })
