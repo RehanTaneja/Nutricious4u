@@ -875,50 +875,25 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [showDietPdf, setShowDietPdf] = useState(false);
 
   useEffect(() => {
-    let unsubscribe: any;
     const userId = firebase.auth().currentUser?.uid;
     if (userId) {
-      console.log('[Firestore Debug] Setting up listener for userId:', userId);
-      const userDocRef = firestore.collection('user_profiles').doc(userId);
-      console.log('[Firestore Debug] Document path:', userDocRef.path);
+      console.log('[Dashboard Debug] Setting up profile fetch for userId:', userId);
       
-      // Force a fresh read first
-      userDocRef.get().then((doc: any) => {
-        console.log('[Firestore Debug] Direct get - Document exists:', doc.exists);
-        if (doc.exists) {
-          const data = doc.data();
-          console.log('[Firestore Debug] Direct get - dietPdfUrl:', data.dietPdfUrl);
-        }
-      });
-      
-      unsubscribe = userDocRef.onSnapshot((doc: any) => {
-        console.log('[Firestore Debug] Snapshot received for document:', doc.id);
-        console.log('[Firestore Debug] Document exists:', doc.exists);
-        if (doc.exists) {
-          const data = doc.data();
-          console.log('[Firestore Debug] Received user data:', data);
-          console.log('[Firestore Debug] dietPdfUrl from Firestore:', data.dietPdfUrl);
-          setDietPdfUrl(data.dietPdfUrl || null);
-          if (data.lastDietUpload) {
-            const lastDt = new Date(data.lastDietUpload);
-            const timeDiff = Date.now() - lastDt.getTime();
-            const totalHours = 7 * 24; // 7 days in hours
-            const remainingHours = Math.max(0, totalHours - Math.floor(timeDiff / (1000 * 60 * 60)));
-            const days = Math.floor(remainingHours / 24);
-            const hours = remainingHours % 24;
-            setDaysLeft({ days, hours });
-          } else {
-            setDaysLeft(null);
+      // Fetch profile from backend instead of direct Firestore
+      const fetchProfile = async () => {
+        try {
+          const profile = await getUserProfile(userId);
+          if (profile) {
+            console.log('[Dashboard Debug] Profile fetched - dietPdfUrl:', profile.dietPdfUrl);
+            setDietPdfUrl(profile.dietPdfUrl || null);
           }
+        } catch (error) {
+          console.error('[Dashboard Debug] Error fetching profile:', error);
         }
-      }, (error: any) => {
-        console.error('[Firestore Debug] Error listening to user profile:', error);
-        setDietError('Failed to load diet info');
-      });
+      };
+      
+      fetchProfile();
     }
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
   }, []);
 
   const handleOpenDiet = () => {
@@ -2423,10 +2398,9 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
         const userId = auth.currentUser?.uid;
         if (!userId) return;
         
-        // Check if user is dietician
-        const userDoc = await firestore.collection('users').doc(userId).get();
-        const userData = userDoc.data();
-        const isDieticianAccount = !!userData?.isDietician;
+        // Check if user is dietician based on email
+        const userEmail = auth.currentUser?.email;
+        const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
         setIsDietician(isDieticianAccount);
         
         const profile = await getUserProfile(userId);

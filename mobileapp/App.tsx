@@ -7,7 +7,7 @@ import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDiet
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { getUserProfile } from './services/api';
+import { getUserProfile, createUserProfile } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
   API_KEY, 
@@ -198,26 +198,32 @@ export default function App() {
               setCheckingProfile(true);
               
               try {
-                // Always fetch Firestore user doc
-                const userDocRef = firestore.collection('users').doc(firebaseUser.uid);
-                let userDoc = await userDocRef.get();
-                let userData = userDoc.data();
-                
-                // If not present, create for dietician
-                if (!userDoc.exists && firebaseUser.email === 'nutricious4u@gmail.com') {
-                  await userDocRef.set({
-                    isDietician: true,
-                    firstName: 'Ekta',
-                    lastName: 'Taneja',
-                    email: firebaseUser.email
-                  });
-                  userDoc = await userDocRef.get();
-                  userData = userDoc.data();
-                  setForceReload(x => x + 1); // force re-render
-                }
-                
-                const isDieticianAccount = !!userData?.isDietician;
+                // Check if user is dietician by trying to get their profile from backend
+                // For dietician account, we'll handle this through the backend API
+                const isDieticianAccount = firebaseUser.email === 'nutricious4u@gmail.com';
                 setIsDietician(isDieticianAccount);
+                
+                // For dietician, we'll create their profile through the backend if needed
+                if (isDieticianAccount) {
+                  try {
+                    // Try to get existing profile first
+                    const profile = await getUserProfile(firebaseUser.uid);
+                    if (!profile) {
+                      // Create dietician profile through backend
+                      await createUserProfile({
+                        userId: firebaseUser.uid,
+                        firstName: 'Ekta',
+                        lastName: 'Taneja',
+                        age: 30,
+                        gender: 'female',
+                        email: firebaseUser.email || 'nutricious4u@gmail.com'
+                      });
+                      setForceReload(x => x + 1); // force re-render
+                    }
+                  } catch (error) {
+                    console.error('Error handling dietician profile:', error);
+                  }
+                }
                 
                 // Set up real-time notification listener for non-dietician users
                 if (!isDieticianAccount) {

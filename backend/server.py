@@ -574,14 +574,21 @@ async def create_user_profile(profile: UserProfile):
 @api_router.get("/users/{user_id}/profile", response_model=UserProfile)
 async def get_user_profile(user_id: str):
     """Get a user's profile."""
+    logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
     check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
+        logger.info(f"[PROFILE_FETCH] Querying Firestore for user_id: {user_id}")
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
         doc = await loop.run_in_executor(executor, doc_ref.get)
+        
         if not doc.exists:
+            logger.warning(f"[PROFILE_FETCH] No profile found for user_id: {user_id}")
             raise HTTPException(status_code=404, detail="User profile not found")
+        
         profile = doc.to_dict()
+        logger.info(f"[PROFILE_FETCH] Profile found for user_id: {user_id}, firstName: {profile.get('firstName', 'N/A')}")
+        
         # Filter out placeholder profiles
         is_placeholder = (
             profile.get("firstName", "User") == "User" and
@@ -589,14 +596,20 @@ async def get_user_profile(user_id: str):
             (not profile.get("email") or profile.get("email", "").endswith("@example.com"))
         )
         if is_placeholder:
-            logger.warning(f"Filtered out placeholder profile for user {user_id}: {profile}")
+            logger.warning(f"[PROFILE_FETCH] Filtered out placeholder profile for user {user_id}: {profile}")
             raise HTTPException(status_code=404, detail="User profile not found (placeholder)")
+        
+        logger.info(f"[PROFILE_FETCH] Successfully returning profile for user_id: {user_id}")
         return profile
     except Exception as e:
         # Re-raise HTTPException so FastAPI can handle it, otherwise convert to 500
         if isinstance(e, HTTPException):
+            logger.warning(f"[PROFILE_FETCH] HTTPException for user_id {user_id}: {e.detail}")
             raise
-        logger.error(f"Error getting user profile: {e}")
+        logger.error(f"[PROFILE_FETCH] Error getting user profile for user_id {user_id}: {e}")
+        logger.error(f"[PROFILE_FETCH] Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"[PROFILE_FETCH] Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to get user profile")
 
 @api_router.patch("/users/{user_id}/profile", response_model=UserProfile)
@@ -1436,6 +1449,7 @@ app.include_router(api_router)
 # Add a health check endpoint at root level
 @app.get("/health")
 async def health_check():
+    logger.info("[HEALTH_CHECK] Health check endpoint called")
     try:
         # Basic health check
         firebase_status = "connected" if FIREBASE_AVAILABLE and firestore_db else "disconnected"
