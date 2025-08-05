@@ -212,13 +212,13 @@ export default function App() {
                       // Create dietician profile through backend
                       await createUserProfile({
                         userId: firebaseUser.uid,
-                        firstName: 'Ekta',
-                        lastName: 'Taneja',
+                    firstName: 'Ekta',
+                    lastName: 'Taneja',
                         age: 30,
                         gender: 'female',
                         email: firebaseUser.email || 'nutricious4u@gmail.com'
-                      });
-                      setForceReload(x => x + 1); // force re-render
+                  });
+                  setForceReload(x => x + 1); // force re-render
                     }
                   } catch (error) {
                     console.error('Error handling dietician profile:', error);

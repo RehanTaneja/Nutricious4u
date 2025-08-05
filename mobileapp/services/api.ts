@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { PRODUCTION_BACKEND_URL } from '@env';
 import { logger } from '../utils/logger';
 
@@ -9,8 +8,6 @@ console.log('=== API CONFIG DEBUG ===');
 console.log('PRODUCTION_BACKEND_URL:', PRODUCTION_BACKEND_URL || 'MISSING');
 console.log('__DEV__:', __DEV__);
 console.log('Platform:', Platform.OS);
-console.log('Constants.manifest?.debuggerHost:', Constants.manifest?.debuggerHost);
-console.log('Constants.expoConfig?.hostUri:', Constants.expoConfig?.hostUri);
 console.log('==========================');
 
 // Environment-based API URL configuration
@@ -19,19 +16,10 @@ let port = ':8000';
 let protocol = 'http';
 
 // For production builds, use environment variable or default to your production backend
-if (__DEV__) {
-  // Development: Use localhost for Expo Go development
-  apiHost = 'localhost';
-  port = ':8000';
-  protocol = 'http';
-  logger.log('[API] Using localhost for development:', apiHost);
-} else {
-  // Production: Use Railway URL
-  apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
   port = '';
   protocol = 'https';
   logger.log('[API] Using production backend:', apiHost);
-}
 
 export const API_URL = `${protocol}://${apiHost}${port}/api`;
 logger.log('[API] Final API_URL:', API_URL);
@@ -51,7 +39,11 @@ api.interceptors.response.use(
     logger.log('[API] Axios error:', error);
     if (error.message === 'Network Error' || error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
       logger.error('Network Error - Backend server is not available');
-      // Return a mock response to prevent app crashes
+      // In production, throw the error to help with debugging
+      if (!__DEV__) {
+        return Promise.reject(error);
+      }
+      // In development, return a mock response to prevent app crashes
       return Promise.resolve({ 
         data: { 
           error: 'Backend not available',
