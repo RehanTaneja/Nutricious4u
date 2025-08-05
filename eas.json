@@ -6,13 +6,22 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "PRODUCTION_BACKEND_URL": "localhost:8000"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
+      }
     }
   },
   "submit": {

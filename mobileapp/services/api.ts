@@ -11,17 +11,27 @@ console.log('Platform:', Platform.OS);
 console.log('==========================');
 
 // Environment-based API URL configuration
-let apiHost = 'localhost';
-let port = ':8000';
-let protocol = 'http';
+const getApiUrl = (): string => {
+  if (__DEV__) {
+    // Development: Use localhost with port 8000 for local backend
+    return 'http://localhost:8000/api';
+  } else {
+    // Production: Use Railway URL (no port needed for HTTPS)
+    const baseUrl = PRODUCTION_BACKEND_URL || 'nutricious4u-production.up.railway.app';
+    
+    // Clean the URL and ensure proper format
+    let cleanUrl;
+    if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
+      cleanUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
+    } else {
+      cleanUrl = `https://${baseUrl}`; // Add https:// prefix
+    }
+    
+    return `${cleanUrl}/api`;
+  }
+};
 
-// For production builds, use environment variable or default to your production backend
-apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
-  port = '';
-  protocol = 'https';
-  logger.log('[API] Using production backend:', apiHost);
-
-export const API_URL = `${protocol}://${apiHost}${port}/api`;
+export const API_URL = getApiUrl();
 logger.log('[API] Final API_URL:', API_URL);
 
 const api = axios.create({
@@ -32,16 +42,27 @@ const api = axios.create({
   }
 });
 
-// Add response interceptor for better error handling
+// Enhanced response interceptor for better error handling
 api.interceptors.response.use(
-  response => response,
+  response => {
+    logger.log('[API] Successful response from:', response.config.url);
+    return response;
+  },
   error => {
-    logger.log('[API] Axios error:', error);
+    logger.error('[API] Request failed:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message
+    });
+
     if (error.message === 'Network Error' || error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
       logger.error('Network Error - Backend server is not available');
       // In production, throw the error to help with debugging
       if (!__DEV__) {
-        return Promise.reject(error);
+        return Promise.reject(new Error('Backend server is not available. Please check your internet connection.'));
       }
       // In development, return a mock response to prevent app crashes
       return Promise.resolve({ 
@@ -57,10 +78,15 @@ api.interceptors.response.use(
   }
 );
 
-// Add request interceptor for better error handling
+// Enhanced request interceptor for better debugging
 api.interceptors.request.use(
   config => {
-    logger.log('[API] Making request to:', config.url);
+    logger.log('[API] Making request:', {
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      baseURL: config.baseURL,
+      fullUrl: `${config.baseURL}${config.url}`
+    });
     return config;
   },
   error => {
@@ -244,7 +270,7 @@ export const getLogSummary = async (userId: string): Promise<LogSummaryResponse>
 // User Profile API calls
 export const createUserProfile = async (profile: UserProfile): Promise<UserProfile> => {
   try {
-    const response = await axios.post(`${API_URL}/users/profile`, profile);
+    const response = await api.post('/users/profile', profile);
     return response.data;
   } catch (error) {
     logger.error('Error creating user profile:', error);
@@ -254,21 +280,34 @@ export const createUserProfile = async (profile: UserProfile): Promise<UserProfi
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   try {
+    logger.log('[getUserProfile] Fetching profile for userId:', userId);
     const response = await api.get(`/users/${userId}/profile`);
+    logger.log('[getUserProfile] Success:', response.data);
     return response.data;
   } catch (error: any) {
+    logger.error('[getUserProfile] Error details:', {
+      userId,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message,
+      url: error.config?.url,
+      fullUrl: `${API_URL}/users/${userId}/profile`
+    });
+
     if (error.response && error.response.status === 404) {
-      // No profile exists for this user
+      logger.log('[getUserProfile] No profile exists for user:', userId);
       return null;
     }
-    logger.error('Error getting user profile:', error);
-    throw error;
+
+    // Re-throw the error with more context
+    throw new Error(`Failed to fetch user profile: ${error.response?.data?.message || error.message}`);
   }
 }
 
 export const updateUserProfile = async (userId: string, profileUpdate: UpdateUserProfile): Promise<UserProfile> => {
   try {
-    const response = await axios.patch(`${API_URL}/users/${userId}/profile`, profileUpdate);
+    const response = await api.patch(`/users/${userId}/profile`, profileUpdate);
     return response.data;
   } catch (error) {
     logger.error('Error updating user profile:', error);
@@ -436,4 +475,16 @@ export const listNonDieticianUsers = async () => {
   return response.data;
 };
 
-export default api; 
+// Debug function to test connection
+export const testConnection = async () => {
+  try {
+    const response = await api.get('/health');
+    logger.log('[TEST] Health check successful:', response.data);
+    return true;
+  } catch (error) {
+    logger.error('[TEST] Health check failed:', error);
+    return false;
+  }
+};
+
+export default api;
