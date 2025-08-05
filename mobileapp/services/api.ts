@@ -15,32 +15,24 @@ console.log('==========================');
 
 // Environment-based API URL configuration
 let apiHost = 'localhost';
+let port = ':8000';
+let protocol = 'http';
 
 // For production builds, use environment variable or default to your production backend
 if (__DEV__) {
-  // Development: Use localhost or LAN IP
-  if (Constants.manifest?.debuggerHost) {
-    apiHost = Constants.manifest.debuggerHost.split(':')[0];
-    logger.log('[API] Using debuggerHost IP:', apiHost);
-  } else if (Constants.expoConfig?.hostUri) {
-    apiHost = Constants.expoConfig.hostUri.split(':')[0];
-    logger.log('[API] Using expoConfig.hostUri IP:', apiHost);
-  }
-
-  // Fallback: If still localhost or 127.0.0.1, use a common LAN IP
-  if (apiHost === 'localhost' || apiHost === '127.0.0.1') {
-    apiHost = '172.16.0.28'; // Based on the logs showing this IP
-    logger.log('[API] Fallback to LAN IP:', apiHost);
-  }
+  // Development: Use localhost for Expo Go development
+  apiHost = 'localhost';
+  port = ':8000';
+  protocol = 'http';
+  logger.log('[API] Using localhost for development:', apiHost);
 } else {
   // Production: Use Railway URL
   apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+  port = '';
+  protocol = 'https';
   logger.log('[API] Using production backend:', apiHost);
 }
 
-// Use HTTPS for production, HTTP for development
-const protocol = __DEV__ ? 'http' : 'https';
-const port = __DEV__ ? ':8000' : '';
 export const API_URL = `${protocol}://${apiHost}${port}/api`;
 logger.log('[API] Final API_URL:', API_URL);
 
