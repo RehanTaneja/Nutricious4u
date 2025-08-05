@@ -112,7 +112,6 @@ export default function App() {
         }
         
         setFirebaseInitialized(true);
-        console.log('Firebase initialized successfully');
         
         // Initialize other services
         await initializeServices();
@@ -125,14 +124,14 @@ export default function App() {
 
     const initializeServices = async () => {
       try {
-        // Register for push notifications with error handling
+        // Register for push notifications
         try {
           await registerForPushNotificationsAsync();
         } catch (error) {
           console.warn('Push notification registration failed:', error);
         }
         
-        // Set up diet notification listener with error handling
+        // Set up diet notification listener
         try {
           dietNotificationSubscription = setupDietNotificationListener();
         } catch (error) {

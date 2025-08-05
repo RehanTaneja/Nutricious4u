@@ -23,42 +23,30 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Firebase configuration with fallbacks for missing env vars
+// Firebase configuration
 const firebaseConfig = {
-  apiKey: API_KEY || "your-api-key-here",
-  authDomain: AUTH_DOMAIN || "your-project.firebaseapp.com",
-  projectId: PROJECT_ID || "your-project-id",
-  storageBucket: STORAGE_BUCKET || "your-project.firebasestorage.app",
-  messagingSenderId: MESSAGING_SENDER_ID || "your-sender-id",
-  appId: APP_ID || "your-app-id"
+  apiKey: API_KEY,
+  authDomain: AUTH_DOMAIN,
+  projectId: PROJECT_ID,
+  storageBucket: STORAGE_BUCKET,
+  messagingSenderId: MESSAGING_SENDER_ID,
+  appId: APP_ID
 };
 
-// Initialize Firebase with error handling
+// Initialize Firebase
 let firebaseApp: firebase.app.App;
 
-try {
-  if (!firebase.apps.length) {
-    firebaseApp = firebase.initializeApp(firebaseConfig);
-    console.log('Firebase initialized successfully');
-  } else {
-    firebaseApp = firebase.apps[0];
-    console.log('Firebase already initialized');
-  }
-} catch (error) {
-  console.error('Failed to initialize Firebase:', error);
-  // Create a minimal Firebase app for fallback
-  if (!firebase.apps.length) {
-    firebaseApp = firebase.initializeApp({
-      apiKey: 'fallback-key',
-      authDomain: 'fallback-domain',
-      projectId: 'fallback-project',
-      storageBucket: 'fallback-bucket',
-      messagingSenderId: '123456789',
-      appId: 'fallback-app-id'
-    });
-  } else {
-    firebaseApp = firebase.apps[0];
-  }
+// Check if environment variables are available
+if (!API_KEY || !AUTH_DOMAIN || !PROJECT_ID || !STORAGE_BUCKET || !MESSAGING_SENDER_ID || !APP_ID) {
+  throw new Error('Firebase environment variables are missing. Please add them to EAS environment variables.');
+}
+
+if (!firebase.apps.length) {
+  firebaseApp = firebase.initializeApp(firebaseConfig);
+  console.log('Firebase initialized successfully');
+} else {
+  firebaseApp = firebase.apps[0];
+  console.log('Firebase already initialized');
 }
 
 export const auth = firebase.auth();
