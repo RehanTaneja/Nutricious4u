@@ -7,18 +7,18 @@ services:
     healthCheckPath: /health
     envVars:
       - key: GEMINI_API_KEY
-        value: AIzaSyDNSOV8CO_IV15t1dxokhfZShHccGF5lB0
+        value: $GEMINI_API_KEY
       - key: FIREBASE_API_KEY
-        value: AIzaSyAcuwyzmZlNdS47-4xjO_M74AkCwVgKPN0
+        value: $FIREBASE_API_KEY
       - key: FIREBASE_AUTH_DOMAIN
         value: nutricious4u-63158.firebaseapp.com
       - key: FIREBASE_PROJECT_ID
-        value: nutricious4u-63158
+        value: $FIREBASE_PROJECT_ID
       - key: FIREBASE_STORAGE_BUCKET
         value: nutricious4u-63158.firebasestorage.app
       - key: FIREBASE_MESSAGING_SENDER_ID
-        value: 383526478160
+        value: $FIREBASE_MESSAGING_SENDER_ID
       - key: FIREBASE_APP_ID
-        value: 1:383526478160:web:511c06b0bd494318068c55
+        value: $FIREBASE_APP_ID
       - key: FIREBASE_MEASUREMENT_ID
         value: G-BCJLVL4YGW 

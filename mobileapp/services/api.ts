@@ -24,13 +24,15 @@ if (__DEV__) {
     logger.log('[API] Fallback to LAN IP:', apiHost);
   }
 } else {
-  // Production: Use environment variable or a proper production URL
-  // You should set PRODUCTION_BACKEND_URL in your .env file for production
-  apiHost = PRODUCTION_BACKEND_URL || 'your-production-backend-url.com';
+  // Production: Use Railway URL
+  apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
   logger.log('[API] Using production backend:', apiHost);
 }
 
-export const API_URL = `http://${apiHost}:8000/api`;
+// Use HTTPS for production, HTTP for development
+const protocol = __DEV__ ? 'http' : 'https';
+const port = __DEV__ ? ':8000' : '';
+export const API_URL = `${protocol}://${apiHost}${port}/api`;
 logger.log('[API] Final API_URL:', API_URL);
 
 const api = axios.create({

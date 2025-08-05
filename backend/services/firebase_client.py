@@ -109,42 +109,15 @@ def initialize_firebase():
         
         # Use default values for missing environment variables
         default_client_email = f"firebase-adminsdk-fbsvc@{project_id}.iam.gserviceaccount.com"
-        default_private_key = """-----BEGIN PRIVATE KEY-----
-MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDUnYDUWCWA7eTc
-m6LNim/X7eXcwfCmK6+Ki3G08iBsysfMkUsPlIK2Yo6LtzWGaSpca8DBypR+bO6G
-ODlFiekRlQUERBLlSuxiOUhrf9nLlTKx1tcVRg/4iy0Y4Gl0QZ4AxLaun2DH9yh0
-F6QJKv/G+/nhAeOmHj4Jye+JCeKfRmqulUwdEXqc5tQPSxAFF1r1BhNQYKdd4Zq8
-PD/ytqpeF5FB2o+6oqAdRzA4EnrnLzI5E+95tLk/sbh5U6j0bHACsLqxlarSfDeR
-fJDL10O6SppK9VcPRDZrWQPDJNhSjb157t+ZqJX/Cp5H0hJbAtIpoU68t02GW/P5
-JUS9ooGdAgMBAAECggEAGJKIdmImmXdFFUsGfo9SnEfSIlimvam8XLx/fHxkS3aH
-L2kWXftZvQb4dwTKUpm6a9qHOU52qYLg8VGzqsoEzgOlRAgzD92AIt0Ade4dh4Yb
-iQqtqneBtoWtRVwATA+eWXPish1Y49t4iSxHSMj3rTFngH4Fp6gEnwB/5txl3Obi
-HvCsuC0X0E/1ZFn7pJf/fG63q6+wSTSeFku2mE3PXFAy8/Q7H8dpefVtS9DuWp8z
-K6D4oyd07ynyf2jlhudfoEpYQYpspY4p1ava0p8NjNXfhrxxx9rdauljQvpc2i7t
-m2Kw1qB+EL77l8Z1UIRvLOasLlNdVnwk4kRSHL95kQKBgQD/BZkNEStQ9xLE3ALv
-BiME8dJ00CYOsAWSWzRYf+aT+oE/P4ERYGP1dEWGV1UwH3R+9ev9MUU9GeGqhByu
-riva/eQ50uW4VWxd5f+PSjBiNBYizgCI1lwP+xwgf2NwpwHT/c9WgXKQvFPFAJ5k
-E+y+l68aMjw2FuPYiIGQF2KaMQKBgQDVbkRXjju5eRYngg3NCYuqxgterN1n4sQn
-CZMxPS1vGRnqRpU/P/2LdbqItGVxh1UbuRvauJOUOagVAn4mxMxOFin2uLEBa3e3
-rIeX8gUbI0/99gqLx+EEkjqiYCrlgni623wTyzb8WuMdFih/sgaDmf7PNDdrxLF5
-/IrZzOMXLQKBgAtgyI9YsMIQA/pchpT7hRx3XZhwoQIOwHDjONap/jOj/ZhA0RVh
-Y5RT97Yit15KSPxRJJJLXHd5bCQbeNwiUTqYEVKzIiSzSv51gI14FeiLwmETJ9rz
-FXBxF7QrethP2zkGHfYSGHZ0sJgdivOUH//w7JMSorUXGFtU29L9+BxBAoGAIpu9
-w0DSGHI1EHT7TeslVazFfTWktUrFKdtYndxguKomVKHbY6U5tNqDQ9WUuYMLXvJ2
-PNI/RALRaY687AZvZp4bceFi+mr1v7ffSNk60Lq6JuE1tpLTvw0DKv9TFWJBt3MN
-vJvwL52BRF8qdAJnIgHfmrPJ5NTBPpmf3k9l54UCgYB+E4KDfo9Z5BEd/oZ39R/s
-oCdhnZdXpeCgQDSQH+wBwXDHnk1VqyDS2UtD6xcQLVEiXY8uKFvhSft04TMRBxAs
-9MMKKpoOHZV3v3uTPMDegjF5Wj1dnWbKuZ+O+mJpzs4LynNTzCxOnS8gYyFEjw6H
-10CkLfJA/OYvZPAoBhJyZw==
------END PRIVATE KEY-----"""
+        default_private_key = os.getenv('FIREBASE_PRIVATE_KEY', '')
         
         service_account_info = {
             "type": "service_account",
             "project_id": project_id,
-            "private_key_id": "12ef6bab2ae0ca218c25477e6702e412626c10ff",
+            "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID', ''),
             "private_key": default_private_key,
             "client_email": default_client_email,
-            "client_id": "110249587534948017563",
+            "client_id": os.getenv('FIREBASE_CLIENT_ID', ''),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",

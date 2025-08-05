@@ -23,17 +23,42 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Firebase configuration with fallbacks for missing env vars
 const firebaseConfig = {
-  apiKey: API_KEY,
-  authDomain: AUTH_DOMAIN,
-  projectId: PROJECT_ID,
-  storageBucket: STORAGE_BUCKET,
-  messagingSenderId: MESSAGING_SENDER_ID,
-  appId: APP_ID,
+  apiKey: API_KEY || "AIzaSyBBRyZh9WPNNgtjYPwyvXUe6B7ER1MAyqI",
+  authDomain: AUTH_DOMAIN || "nutricious4u-63158.firebaseapp.com",
+  projectId: PROJECT_ID || "nutricious4u-63158",
+  storageBucket: STORAGE_BUCKET || "nutricious4u-63158.firebasestorage.app",
+  messagingSenderId: MESSAGING_SENDER_ID || "383526478160",
+  appId: APP_ID || "1:383526478160:android:a40de2927b92ed99068c55"
 };
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+// Initialize Firebase with error handling
+let firebaseApp: firebase.app.App;
+
+try {
+  if (!firebase.apps.length) {
+    firebaseApp = firebase.initializeApp(firebaseConfig);
+    console.log('Firebase initialized successfully');
+  } else {
+    firebaseApp = firebase.apps[0];
+    console.log('Firebase already initialized');
+  }
+} catch (error) {
+  console.error('Failed to initialize Firebase:', error);
+  // Create a minimal Firebase app for fallback
+  if (!firebase.apps.length) {
+    firebaseApp = firebase.initializeApp({
+      apiKey: 'fallback-key',
+      authDomain: 'fallback-domain',
+      projectId: 'fallback-project',
+      storageBucket: 'fallback-bucket',
+      messagingSenderId: '123456789',
+      appId: 'fallback-app-id'
+    });
+  } else {
+    firebaseApp = firebase.apps[0];
+  }
 }
 
 export const auth = firebase.auth();
@@ -62,13 +87,17 @@ export async function registerForPushNotificationsAsync() {
     token = (await Notifications.getExpoPushTokenAsync()).data;
     logger.log('Expo push token:', token);
     
-    // Save token to Firestore
-    const user = auth.currentUser;
-    if (user && token) {
-      await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
-        expoPushToken: token 
-      }, { merge: true });
-      logger.log('Saved expoPushToken to Firestore');
+    // Save token to Firestore with error handling
+    try {
+      const user = auth.currentUser;
+      if (user && token) {
+        await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
+          expoPushToken: token 
+        }, { merge: true });
+        logger.log('Saved expoPushToken to Firestore');
+      }
+    } catch (error) {
+      logger.log('Failed to save push token to Firestore:', error);
     }
   } catch (e) {
     logger.log('Error registering for push notifications:', e);
@@ -78,19 +107,27 @@ export async function registerForPushNotificationsAsync() {
 
 // Add notification listener for diet notifications
 export function setupDietNotificationListener() {
-  const subscription = Notifications.addNotificationReceivedListener(notification => {
-    logger.log('Notification received:', notification);
-    
-    // Handle diet-related notifications
-    const data = notification.request.content.data;
-    if (data?.type === 'new_diet') {
-      logger.log('New diet notification received for user:', data.userId);
-      // You can add custom handling here if needed
-    } else if (data?.type === 'diet_reminder') {
-      logger.log('Diet reminder notification received for dietician');
-      // You can add custom handling here if needed
-    }
-  });
+  try {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      logger.log('Notification received:', notification);
+      
+      // Handle diet-related notifications
+      const data = notification.request.content.data;
+      if (data?.type === 'new_diet') {
+        logger.log('New diet notification received for user:', data.userId);
+        // You can add custom handling here if needed
+      } else if (data?.type === 'diet_reminder') {
+        logger.log('Diet reminder notification received for dietician');
+        // You can add custom handling here if needed
+      }
+    });
 
-  return subscription;
+    return subscription;
+  } catch (error) {
+    logger.log('Failed to setup diet notification listener:', error);
+    // Return a dummy subscription to prevent crashes
+    return {
+      remove: () => {}
+    };
+  }
 } 

@@ -108,3 +108,21 @@ backend/services/firebase_service_account.json
 **/*cert*
 **/*.p12
 **/*.pfx
+
+# Firebase credentials
+backend/services/firebase_service_account.json
+**/firebase_service_account.json
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# API keys and secrets
+**/secrets.json
+**/credentials.json
+**/*.pem
+**/*.key
