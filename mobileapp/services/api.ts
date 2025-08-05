@@ -4,6 +4,15 @@ import Constants from 'expo-constants';
 import { PRODUCTION_BACKEND_URL } from '@env';
 import { logger } from '../utils/logger';
 
+// Debug environment variables
+console.log('=== API CONFIG DEBUG ===');
+console.log('PRODUCTION_BACKEND_URL:', PRODUCTION_BACKEND_URL || 'MISSING');
+console.log('__DEV__:', __DEV__);
+console.log('Platform:', Platform.OS);
+console.log('Constants.manifest?.debuggerHost:', Constants.manifest?.debuggerHost);
+console.log('Constants.expoConfig?.hostUri:', Constants.expoConfig?.hostUri);
+console.log('==========================');
+
 // Environment-based API URL configuration
 let apiHost = 'localhost';
 

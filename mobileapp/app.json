@@ -4,24 +4,24 @@
     "slug": "mobileapp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.jpeg",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "jsEngine": "hermes",
     "splash": {
-      "image": "./assets/logo.jpeg",
-      "resizeMode": "contain",
+      "image": "./assets/logo.png",
+      "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nutricious4u.app"
     },
-          "android": {
-        "adaptiveIcon": {
-          "foregroundImage": "./assets/logo.jpeg",
-          "backgroundColor": "#ffffff"
-        },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#ffffff"
+      },
       "edgeToEdgeEnabled": true,
       "package": "com.nutricious4u.app",
       "permissions": [
@@ -30,7 +30,8 @@
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK"
-      ]
+      ],
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -61,8 +62,8 @@
       [
         "expo-notifications",
         {
-                  "icon": "./assets/logo.jpeg",
-        "color": "#ffffff"
+          "icon": "./assets/logo.png",
+          "color": "#ffffff"
         }
       ]
     ],

@@ -23,6 +23,16 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Debug environment variables
+console.log('=== FIREBASE CONFIG DEBUG ===');
+console.log('API_KEY:', API_KEY ? `${API_KEY.substring(0, 10)}...` : 'MISSING');
+console.log('AUTH_DOMAIN:', AUTH_DOMAIN || 'MISSING');
+console.log('PROJECT_ID:', PROJECT_ID || 'MISSING');
+console.log('STORAGE_BUCKET:', STORAGE_BUCKET || 'MISSING');
+console.log('MESSAGING_SENDER_ID:', MESSAGING_SENDER_ID || 'MISSING');
+console.log('APP_ID:', APP_ID || 'MISSING');
+console.log('================================');
+
 // Firebase configuration
 const firebaseConfig = {
   apiKey: API_KEY,
@@ -33,21 +43,41 @@ const firebaseConfig = {
   appId: APP_ID
 };
 
+console.log('Firebase config object:', firebaseConfig);
+
 // Initialize Firebase
 let firebaseApp: firebase.app.App;
 
 // Check if environment variables are available
 if (!API_KEY || !AUTH_DOMAIN || !PROJECT_ID || !STORAGE_BUCKET || !MESSAGING_SENDER_ID || !APP_ID) {
-  throw new Error('Firebase environment variables are missing. Please add them to EAS environment variables.');
+  const missingVars = [];
+  if (!API_KEY) missingVars.push('API_KEY');
+  if (!AUTH_DOMAIN) missingVars.push('AUTH_DOMAIN');
+  if (!PROJECT_ID) missingVars.push('PROJECT_ID');
+  if (!STORAGE_BUCKET) missingVars.push('STORAGE_BUCKET');
+  if (!MESSAGING_SENDER_ID) missingVars.push('MESSAGING_SENDER_ID');
+  if (!APP_ID) missingVars.push('APP_ID');
+  
+  console.error('Missing Firebase environment variables:', missingVars);
+  throw new Error(`Firebase environment variables are missing: ${missingVars.join(', ')}. Please add them to EAS environment variables.`);
 }
 
-if (!firebase.apps.length) {
-  firebaseApp = firebase.initializeApp(firebaseConfig);
-  console.log('Firebase initialized successfully');
-} else {
-  firebaseApp = firebase.apps[0];
-  console.log('Firebase already initialized');
-}
+  try {
+    console.log('Checking Firebase apps length:', firebase.apps.length);
+    console.log('Firebase apps:', firebase.apps);
+    
+    if (!firebase.apps.length) {
+      console.log('Initializing Firebase app...');
+      firebaseApp = firebase.initializeApp(firebaseConfig);
+      console.log('Firebase initialized successfully');
+    } else {
+      firebaseApp = firebase.apps[0];
+      console.log('Firebase already initialized');
+    }
+  } catch (error) {
+    console.error('Firebase initialization error:', error);
+    throw new Error(`Firebase initialization failed: ${error}`);
+  }
 
 export const auth = firebase.auth();
 export const firestore = firebase.firestore();

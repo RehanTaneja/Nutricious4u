@@ -9,6 +9,15 @@ import { AppContext } from './contexts/AppContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { getUserProfile } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
+import { 
+  API_KEY, 
+  AUTH_DOMAIN, 
+  PROJECT_ID, 
+  STORAGE_BUCKET, 
+  MESSAGING_SENDER_ID, 
+  APP_ID,
+  PRODUCTION_BACKEND_URL 
+} from '@env';
 
 import {
   LoginSignupScreen,
@@ -99,31 +108,71 @@ export default function App() {
       setLoading(false);
       setCheckingAuth(false);
       setCheckingProfile(false);
-    }, 10000); // 10 second timeout
+    }, 15000); // Increased to 15 seconds
     
     const initializeApp = async () => {
       try {
-        // Check if Firebase is properly initialized
-        if (!firebase.apps.length) {
-          console.error('Firebase not initialized');
-          setError('Firebase configuration error');
+        // Debug environment variables
+        console.log('=== ENVIRONMENT VARIABLES DEBUG ===');
+        console.log('API_KEY:', API_KEY ? 'SET' : 'MISSING');
+        console.log('AUTH_DOMAIN:', AUTH_DOMAIN ? 'SET' : 'MISSING');
+        console.log('PROJECT_ID:', PROJECT_ID ? 'SET' : 'MISSING');
+        console.log('STORAGE_BUCKET:', STORAGE_BUCKET ? 'SET' : 'MISSING');
+        console.log('MESSAGING_SENDER_ID:', MESSAGING_SENDER_ID ? 'SET' : 'MISSING');
+        console.log('APP_ID:', APP_ID ? 'SET' : 'MISSING');
+        console.log('PRODUCTION_BACKEND_URL:', PRODUCTION_BACKEND_URL ? 'SET' : 'MISSING');
+        console.log('__DEV__:', __DEV__);
+        console.log('=====================================');
+        
+        // Test environment variable loading
+        const envTest = {
+          API_KEY: !!API_KEY,
+          AUTH_DOMAIN: !!AUTH_DOMAIN,
+          PROJECT_ID: !!PROJECT_ID,
+          STORAGE_BUCKET: !!STORAGE_BUCKET,
+          MESSAGING_SENDER_ID: !!MESSAGING_SENDER_ID,
+          APP_ID: !!APP_ID,
+          PRODUCTION_BACKEND_URL: !!PRODUCTION_BACKEND_URL
+        };
+        
+        const missingVars = Object.entries(envTest)
+          .filter(([key, value]) => !value)
+          .map(([key]) => key);
+        
+        if (missingVars.length > 0) {
+          console.error('Missing environment variables:', missingVars);
+          setError(`Missing environment variables: ${missingVars.join(', ')}`);
           setLoading(false);
           return;
         }
         
         setFirebaseInitialized(true);
         
+        // Check if Firebase is properly initialized
+        if (!firebase.apps.length) {
+          console.error('Firebase not initialized');
+          setError('Firebase configuration error - no apps found');
+          setLoading(false);
+          return;
+        }
+        
         // Initialize other services
         await initializeServices();
       } catch (error) {
         console.error('Error initializing app:', error);
-        setError('Failed to initialize app');
+        setError(`Failed to initialize app: ${error}`);
+      } finally {
+        // Always clear loading state
         setLoading(false);
+        setCheckingAuth(false);
+        setCheckingProfile(false);
+        if (timeoutId) clearTimeout(timeoutId);
       }
     };
 
     const initializeServices = async () => {
       try {
+        
         // Register for push notifications
         try {
           await registerForPushNotificationsAsync();
@@ -138,19 +187,22 @@ export default function App() {
           console.warn('Diet notification listener setup failed:', error);
         }
         
+        
         // Set up auth state listener
         unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
           try {
             console.log('[AuthStateChanged] firebaseUser:', firebaseUser);
+            
             if (firebaseUser) {
               setUser(firebaseUser);
               setCheckingProfile(true);
+              
               try {
                 // Always fetch Firestore user doc
                 const userDocRef = firestore.collection('users').doc(firebaseUser.uid);
                 let userDoc = await userDocRef.get();
                 let userData = userDoc.data();
-                console.log('[Dietician Debug] userDoc.exists:', userDoc.exists, 'userData:', userData);
+                
                 // If not present, create for dietician
                 if (!userDoc.exists && firebaseUser.email === 'nutricious4u@gmail.com') {
                   await userDocRef.set({
@@ -162,19 +214,10 @@ export default function App() {
                   userDoc = await userDocRef.get();
                   userData = userDoc.data();
                   setForceReload(x => x + 1); // force re-render
-                  console.log('[Dietician Debug] Created dietician userDoc:', userData);
                 }
+                
                 const isDieticianAccount = !!userData?.isDietician;
                 setIsDietician(isDieticianAccount);
-                // Debug log
-                console.log('[Dietician Check]', {
-                  email: firebaseUser.email,
-                  isDieticianAccount,
-                  userData,
-                  hasCompletedQuiz,
-                  checkingAuth,
-                  checkingProfile
-                });
                 
                 // Set up real-time notification listener for non-dietician users
                 if (!isDieticianAccount) {
@@ -231,6 +274,7 @@ export default function App() {
               setUser(null);
               setHasCompletedQuiz(false);
               setIsDietician(false);
+              
               // Only check for saved credentials and auto-login on app start, not on every logout
               try {
                 const savedEmail = await AsyncStorage.getItem('savedEmail');
@@ -243,10 +287,16 @@ export default function App() {
                     // Auto-login failed, proceed to show login screen.
                     console.log('[Dietician Debug] Auto-login failed:', e);
                   }
+                } else {
+                  // No saved credentials, showing login screen
                 }
               } catch (error) {
                 console.warn('Failed to check saved credentials:', error);
               }
+              setCheckingAuth(false);
+              setCheckingProfile(false);
+              setLoading(false);
+              if (timeoutId) clearTimeout(timeoutId);
             }
             setCheckingAuth(false);
             if (timeoutId) clearTimeout(timeoutId);
@@ -254,6 +304,7 @@ export default function App() {
             console.error('Error in auth state change:', innerError);
             setCheckingAuth(false);
             setCheckingProfile(false);
+            setError(`Auth error: ${innerError}`);
             if (timeoutId) clearTimeout(timeoutId);
           }
         });
@@ -261,6 +312,12 @@ export default function App() {
         console.error('Error in initializeServices:', error);
         setCheckingAuth(false);
         setCheckingProfile(false);
+        setError(`Service initialization error: ${error}`);
+      } finally {
+        setCheckingAuth(false);
+        setCheckingProfile(false);
+        setLoading(false);
+        if (timeoutId) clearTimeout(timeoutId);
       }
     };
     

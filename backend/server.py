@@ -1,5 +1,8 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File, Form, Depends
 from dotenv import load_dotenv
+load_dotenv()
+import os
+print("DEBUG: FIREBASE_PROJECT_ID =", os.getenv("FIREBASE_PROJECT_ID"))
 from starlette.middleware.cors import CORSMiddleware
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -32,7 +35,6 @@ from services.pdf_rag_service import pdf_rag_service
 # Add import for diet notification service
 from services.diet_notification_service import diet_notification_service
 import logging
-import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 import requests
@@ -174,7 +176,6 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 env_path = Path(__file__).parent / '.env'
-load_dotenv(env_path)
 
 # Add startup logging
 print("🚀 Starting Nutricious4u Backend Server...")
