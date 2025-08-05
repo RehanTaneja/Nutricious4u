@@ -25,12 +25,12 @@ Notifications.setNotificationHandler({
 
 // Firebase configuration with fallbacks for missing env vars
 const firebaseConfig = {
-  apiKey: API_KEY || "AIzaSyBBRyZh9WPNNgtjYPwyvXUe6B7ER1MAyqI",
-  authDomain: AUTH_DOMAIN || "nutricious4u-63158.firebaseapp.com",
-  projectId: PROJECT_ID || "nutricious4u-63158",
-  storageBucket: STORAGE_BUCKET || "nutricious4u-63158.firebasestorage.app",
-  messagingSenderId: MESSAGING_SENDER_ID || "383526478160",
-  appId: APP_ID || "1:383526478160:android:a40de2927b92ed99068c55"
+  apiKey: API_KEY || "your-api-key-here",
+  authDomain: AUTH_DOMAIN || "your-project.firebaseapp.com",
+  projectId: PROJECT_ID || "your-project-id",
+  storageBucket: STORAGE_BUCKET || "your-project.firebasestorage.app",
+  messagingSenderId: MESSAGING_SENDER_ID || "your-sender-id",
+  appId: APP_ID || "your-app-id"
 };
 
 // Initialize Firebase with error handling
