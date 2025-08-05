@@ -4,12 +4,12 @@
     "slug": "mobileapp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.jpeg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "jsEngine": "hermes",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.jpeg",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,11 +17,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.nutricious4u.app"
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
-      },
+          "android": {
+        "adaptiveIcon": {
+          "foregroundImage": "./assets/logo.jpeg",
+          "backgroundColor": "#ffffff"
+        },
       "edgeToEdgeEnabled": true,
       "package": "com.nutricious4u.app",
       "permissions": [
@@ -61,8 +61,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#ffffff"
+                  "icon": "./assets/logo.jpeg",
+        "color": "#ffffff"
         }
       ]
     ],

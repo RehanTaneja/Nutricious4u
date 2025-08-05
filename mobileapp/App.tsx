@@ -91,6 +91,15 @@ export default function App() {
     let unsubscribe: any;
     let notificationUnsubscribe: any;
     let dietNotificationSubscription: any;
+    let timeoutId: any;
+    
+    // Set a timeout to prevent infinite loading
+    timeoutId = setTimeout(() => {
+      console.log('Loading timeout reached, forcing app to continue');
+      setLoading(false);
+      setCheckingAuth(false);
+      setCheckingProfile(false);
+    }, 10000); // 10 second timeout
     
     const initializeApp = async () => {
       try {
@@ -241,10 +250,12 @@ export default function App() {
               }
             }
             setCheckingAuth(false);
+            if (timeoutId) clearTimeout(timeoutId);
           } catch (innerError) {
             console.error('Error in auth state change:', innerError);
             setCheckingAuth(false);
             setCheckingProfile(false);
+            if (timeoutId) clearTimeout(timeoutId);
           }
         });
       } catch (error) {
@@ -260,6 +271,7 @@ export default function App() {
       if (unsubscribe) unsubscribe();
       if (notificationUnsubscribe) notificationUnsubscribe();
       if (dietNotificationSubscription) dietNotificationSubscription.remove();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [forceReload]);
 
@@ -290,6 +302,9 @@ export default function App() {
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={{ marginTop: 10, color: COLORS.text }}>Loading...</Text>
+        <Text style={{ marginTop: 5, color: COLORS.placeholder, fontSize: 12 }}>
+          {checkingAuth ? 'Checking authentication...' : checkingProfile ? 'Loading profile...' : 'Initializing...'}
+        </Text>
       </View>
     );
   }
