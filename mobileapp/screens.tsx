@@ -51,7 +51,8 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
-
+import { GOOGLE_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID } from '@env';
+import { makeRedirectUri } from 'expo-auth-session';
 
 // Add activity level options and calculation utility at the top
 const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = [
@@ -212,26 +213,39 @@ const LoginSignupScreen = () => {
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
-  // Google Sign-In using Firebase
-  const handleGoogleSignIn = async () => {
-    try {
-      setGoogleError(null);
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await firebase.auth().signInWithPopup(provider);
-      // User signed in successfully
-    } catch (error: any) {
-      setGoogleError(error.message || 'Google sign-in failed.');
-    }
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_CLIENT_ID,
+    androidClientId: ANDROID_CLIENT_ID,
+    iosClientId: IOS_CLIENT_ID,
+    redirectUri: makeRedirectUri({
+      native: 'nutricious4u://redirect',
+    }),
+    scopes: ['profile', 'email'],
+  });
+
+  useEffect(() => {
+    const authenticateWithFirebase = async () => {
+      if (response?.type === 'success') {
+        try {
+          setGoogleError(null);
+          const { id_token, access_token } = response.params;
+          const credential = firebase.auth.GoogleAuthProvider.credential(id_token, access_token);
+          await firebase.auth().signInWithCredential(credential);
+          // User signed in successfully
+        } catch (error: any) {
+          setGoogleError(error.message || 'Google sign-in failed.');
+        }
+      } else if (response?.type === 'error') {
+        setGoogleError('Google sign-in failed.');
+      }
+    };
+    authenticateWithFirebase();
+  }, [response]);
+
+  const handleGoogleSignIn = () => {
+    setGoogleError(null);
+    promptAsync();
   };
-  const [showPhoneModal, setShowPhoneModal] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState('');
-  const [phoneStep, setPhoneStep] = useState<'input' | 'otp'>('input');
-  const [phoneLoading, setPhoneLoading] = useState(false);
-  const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [phoneConfirm, setPhoneConfirm] = useState<any>(null);
-
-
 
   useEffect(() => {
     // Check for saved credentials and auto-login if present
@@ -371,85 +385,6 @@ const LoginSignupScreen = () => {
       }
     } finally {
       setForgotLoading(false);
-    }
-  };
-
-  // Phone Auth: Send OTP
-  const handleSendOtp = async () => {
-    setPhoneError(null);
-    if (!phoneNumber || !/^\+\d{10,15}$/.test(phoneNumber.trim())) {
-      setPhoneError('Please enter a valid phone number with country code.');
-      return;
-    }
-    setPhoneLoading(true);
-    try {
-      // @ts-ignore
-      const confirmation = await auth.signInWithPhoneNumber(phoneNumber.trim());
-      setPhoneConfirm(confirmation);
-      setPhoneStep('otp');
-    } catch (err: any) {
-      setPhoneError(err.message || 'Failed to send OTP.');
-    } finally {
-      setPhoneLoading(false);
-    }
-  };
-
-  // Phone Auth: Confirm OTP
-  const handleVerifyOtp = async () => {
-    setPhoneError(null);
-    if (!otp || otp.length < 4) {
-      setPhoneError('Please enter the OTP sent to your phone.');
-      return;
-    }
-    setPhoneLoading(true);
-    try {
-      if (!phoneConfirm) {
-        setPhoneError('No OTP request in progress.');
-        setPhoneStep('input');
-        return;
-      }
-      const result = await phoneConfirm.confirm(otp);
-      // result.user is the Firebase user
-      // Optionally, create user profile in backend if not exists
-      if (result && result.user) {
-        try {
-          await createUserProfile({
-            userId: result.user.uid,
-            firstName: '',
-            lastName: '',
-            age: 0,
-            gender: '',
-            email: result.user.email || '',
-            currentWeight: 0,
-            goalWeight: 0,
-            height: 0,
-            dietaryPreference: '',
-            favouriteCuisine: '',
-            allergies: '',
-            medicalConditions: '',
-            streakCount: 0,
-            lastFoodLogDate: '',
-            targetCalories: 0,
-            targetProtein: 0,
-            targetFat: 0,
-            activityLevel: '',
-            stepGoal: 10000,
-            caloriesBurnedGoal: 500
-          });
-        } catch (e) {
-          // Ignore if already exists or error
-        }
-      }
-      setShowPhoneModal(false);
-      setPhoneNumber('');
-      setOtp('');
-      setPhoneStep('input');
-      setPhoneError(null);
-      setPhoneConfirm(null);
-    } catch (err: any) {
-      setPhoneError(err.message || 'Invalid OTP.');
-    } finally {
-      setPhoneLoading(false);
     }
   };
 
@@ -593,27 +528,6 @@ const LoginSignupScreen = () => {
               >
                 <Text style={{ color: COLORS.text, fontWeight: 'bold', fontSize: 16 }}>Sign in with Google</Text>
               </TouchableOpacity>
-              {/* Phone Login Button */}
-              <TouchableOpacity
-                style={{
-                  marginTop: 16,
-                  backgroundColor: '#34A853',
-                  borderRadius: 20,
-                  paddingVertical: 14,
-                  paddingHorizontal: 24,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                  shadowColor: '#34A853',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 4,
-                  elevation: 4,
-                }}
-                onPress={() => setShowPhoneModal(true)}
-              >
-                <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>Login with Phone</Text>
-              </TouchableOpacity>
               {googleError && (
                 <Text style={{ color: 'red', marginTop: 8 }}>{googleError}</Text>
               )}
@@ -669,71 +583,6 @@ const LoginSignupScreen = () => {
                     <Text style={styles.errorButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-        {/* Phone Login Modal */}
-        <Modal
-          visible={showPhoneModal}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setShowPhoneModal(false)}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContainer}>
-                <Text style={styles.modalTitle}>Login with Phone</Text>
-                {phoneStep === 'input' ? (
-                  <>
-                    <Text style={styles.inputLabel}>Phone Number</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. +1234567890"
-                      value={phoneNumber}
-                      onChangeText={setPhoneNumber}
-                      keyboardType="phone-pad"
-                      autoFocus
-                    />
-                    {phoneError && <Text style={{ color: 'red', marginBottom: 8 }}>{phoneError}</Text>}
-                    <StyledButton
-                      title={phoneLoading ? 'Sending OTP...' : 'Send OTP'}
-                      onPress={handleSendOtp}
-                      disabled={phoneLoading}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.inputLabel}>Enter OTP</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="6-digit code"
-                      value={otp}
-                      onChangeText={setOtp}
-                      keyboardType="number-pad"
-                      autoFocus
-                    />
-                    {phoneError && <Text style={{ color: 'red', marginBottom: 8 }}>{phoneError}</Text>}
-                    <StyledButton
-                      title={phoneLoading ? 'Verifying...' : 'Verify OTP'}
-                      onPress={handleVerifyOtp}
-                      disabled={phoneLoading}
-                    />
-                  </>
-                )}
-                <TouchableOpacity
-                  style={{ marginTop: 16, alignSelf: 'center' }}
-                  onPress={() => {
-                    setShowPhoneModal(false);
-                    setPhoneNumber('');
-                    setOtp('');
-                    setPhoneStep('input');
-                    setPhoneError(null);
-                    setPhoneConfirm(null);
-                  }}
-                >
-                  <Text style={{ color: COLORS.primary, fontSize: 16 }}>Cancel</Text>
-                </TouchableOpacity>
               </View>
             </View>
           </TouchableWithoutFeedback>
@@ -2951,8 +2800,8 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
                 onPress={() => setShowSuccessPopup(false)}
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
+              </TouchableOpacity>
+            </View>
           </View>
         </Modal>
       </KeyboardAvoidingView>
