@@ -81,11 +81,6 @@ if (!API_KEY || !AUTH_DOMAIN || !PROJECT_ID || !STORAGE_BUCKET || !MESSAGING_SEN
 
 export const auth = firebase.auth();
 export const firestore = firebase.firestore();
-export const googleProvider = new firebase.auth.GoogleAuthProvider();
-
-// Configure Google Sign-In
-googleProvider.addScope('email');
-googleProvider.addScope('profile');
 
 export default firebase;
 

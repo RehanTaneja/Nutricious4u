@@ -23,9 +23,10 @@ import {
   Button,
   Image,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { auth } from './services/firebase';
-import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft } from 'lucide-react-native';
+import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,8 +37,6 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { EmailAuthProvider } from 'firebase/auth';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import firebase from './services/firebase';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
 import { Pedometer } from 'expo-sensors';
@@ -51,8 +50,6 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
-import { GOOGLE_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID } from '@env';
-import { makeRedirectUri } from 'expo-auth-session';
 
 // Add activity level options and calculation utility at the top
 const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = [
@@ -102,6 +99,340 @@ const WGER_CATEGORY_NAMES: { [key: number]: string } = {
   11: 'Chest',
   9: 'Legs',
   13: 'Shoulders',
+};
+
+// --- Recipes Screen ---
+const RecipesScreen = ({ navigation }: { navigation: any }) => {
+  const [recipes, setRecipes] = useState<any[]>([]);
+  const [filteredRecipes, setFilteredRecipes] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [isDietician, setIsDietician] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    type: '',
+    allergies: '',
+    link: ''
+  });
+
+  // Check if user is dietician
+  useEffect(() => {
+    const checkDieticianStatus = async () => {
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          // Add defensive check for firestore
+          if (!firestore) {
+            console.error('Firestore not initialized for dietician check');
+            setIsDietician(user.email === 'nutricious4u@gmail.com');
+            return;
+          }
+          
+          const userDoc = await firestore.collection('users').doc(user.uid).get();
+          const data = userDoc.data();
+          setIsDietician(!!data?.isDietician || user.email === 'nutricious4u@gmail.com');
+        }
+      } catch (error) {
+        console.error('Error checking dietician status:', error);
+        // Fallback to email check
+        const user = auth.currentUser;
+        if (user) {
+          setIsDietician(user.email === 'nutricious4u@gmail.com');
+        }
+      }
+    };
+    checkDieticianStatus();
+  }, []);
+
+  // Fetch recipes from Firestore
+  const fetchRecipes = async () => {
+    try {
+      setLoading(true);
+      // Add defensive check for firestore
+      if (!firestore) {
+        console.error('Firestore not initialized');
+        setRecipes([]);
+        setFilteredRecipes([]);
+        return;
+      }
+      
+      const recipesSnapshot = await firestore.collection('recipes').orderBy('createdAt', 'desc').get();
+      const recipesData = recipesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setRecipes(recipesData);
+      setFilteredRecipes(recipesData);
+    } catch (error) {
+      console.error('Error fetching recipes:', error);
+      // Don't show alert on build, just set empty arrays
+      setRecipes([]);
+      setFilteredRecipes([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecipes();
+  }, []);
+
+  // Search functionality
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredRecipes(recipes);
+    } else {
+      const filtered = recipes.filter(recipe =>
+        recipe.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        recipe.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        recipe.allergies.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredRecipes(filtered);
+    }
+  }, [searchQuery, recipes]);
+
+  // Handle search
+  const handleSearch = () => {
+    // Search is handled by useEffect above
+  };
+
+  // Open add modal
+  const openAddModal = () => {
+    setFormData({ title: '', type: '', allergies: '', link: '' });
+    setShowAddModal(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (recipe: any) => {
+    setEditingRecipe(recipe);
+    setFormData({
+      title: recipe.title || '',
+      type: recipe.type || '',
+      allergies: recipe.allergies || '',
+      link: recipe.link || ''
+    });
+    setShowEditModal(true);
+  };
+
+  // Close modals
+  const closeModals = () => {
+    setShowAddModal(false);
+    setShowEditModal(false);
+    setEditingRecipe(null);
+    setFormData({ title: '', type: '', allergies: '', link: '' });
+  };
+
+  // Save recipe (add or edit)
+  const handleSaveRecipe = async () => {
+    if (!formData.title.trim()) {
+      Alert.alert('Error', 'Recipe title is required');
+      return;
+    }
+
+    try {
+      // Add defensive check for firestore
+      if (!firestore) {
+        Alert.alert('Error', 'Database not available');
+        return;
+      }
+
+      const recipeData = {
+        title: formData.title.trim(),
+        type: formData.type.trim(),
+        allergies: formData.allergies.trim(),
+        link: formData.link.trim(),
+        updatedAt: new Date()
+      };
+
+      if (showEditModal && editingRecipe) {
+        // Update existing recipe
+        await firestore.collection('recipes').doc(editingRecipe.id).update(recipeData);
+        Alert.alert('Success', 'Recipe updated successfully');
+      } else {
+        // Add new recipe
+        await firestore.collection('recipes').add({
+          ...recipeData,
+          createdAt: new Date(),
+          createdBy: auth.currentUser?.uid
+        });
+        Alert.alert('Success', 'Recipe added successfully');
+      }
+
+      closeModals();
+      fetchRecipes(); // Refresh the list
+    } catch (error) {
+      console.error('Error saving recipe:', error);
+      Alert.alert('Error', 'Failed to save recipe');
+    }
+  };
+
+  // Delete recipe
+  const handleDeleteRecipe = async (recipeId: string) => {
+    Alert.alert(
+      'Delete Recipe',
+      'Are you sure you want to delete this recipe?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await firestore.collection('recipes').doc(recipeId).delete();
+              Alert.alert('Success', 'Recipe deleted successfully');
+              fetchRecipes(); // Refresh the list
+            } catch (error) {
+              console.error('Error deleting recipe:', error);
+              Alert.alert('Error', 'Failed to delete recipe');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Render recipe card
+  const renderRecipeCard = ({ item }: { item: any }) => (
+    <View style={styles.recipeCard}>
+      <Text style={styles.recipeTitle}>{item.title}</Text>
+      {item.type && <Text style={styles.recipeType}>Type: {item.type}</Text>}
+      {item.allergies && <Text style={styles.recipeAllergies}>Allergies: {item.allergies}</Text>}
+      {item.link && (
+        <TouchableOpacity onPress={() => Linking.openURL(item.link)}>
+          <Text style={styles.recipeLink}>View Recipe →</Text>
+        </TouchableOpacity>
+      )}
+      {isDietician && (
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
+          <TouchableOpacity 
+            style={[styles.editButton, { marginRight: 8 }]} 
+            onPress={() => openEditModal(item)}
+          >
+            <Pencil color={COLORS.primary} size={16} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.editButton} 
+            onPress={() => handleDeleteRecipe(item.id)}
+          >
+            <Trash2 color={COLORS.error} size={16} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Recipes</Text>
+        {isDietician && (
+          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+            <Text style={[styles.addButtonText, { color: COLORS.primary }]}>+ Add</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Search color={COLORS.placeholder} size={20} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search recipes..."
+            placeholderTextColor={COLORS.placeholder}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+          <Text style={styles.searchButtonText}>Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recipes List */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading recipes...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredRecipes}
+          renderItem={renderRecipeCard}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.recipesList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {searchQuery ? 'No recipes found matching your search' : 'No recipes available yet'}
+              </Text>
+              {isDietician && !searchQuery && (
+                <TouchableOpacity style={styles.addFirstButton} onPress={openAddModal}>
+                  <Text style={styles.addFirstButtonText}>Add First Recipe</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
+        />
+      )}
+
+      {/* Add/Edit Modal */}
+      <Modal
+        visible={showAddModal || showEditModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModals}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>
+              {showEditModal ? 'Edit Recipe' : 'Add New Recipe'}
+            </Text>
+            
+            <StyledInput
+              placeholder="Recipe Title *"
+              value={formData.title}
+              onChangeText={(text) => setFormData({ ...formData, title: text })}
+            />
+            
+            <StyledInput
+              placeholder="Type (e.g., Vegetarian, Non-Veg, Egg)"
+              value={formData.type}
+              onChangeText={(text) => setFormData({ ...formData, type: text })}
+            />
+            
+            <StyledInput
+              placeholder="Allergies (e.g., Nuts, Dairy, Gluten)"
+              value={formData.allergies}
+              onChangeText={(text) => setFormData({ ...formData, allergies: text })}
+            />
+            
+            <StyledInput
+              placeholder="Recipe Link (optional)"
+              value={formData.link}
+              onChangeText={(text) => setFormData({ ...formData, link: text })}
+              keyboardType="url"
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelButton} onPress={closeModals}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveButton} onPress={handleSaveRecipe}>
+                <Text style={styles.saveButtonText}>
+                  {showEditModal ? 'Update' : 'Add Recipe'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
 };
 
 // --- Color Palette ---
@@ -212,40 +543,7 @@ const LoginSignupScreen = () => {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotSuccess, setForgotSuccess] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_CLIENT_ID,
-    androidClientId: ANDROID_CLIENT_ID,
-    iosClientId: IOS_CLIENT_ID,
-    redirectUri: makeRedirectUri({
-      native: 'nutricious4u://redirect',
-    }),
-    scopes: ['profile', 'email'],
-  });
 
-  useEffect(() => {
-    const authenticateWithFirebase = async () => {
-      if (response?.type === 'success') {
-        try {
-          setGoogleError(null);
-          const { id_token, access_token } = response.params;
-          const credential = firebase.auth.GoogleAuthProvider.credential(id_token, access_token);
-          await firebase.auth().signInWithCredential(credential);
-          // User signed in successfully
-        } catch (error: any) {
-          setGoogleError(error.message || 'Google sign-in failed.');
-        }
-      } else if (response?.type === 'error') {
-        setGoogleError('Google sign-in failed.');
-      }
-    };
-    authenticateWithFirebase();
-  }, [response]);
-
-  const handleGoogleSignIn = () => {
-    setGoogleError(null);
-    promptAsync();
-  };
 
   useEffect(() => {
     // Check for saved credentials and auto-login if present
@@ -507,30 +805,7 @@ const LoginSignupScreen = () => {
                   {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
                 </Text>
               </TouchableOpacity>
-              {/* Google Sign-In Button */}
-              <TouchableOpacity
-                style={{
-                  marginTop: 16,
-                  backgroundColor: COLORS.primary,
-                  borderRadius: 20,
-                  paddingVertical: 14,
-                  paddingHorizontal: 24,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                  shadowColor: COLORS.primary,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 4,
-                  elevation: 4,
-                }}
-                onPress={handleGoogleSignIn}
-              >
-                <Text style={{ color: COLORS.text, fontWeight: 'bold', fontSize: 16 }}>Sign in with Google</Text>
-              </TouchableOpacity>
-              {googleError && (
-                <Text style={{ color: 'red', marginTop: 8 }}>{googleError}</Text>
-              )}
+
             </View>
 
             {error && (
@@ -1874,7 +2149,13 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [confetti, setConfetti] = useState(false);
-  const [successFood, setSuccessFood] = useState<string | null>(null);
+  const [successFood, setSuccessFood] = useState<{
+    name: string;
+    calories: number;
+    protein: number;
+    fat: number;
+    servingSize: number;
+  } | null>(null);
 
   const handleSearch = async () => {
     if (searchQuery.trim() === '') return;
@@ -1907,8 +2188,22 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
     }
     try {
       const servingSize = servingSizes[item.id] || '100';
+      const servingSizeNum = parseFloat(servingSize);
+      const multiplier = servingSizeNum / 100;
+      
+      // Calculate nutritional values based on serving size
+      const calories = Math.round(item.calories * multiplier);
+      const protein = Math.round((item.protein * multiplier) * 10) / 10;
+      const fat = Math.round((item.fat * multiplier) * 10) / 10;
+      
       await logFood(userId, item.name, servingSize);
-      setSuccessFood(item.name);
+      setSuccessFood({
+        name: item.name,
+        calories,
+        protein,
+        fat,
+        servingSize: servingSizeNum
+      });
       setShowConfetti(true);
       setExpandedId(null);
       if (onFoodLogged) onFoodLogged();
@@ -2014,9 +2309,36 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
           }}>
             <Text style={{ fontSize: 36, marginBottom: 8 }}>🎉</Text>
             <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#009e60', marginBottom: 8 }}>Food Logged!</Text>
-            <Text style={{ fontSize: 18, color: '#333', marginBottom: 16, textAlign: 'center' }}>
-              {successFood ? `${successFood} has been added to your log!` : 'Food has been logged!'}
+            <Text style={{ fontSize: 18, color: '#333', marginBottom: 8, textAlign: 'center' }}>
+              {successFood ? `${successFood.name} (${successFood.servingSize}g) has been added to your log!` : 'Food has been logged!'}
             </Text>
+            {successFood && (
+              <View style={{ 
+                backgroundColor: '#f8f9fa', 
+                borderRadius: 12, 
+                padding: 16, 
+                marginBottom: 16,
+                width: '100%'
+              }}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 8, textAlign: 'center' }}>
+                  Nutritional Information Added:
+                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FF6B6B' }}>{successFood.calories}</Text>
+                    <Text style={{ fontSize: 12, color: '#666' }}>Calories</Text>
+                  </View>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#4ECDC4' }}>{successFood.protein}g</Text>
+                    <Text style={{ fontSize: 12, color: '#666' }}>Protein</Text>
+                  </View>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFD93D' }}>{successFood.fat}g</Text>
+                    <Text style={{ fontSize: 12, color: '#666' }}>Fat</Text>
+                  </View>
+                </View>
+              </View>
+            )}
             <TouchableOpacity
               style={{
                 backgroundColor: '#4ee44e',
@@ -3352,7 +3674,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       } else {
         Alert.alert(
           'No Activities Found', 
-          'No timed activities were found in your diet PDF. Make sure your diet plan includes specific times for activities.',
+          'No timed activities were found in your diet plan. Make sure your diet plan includes specific times for activities.',
           [{ text: 'OK', style: 'default' }]
         );
       }
@@ -4936,7 +5258,241 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
 
 // --- Stylesheet ---
 
+  // Add styles for recipe page (reuse existing styles for cards, modal, etc.)
 const styles = StyleSheet.create({
+  // ...existing styles...
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  addButton: {
+    padding: 8,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    flex: 1,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.placeholder,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    marginLeft: 8,
+    color: COLORS.text,
+  },
+  searchButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.placeholder,
+  },
+  recipesList: {
+    padding: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: COLORS.placeholder,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  addFirstButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+  },
+  addFirstButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  recipeCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  recipeTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  recipeType: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  recipeAllergies: {
+    fontSize: 15,
+    color: COLORS.error,
+    marginBottom: 2,
+  },
+  recipeLink: {
+    fontSize: 15,
+    color: COLORS.primaryDark,
+    marginBottom: 2,
+  },
+  editButton: {
+    marginTop: 8,
+    alignSelf: 'flex-end',
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    minWidth: 300,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: COLORS.placeholder,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    fontSize: 16,
+    color: COLORS.text,
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  modalButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    padding: 10,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  errorText: {
+    color: COLORS.error,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  // ...existing code...
   container: { 
     flex: 1, 
     backgroundColor: COLORS.background,
@@ -5092,11 +5648,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
   },
-  errorText: {
-    color: COLORS.error,
-    textAlign: 'center',
-    marginTop: 16,
-  },
+
   foodItem: {
     backgroundColor: COLORS.white,
     padding: 16,
@@ -5370,6 +5922,7 @@ const styles = StyleSheet.create({
   },
   picker: {
     width: '100%',
+    color: COLORS.text,
   },
   accountHeaderRow: {
     flexDirection: 'row',
@@ -5477,19 +6030,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  cancelButton: {
-    backgroundColor: '#ff4444',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   chatbotContainer: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -5534,32 +6074,6 @@ const styles = StyleSheet.create({
   messageText: {
     color: COLORS.white,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  modalContainer: {
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    alignItems: 'stretch',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
   modalLabel: {
     fontSize: 16,
     fontWeight: '600',
@@ -5567,38 +6081,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  modalInput: {
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.placeholder,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 8,
-  },
   modalExplanation: {
     fontSize: 13,
     color: COLORS.placeholder,
     marginBottom: 12,
     marginTop: 2,
-  },
-  modalButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginHorizontal: 6,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-    fontSize: 16,
   },
   bigCloseButton: {
     backgroundColor: COLORS.primary,
@@ -6099,8 +6586,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.placeholder + '50',
   },
   breakTimeSlot: {
-    backgroundColor: '#6B7280', // Grey color for breaks
-    borderColor: '#4B5563',
+    backgroundColor: '#D1D5DB', // Light grey color for breaks
+    borderColor: '#9CA3AF',
   },
   selectedTimeSlot: {
     backgroundColor: COLORS.primary,
@@ -6119,7 +6606,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   breakTimeSlotText: {
-    color: '#FFFFFF',
+    color: '#6B7280',
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -6338,7 +6825,8 @@ export {
   DieticianMessageScreen, // <-- export the new message screen
   DieticianMessagesListScreen, // <-- export the messages list screen for dietician
   ScheduleAppointmentScreen, // <-- export the schedule appointment screen
-  DieticianDashboardScreen // <-- export the dietician dashboard screen
+  DieticianDashboardScreen, // <-- export the dietician dashboard screen
+  RecipesScreen // <-- export RecipesScreen
 }; 
 
 // Firebase Auth error code to user-friendly message mapping
@@ -6441,10 +6929,10 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Generate time slots from 9am to 9pm
+  // Generate time slots from 7am to 7pm
   const timeSlots = React.useMemo(() => {
     const slots = [];
-    for (let hour = 9; hour <= 21; hour++) {
+    for (let hour = 7; hour <= 19; hour++) {
       const time = `${hour.toString().padStart(2, '0')}:00`;
       slots.push(time);
     }
@@ -6757,7 +7245,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           isBookedByMe && !isBreak && styles.bookedByMeTimeSlotText,
           isSelected && styles.selectedTimeSlotText
         ]}>
-          {isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
+          {isBreak ? 'Booked' : isBooked ? 'Booked' : timeSlot}
         </Text>
       </TouchableOpacity>
     );
@@ -6900,7 +7388,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   const [weekDates, setWeekDates] = React.useState<Date[]>([]);
   const [timeSlots] = React.useState(() => {
     const slots = [];
-    for (let hour = 9; hour <= 21; hour++) {
+    for (let hour = 7; hour <= 19; hour++) {
       const time = `${hour.toString().padStart(2, '0')}:00`;
       slots.push(time);
     }
@@ -7055,7 +7543,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           isBreak && styles.breakTimeSlotText,
           (isBooked && !isBreak) && styles.bookedTimeSlotText
         ]}>
-          {isProcessing ? '...' : isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
+          {isProcessing ? '...' : isBreak ? 'Booked' : isBooked ? 'Booked' : timeSlot}
         </Text>
       </TouchableOpacity>
     );

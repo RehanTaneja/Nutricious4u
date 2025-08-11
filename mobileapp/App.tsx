@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { Home, Settings, MessageCircle, BookOpen } from 'lucide-react-native';
+import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
 import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
@@ -35,7 +35,8 @@ import {
   DieticianMessagesListScreen, // <-- import the new messages list screen
   ScheduleAppointmentScreen, // <-- import the schedule appointment screen
   DieticianDashboardScreen, // <-- import the dietician dashboard screen
-  UploadDietScreen // <-- import the new screen
+  UploadDietScreen, // <-- import the new screen
+  RecipesScreen // <-- import the new recipes screen
 } from './screens';
 
 type User = firebase.User;
@@ -51,6 +52,8 @@ const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
       tabBarIcon: ({ color, size }) => {
         if (route.name === 'Dashboard') {
           return <Home color={color} size={size} />;
+        } else if (route.name === 'Recipes') {
+          return <Utensils color={color} size={size} />; // Use utensils icon
         } else if (route.name === 'Messages') {
           // Use MessageCircle for dietician, BookOpen for user
           return isDietician ? <MessageCircle color={color} size={size} /> : <BookOpen color={color} size={size} />;
@@ -70,6 +73,7 @@ const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
     })}
   >
     <Tab.Screen name="Dashboard" component={isDietician ? DieticianDashboardScreen : DashboardScreen} />
+    <Tab.Screen name="Recipes" component={RecipesScreen} options={{ title: 'Recipes' }} />
     {isDietician ? (
       <>
         <Tab.Screen name="Messages" component={DieticianMessagesListScreen} options={{ title: 'Messages' }} />
@@ -480,4 +484,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-}); 
+});
