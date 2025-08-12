@@ -222,6 +222,8 @@ def list_non_dietician_users():
                     (not user_data.get("email") or user_data.get("email", "").endswith("@example.com"))
                 )
                 if not is_placeholder:
+                    # Add the document ID as userId
+                    user_data["userId"] = user.id
                     non_dietician_users.append(user_data)
         
         print(f"Found {len(non_dietician_users)} non-dietician users")

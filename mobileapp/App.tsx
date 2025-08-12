@@ -210,20 +210,16 @@ export default function App() {
                 // For dietician, we'll create their profile through the backend if needed
                 if (isDieticianAccount) {
                   try {
-                    // Try to get existing profile first
-                    const profile = await getUserProfile(firebaseUser.uid);
-                    if (!profile) {
-                      // Create dietician profile through backend
-                      await createUserProfile({
-                        userId: firebaseUser.uid,
-                    firstName: 'Ekta',
-                    lastName: 'Taneja',
-                        age: 30,
-                        gender: 'female',
-                        email: firebaseUser.email || 'nutricious4u@gmail.com'
-                  });
-                  setForceReload(x => x + 1); // force re-render
-                    }
+                    // Create dietician profile through backend (don't check if exists first)
+                    await createUserProfile({
+                      userId: firebaseUser.uid,
+                      firstName: 'Ekta',
+                      lastName: 'Taneja',
+                      age: 30,
+                      gender: 'female',
+                      email: firebaseUser.email || 'nutricious4u@gmail.com'
+                    });
+                    setForceReload(x => x + 1); // force re-render
                   } catch (error) {
                     console.error('Error handling dietician profile:', error);
                   }
@@ -262,17 +258,10 @@ export default function App() {
                   setHasCompletedQuiz(true);
                   console.log('[Dietician Debug] Skipping quiz for dietician');
                 } else {
-                  try {
-                    const profile = await getUserProfile(firebaseUser.uid);
-                    const isQuizComplete = !!(profile && profile.currentWeight && profile.height);
-                    setHasCompletedQuiz(isQuizComplete);
-                    await AsyncStorage.setItem('hasCompletedQuiz', isQuizComplete ? 'true' : 'false');
-                    console.log('[Dietician Debug] User quiz status:', isQuizComplete);
-                  } catch (error) {
-                    console.warn('Failed to get user profile:', error);
-                    setHasCompletedQuiz(false);
-                    await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-                  }
+                  // For regular users, skip profile check to avoid 404 errors
+                  setHasCompletedQuiz(false);
+                  await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                  console.log('[Dietician Debug] User quiz status: false (skipped profile check)');
                 }
               } catch (e) {
                 console.error('Error in user profile setup:', e);

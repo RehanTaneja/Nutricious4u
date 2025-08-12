@@ -4836,7 +4836,7 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
             > 
               <Text style={styles.dieticianButtonText}>Schedule{"\n"}Appointment</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.dieticianSquareButton, { backgroundColor: COLORS.logFood }]} onPress={() => navigation.navigate('DieticianMessage', { userId: auth.currentUser?.uid })}>
+            <TouchableOpacity style={[styles.dieticianSquareButton, { backgroundColor: COLORS.logFood }]} onPress={() => navigation.navigate('DieticianMessage')}>
               <Text style={styles.dieticianButtonText}>Message</Text>
             </TouchableOpacity>
           </View>
@@ -4876,6 +4876,9 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     const user = auth.currentUser;
     if (!user) return;
     
+    console.log('[DieticianMessageScreen] Checking dietician status for user:', user.uid, user.email);
+    console.log('[DieticianMessageScreen] Route params:', route?.params);
+    
     // Check both collections for dietician status
     Promise.all([
       firestore.collection('users').doc(user.uid).get(),
@@ -4884,18 +4887,26 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       const userData = userDoc.data();
       const profileData = profileDoc.data();
       
+      console.log('[DieticianMessageScreen] User data:', userData);
+      console.log('[DieticianMessageScreen] Profile data:', profileData);
+      
       // Check for dietician status in both collections
       const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
+      console.log('[DieticianMessageScreen] Is dietician account:', isDieticianAccount);
+      
       setIsDietician(isDieticianAccount);
       
       if (isDieticianAccount) {
         // Dietician must have a userId param to chat with a user
         if (route?.params?.userId) {
+          console.log('[DieticianMessageScreen] Dietician chatting with user:', route.params.userId);
           setUserId(route.params.userId);
         } else {
+          console.log('[DieticianMessageScreen] Dietician with no userId param');
           setUserId(null);
         }
       } else {
+        console.log('[DieticianMessageScreen] Regular user, using own userId:', user.uid);
         setUserId(user.uid || null);
       }
       setInitializing(false);
@@ -4903,31 +4914,48 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       console.error('[DieticianMessageScreen] Error checking dietician status:', error);
       // Fallback: check email
       const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
+      console.log('[DieticianMessageScreen] Fallback - is dietician account:', isDieticianAccount);
       setIsDietician(isDieticianAccount);
       setUserId(isDieticianAccount ? (route?.params?.userId || null) : (user.uid || null));
       setInitializing(false);
     });
-  }, []);
+  }, [route?.params?.userId]);
 
   // Fetch user profile for chat header (for dietician)
   React.useEffect(() => {
     if (isDietician && userId) {
       setProfileLoading(true);
       setProfileLoaded(false);
+      console.log('[DieticianMessageScreen] Fetching profile for userId:', userId);
       firestore.collection('user_profiles').doc(userId).get().then(doc => {
-        if (doc.exists) setChatUserProfile(doc.data());
+        if (doc.exists) {
+          const profileData = doc.data();
+          console.log('[DieticianMessageScreen] Profile data:', profileData);
+          setChatUserProfile(profileData);
+        } else {
+          console.log('[DieticianMessageScreen] Profile not found for userId:', userId);
+          setChatUserProfile(null);
+        }
         setProfileLoading(false);
         setProfileLoaded(true);
-      }).catch(() => {
+      }).catch((error) => {
+        console.error('[DieticianMessageScreen] Error fetching profile:', error);
         setProfileLoading(false);
         setProfileLoaded(true);
+        setChatUserProfile(null);
       });
+    } else if (!isDietician) {
+      // For regular users, we don't need to fetch any profile since they're messaging the dietician
+      setProfileLoading(false);
+      setProfileLoaded(true);
+      setChatUserProfile(null);
     }
   }, [isDietician, userId]);
 
   // Fetch messages from Firestore (last 7 days only)
   React.useEffect(() => {
     if (!userId) return;
+    console.log('[DieticianMessageScreen] Fetching messages for userId:', userId);
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const unsubscribe = firestore
@@ -4941,7 +4969,10 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         snapshot.forEach(doc => {
           msgs.push({ id: doc.id, ...doc.data() });
         });
+        console.log('[DieticianMessageScreen] Received messages:', msgs.length, msgs);
         setMessages(msgs);
+      }, (error) => {
+        console.error('[DieticianMessageScreen] Error fetching messages:', error);
       });
     // Cleanup: delete messages older than 7 days
     firestore
@@ -4975,28 +5006,45 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   };
 
   const handleSend = async () => {
-    if (!inputText.trim() || !userId) return;
+    if (!inputText.trim() || !userId) {
+      console.log('[DieticianMessageScreen] Cannot send message:', { inputText: inputText?.trim(), userId });
+      return;
+    }
+    
     setLoading(true);
-    const user = auth.currentUser;
-    const isSenderDietician = user?.email === 'nutricious4u@gmail.com';
-    const sender = isSenderDietician ? 'dietician' : 'user';
-    const messageData = {
-      text: inputText,
-      sender,
-      timestamp: new Date(),
-    };
-    // Add message to Firestore
-    await firestore.collection('chats').doc(userId).collection('messages').add(messageData);
-    // Update chat summary for sorting
-    await firestore.collection('chats').doc(userId).set({
-      userId,
-      lastMessage: inputText,
-      lastMessageTimestamp: new Date(),
-    }, { merge: true });
-    setInputText('');
-    setLoading(false);
-    // Send notification to recipient
-    await sendNotification(!isSenderDietician, inputText);
+    try {
+      const user = auth.currentUser;
+      // Use the isDietician state instead of just checking email
+      const sender = isDietician ? 'dietician' : 'user';
+      const messageData = {
+        text: inputText,
+        sender,
+        timestamp: new Date(),
+      };
+      
+      console.log('[DieticianMessageScreen] Sending message:', { userId, sender, text: inputText, isDietician });
+      
+      // Add message to Firestore
+      await firestore.collection('chats').doc(userId).collection('messages').add(messageData);
+      
+      // Update chat summary for sorting
+      await firestore.collection('chats').doc(userId).set({
+        userId,
+        lastMessage: inputText,
+        lastMessageTimestamp: new Date(),
+      }, { merge: true });
+      
+      console.log('[DieticianMessageScreen] Message sent successfully');
+      setInputText('');
+      
+      // Send notification to recipient
+      await sendNotification(!isDietician, inputText);
+    } catch (error) {
+      console.error('[DieticianMessageScreen] Error sending message:', error);
+      alert('Failed to send message. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderMessage = ({ item }: { item: any }) => {
@@ -5097,7 +5145,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         />
         <View style={dieticianMessageStyles.inputContainer}>
           <TextInput
-            style={[dieticianMessageStyles.chatInput, { height: Math.max(40, Math.min(inputHeight, 120)), color: '#111' }]}
+            style={[dieticianMessageStyles.chatInput, { height: Math.max(40, Math.min(inputHeight, 120)) }]}
             value={inputText}
             onChangeText={setInputText}
             placeholder="Type a message..."
@@ -8385,22 +8433,31 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               <Text style={styles.viewDietButtonText}>View Current Diet</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity
-              style={[
-                styles.cancelButton,
-                { 
-                  width: '100%',
-                  minHeight: 48,
-                  justifyContent: 'center'
-                }
-              ]}
-              onPress={() => {
-                setShowUploadModal(false);
-                setSelectedUser(null);
-              }}
-            >
-              <Text style={styles.viewDietButtonText}>Cancel</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.cancelButton,
+                  { backgroundColor: '#FF4444' } // Red color for cancel
+                ]}
+                onPress={() => {
+                  setShowUploadModal(false);
+                  setSelectedUser(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  { backgroundColor: selectedUser?.dietPdfUrl ? '#FFA500' : COLORS.placeholder }
+                ]}
+                onPress={handleViewDiet}
+                disabled={!selectedUser?.dietPdfUrl}
+              >
+                <Text style={styles.saveButtonText}>View Diet</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
