@@ -215,13 +215,30 @@ def list_non_dietician_users():
             user_data = user.to_dict()
             # Skip users with isDietician = True, include all others
             if user_data.get("isDietician") != True:
-                # Also skip placeholder users
+                # Skip placeholder users and test users
                 is_placeholder = (
                     user_data.get("firstName", "User") == "User" and
                     user_data.get("lastName", "") == "" and
                     (not user_data.get("email") or user_data.get("email", "").endswith("@example.com"))
                 )
-                if not is_placeholder:
+                
+                # Skip test users
+                is_test_user = (
+                    user_data.get("firstName", "").lower() == "test" or
+                    user_data.get("email", "").startswith("test@") or
+                    user_data.get("userId", "").startswith("test_") or
+                    "test" in user_data.get("userId", "").lower()
+                )
+                
+                # Skip users without proper names
+                has_proper_name = (
+                    user_data.get("firstName") and 
+                    user_data.get("firstName") != "User" and
+                    user_data.get("firstName") != "Test" and
+                    user_data.get("firstName").strip() != ""
+                )
+                
+                if not is_placeholder and not is_test_user and has_proper_name:
                     # Add the document ID as userId
                     user_data["userId"] = user.id
                     non_dietician_users.append(user_data)
