@@ -5230,42 +5230,56 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
           });
           console.log('[DieticianMessagesListScreen] After filtering:', filteredProfiles.length, 'users');
         }
-        // 2. Fetch all chat summaries
-        const chatsSnap = await firestore.collection('chats').get();
-        const chatsMap: Record<string, any> = {};
-        chatsSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.userId) {
-            chatsMap[data.userId] = {
-              lastMessage: data.lastMessage,
-              lastMessageTimestamp: data.lastMessageTimestamp,
-            };
-          }
-        });
-        // 3. Merge: attach chat summary to each user
-        const merged = filteredProfiles.map((user: any) => ({
-          ...user,
-          lastMessage: chatsMap[user.userId]?.lastMessage || '',
-          lastMessageTimestamp: chatsMap[user.userId]?.lastMessageTimestamp || null,
-        }));
-        // 4. Sort: most recent chat at top, users with no chat at bottom
-        merged.sort((a: any, b: any) => {
-          if (a.lastMessageTimestamp && b.lastMessageTimestamp) {
-            return b.lastMessageTimestamp.toDate() - a.lastMessageTimestamp.toDate();
-          } else if (a.lastMessageTimestamp) {
-            return -1;
-          } else if (b.lastMessageTimestamp) {
-            return 1;
-          } else {
-            return 0;
-          }
-        });
-        console.log('[DieticianMessagesListScreen] Found users:', merged.length);
-        console.log('[DieticianMessagesListScreen] Users:', merged.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
+        // Set users immediately after filtering (like Upload Diet screen)
+        console.log('[DieticianMessagesListScreen] Found users:', filteredProfiles.length);
+        console.log('[DieticianMessagesListScreen] Users:', filteredProfiles.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
         
         if (isMounted) {
-          setUserList(merged);
+          setUserList(filteredProfiles);
           setLoading(false);
+        }
+        
+        // 2. Fetch chat summaries separately (don't block user list display)
+        try {
+          const chatsSnap = await firestore.collection('chats').get();
+          const chatsMap: Record<string, any> = {};
+          chatsSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.userId) {
+              chatsMap[data.userId] = {
+                lastMessage: data.lastMessage,
+                lastMessageTimestamp: data.lastMessageTimestamp,
+              };
+            }
+          });
+          
+          // 3. Merge: attach chat summary to each user
+          const merged = filteredProfiles.map((user: any) => ({
+            ...user,
+            lastMessage: chatsMap[user.userId]?.lastMessage || '',
+            lastMessageTimestamp: chatsMap[user.userId]?.lastMessageTimestamp || null,
+          }));
+          
+          // 4. Sort: most recent chat at top, users with no chat at bottom
+          merged.sort((a: any, b: any) => {
+            if (a.lastMessageTimestamp && b.lastMessageTimestamp) {
+              return b.lastMessageTimestamp.toDate() - a.lastMessageTimestamp.toDate();
+            } else if (a.lastMessageTimestamp) {
+              return -1;
+            } else if (b.lastMessageTimestamp) {
+              return 1;
+            } else {
+              return 0;
+            }
+          });
+          
+          // Update with chat data if component is still mounted
+          if (isMounted) {
+            setUserList(merged);
+          }
+        } catch (chatError) {
+          console.error('[DieticianMessagesListScreen] Error fetching chats:', chatError);
+          // Don't fail the entire function, users are already displayed
         }
       } catch (err) {
         console.error('[DieticianMessagesListScreen] Error fetching users or chats:', err);
