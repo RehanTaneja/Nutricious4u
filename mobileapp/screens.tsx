@@ -3673,10 +3673,35 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (!userId) return;
 
       const response = await getDietNotifications(userId);
-      setDietNotifications(response.notifications || []);
-      console.log('[Diet Notifications] Loaded:', response.notifications?.length || 0);
+      if (response.notifications) {
+        // Reschedule notifications that don't have scheduledId
+        const rescheduledNotifications = [];
+        for (const notification of response.notifications) {
+          if (!notification.scheduledId) {
+            try {
+              const scheduledId = await scheduleDietNotification(notification);
+              rescheduledNotifications.push({
+                ...notification,
+                scheduledId
+              });
+              console.log('[Diet Notifications] Rescheduled existing notification:', notification.message);
+            } catch (error) {
+              console.error('[Diet Notifications] Failed to reschedule:', notification.message, error);
+              rescheduledNotifications.push(notification);
+            }
+          } else {
+            rescheduledNotifications.push(notification);
+          }
+        }
+        
+        setDietNotifications(rescheduledNotifications);
+        console.log('[Diet Notifications] Loaded and rescheduled:', rescheduledNotifications.length);
+      } else {
+        setDietNotifications([]);
+      }
     } catch (error) {
       console.error('[Diet Notifications] Error loading:', error);
+      setDietNotifications([]);
     } finally {
       setLoadingDietNotifications(false);
     }
@@ -3689,10 +3714,28 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
       const response = await extractDietNotifications(userId);
       if (response.notifications && response.notifications.length > 0) {
-        setDietNotifications(response.notifications);
-        console.log('[Diet Notifications] Extracted:', response.notifications.length);
+        // Schedule each notification locally with enhanced reliability
+        const scheduledNotifications = [];
+        for (const notification of response.notifications) {
+          try {
+            const schedulingResult = await scheduleMultipleDays(notification);
+            scheduledNotifications.push({
+              ...notification,
+              scheduledId: schedulingResult.primaryId,
+              backupIds: schedulingResult.backupIds
+            });
+            console.log('[Diet Notifications] Scheduled with backup:', notification.message, 'at', notification.time);
+          } catch (error) {
+            console.error('[Diet Notifications] Failed to schedule:', notification.message, error);
+            // Still add the notification even if scheduling fails
+            scheduledNotifications.push(notification);
+          }
+        }
+        
+        setDietNotifications(scheduledNotifications);
+        console.log('[Diet Notifications] Extracted and scheduled:', scheduledNotifications.length);
         // Show custom success modal
-        setSuccessMessage(`Successfully extracted ${response.notifications.length} timed activities from your diet plan! 🎉`);
+        setSuccessMessage(`Successfully extracted and scheduled ${scheduledNotifications.length} timed activities from your diet plan! 🎉`);
         setShowSuccessModal(true);
       } else {
         Alert.alert(
@@ -3708,10 +3751,200 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  const scheduleDietNotification = async (notification: any, daysAhead: number = 0) => {
+    try {
+      // Parse the time (format: "HH:MM")
+      const [hours, minutes] = notification.time.split(':').map(Number);
+      const time = new Date();
+      time.setHours(hours, minutes, 0, 0);
+      
+      // Add days if specified
+      if (daysAhead > 0) {
+        time.setDate(time.getDate() + daysAhead);
+      } else {
+        // If the time has already passed today, schedule for tomorrow
+        const now = new Date();
+        if (time <= now) {
+          time.setDate(time.getDate() + 1);
+        }
+      }
+      
+      // Calculate seconds until the notification should trigger
+      const seconds = Math.max(1, Math.floor((time.getTime() - Date.now()) / 1000));
+      
+      // Enhanced notification content for better background delivery
+      const scheduledId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Diet Reminder',
+          body: notification.message,
+          sound: 'default',
+          priority: 'high',
+          autoDismiss: false,
+          sticky: false,
+          data: {
+            type: 'diet_reminder',
+            source: 'diet_pdf',
+            time: notification.time,
+            notificationId: notification.id,
+            userId: auth.currentUser?.uid,
+            scheduledFor: time.toISOString()
+          }
+        },
+        trigger: {
+          type: 'timeInterval',
+          seconds,
+          repeats: false
+        } as any,
+      });
+      
+      console.log('[Diet Notifications] Scheduled notification:', {
+        message: notification.message,
+        time: notification.time,
+        scheduledId,
+        triggerTime: time.toISOString(),
+        secondsUntilTrigger: seconds,
+        daysAhead
+      });
+      
+      return scheduledId;
+    } catch (error) {
+      console.error('[Diet Notifications] Error scheduling notification:', error);
+      throw error;
+    }
+  };
+
+  // Schedule notifications for multiple days to ensure reliability
+  const scheduleMultipleDays = async (notification: any) => {
+    try {
+      // Schedule for today/tomorrow (primary)
+      const primaryId = await scheduleDietNotification(notification, 0);
+      
+      // Also schedule for the next few days as backup
+      const backupIds = [];
+      for (let day = 1; day <= 3; day++) {
+        try {
+          const backupId = await scheduleDietNotification(notification, day);
+          backupIds.push(backupId);
+        } catch (error) {
+          console.error(`[Diet Notifications] Failed to schedule backup for day ${day}:`, error);
+        }
+      }
+      
+      return {
+        primaryId,
+        backupIds
+      };
+    } catch (error) {
+      console.error('[Diet Notifications] Error in multiple day scheduling:', error);
+      throw error;
+    }
+  };
+
+  // Set up notification listener to reschedule daily
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data;
+      if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
+        console.log('[Diet Notifications] Received diet reminder, rescheduling for tomorrow');
+        
+        // Find the notification in our list
+        const dietNotification = dietNotifications.find(n => n.id === data.notificationId);
+        if (dietNotification) {
+          try {
+            // Reschedule for tomorrow
+            const newScheduledId = await scheduleDietNotification(dietNotification);
+            
+            // Update the scheduledId in our state
+            setDietNotifications(prev => prev.map(n => 
+              n.id === data.notificationId 
+                ? { ...n, scheduledId: newScheduledId }
+                : n
+            ));
+            
+            console.log('[Diet Notifications] Rescheduled for tomorrow:', dietNotification.message);
+          } catch (error) {
+            console.error('[Diet Notifications] Error rescheduling for tomorrow:', error);
+          }
+        }
+      }
+      
+      // Handle incoming message notifications
+      if (data?.type === 'message_notification') {
+        console.log('[Message Notifications] Received message notification');
+        
+        // Update the messages list if we're in the chat screen
+        if (data.fromUser || data.fromDietician) {
+          // Refresh messages to show the new message
+          // This will be handled by the existing message listener
+          console.log('[Message Notifications] Message notification received, chat will update automatically');
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [dietNotifications]);
+
+  // Enhanced background notification handling
+  useEffect(() => {
+    const backgroundSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const data = response.notification.request.content.data;
+      
+      // Handle diet reminder interactions
+      if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
+        console.log('[Diet Notifications] User interacted with diet reminder');
+        
+        // Reschedule for tomorrow when user interacts with notification
+        const dietNotification = dietNotifications.find(n => n.id === data.notificationId);
+        if (dietNotification) {
+          try {
+            const newScheduledId = await scheduleDietNotification(dietNotification);
+            setDietNotifications(prev => prev.map(n => 
+              n.id === data.notificationId 
+                ? { ...n, scheduledId: newScheduledId }
+                : n
+            ));
+            console.log('[Diet Notifications] Rescheduled after user interaction:', dietNotification.message);
+          } catch (error) {
+            console.error('[Diet Notifications] Error rescheduling after interaction:', error);
+          }
+        }
+      }
+      
+      // Handle message notification interactions
+      if (data?.type === 'message_notification') {
+        console.log('[Message Notifications] User interacted with message notification');
+        
+        // Navigate to the appropriate chat screen
+        if (data.toDietician) {
+          // User tapped notification from dietician - navigate to user's chat with dietician
+          navigation.navigate('DieticianMessage');
+        } else {
+          // Dietician tapped notification from user - navigate to that user's chat
+          if (data.userId) {
+            navigation.navigate('DieticianMessage', { userId: data.userId });
+          }
+        }
+      }
+    });
+
+    return () => backgroundSubscription.remove();
+  }, [dietNotifications, navigation]);
+
   const handleDeleteDietNotification = async (notificationId: string) => {
     try {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
+
+      // Cancel the scheduled notification if it exists
+      const notification = dietNotifications.find(n => n.id === notificationId);
+      if (notification && notification.scheduledId) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(notification.scheduledId);
+          console.log('[Diet Notifications] Cancelled scheduled notification:', notification.scheduledId);
+        } catch (error) {
+          console.error('[Diet Notifications] Error cancelling notification:', error);
+        }
+      }
 
       await deleteDietNotification(userId, notificationId);
       setDietNotifications(prev => prev.filter(n => n.id !== notificationId));
@@ -3746,10 +3979,34 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         return;
       }
 
+      // Cancel the old scheduled notification if it exists
+      if (editingNotification.scheduledId) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(editingNotification.scheduledId);
+          console.log('[Diet Notifications] Cancelled old scheduled notification:', editingNotification.scheduledId);
+        } catch (error) {
+          console.error('[Diet Notifications] Error cancelling old notification:', error);
+        }
+      }
+
+      // Schedule the new notification
+      let newScheduledId = null;
+      try {
+        const updatedNotification = {
+          ...editingNotification,
+          time: editTime,
+          message: editMessage
+        };
+        newScheduledId = await scheduleDietNotification(updatedNotification);
+        console.log('[Diet Notifications] Rescheduled notification:', editMessage, 'at', editTime);
+      } catch (error) {
+        console.error('[Diet Notifications] Error rescheduling notification:', error);
+      }
+
       // Update the notification in local state
       setDietNotifications(prev => prev.map(n => 
         n.id === editingNotification.id 
-          ? { ...n, time: editTime, message: editMessage }
+          ? { ...n, time: editTime, message: editMessage, scheduledId: newScheduledId }
           : n
       ));
 
@@ -3760,7 +4017,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setEditMessage('');
 
       // Show success message
-      setSuccessMessage('Notification updated successfully!');
+      setSuccessMessage('Notification updated and rescheduled successfully!');
       setShowSuccessModal(true);
 
     } catch (error) {
@@ -5011,16 +5268,64 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     }
   }, [messages]);
 
-  // Send notification to recipient
-  const sendNotification = async (toDietician: boolean, message: string) => {
-    // For demo: local notification. For real: use FCM push with user tokens.
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: toDietician ? 'New message from user' : 'New message from dietician',
-        body: message,
-      },
-      trigger: null,
-    });
+  // Enhanced notification system for messages
+  const sendMessageNotification = async (toDietician: boolean, message: string, senderName: string = '') => {
+    try {
+      // Enhanced notification content for better background delivery
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: toDietician ? 'New message from user' : 'New message from dietician',
+          body: message,
+          sound: 'default',
+          priority: 'high',
+          autoDismiss: false,
+          sticky: false,
+          data: {
+            type: 'message_notification',
+            toDietician,
+            message,
+            senderName,
+            timestamp: new Date().toISOString(),
+            userId: auth.currentUser?.uid
+          }
+        },
+        trigger: null, // Immediate notification
+      });
+      
+      console.log('[Message Notifications] Sent local notification:', {
+        toDietician,
+        message: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+        senderName
+      });
+    } catch (error) {
+      console.error('[Message Notifications] Error sending local notification:', error);
+    }
+  };
+
+  // Send push notification via backend (for cross-device messaging)
+  const sendPushNotification = async (recipientUserId: string, message: string, senderName: string = '') => {
+    try {
+      const response = await fetch(`${API_URL}/notifications/send-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recipientUserId,
+          message,
+          senderName,
+          senderUserId: auth.currentUser?.uid
+        })
+      });
+      
+      if (response.ok) {
+        console.log('[Message Notifications] Push notification sent successfully');
+      } else {
+        console.error('[Message Notifications] Failed to send push notification:', response.status);
+      }
+    } catch (error) {
+      console.error('[Message Notifications] Error sending push notification:', error);
+    }
   };
 
   const handleSend = async () => {
@@ -5055,8 +5360,18 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       console.log('[DieticianMessageScreen] Message sent successfully');
       setInputText('');
       
-      // Send notification to recipient
-      await sendNotification(!isDietician, inputText);
+      // Send enhanced notification to recipient
+      const senderName = isDietician ? 'Dietician' : (chatUserProfile ? `${chatUserProfile.firstName} ${chatUserProfile.lastName}`.trim() : 'User');
+      await sendMessageNotification(!isDietician, inputText, senderName);
+      
+      // Also send push notification for cross-device messaging
+      if (!isDietician) {
+        // User sending to dietician - send push to dietician
+        await sendPushNotification('dietician', inputText, senderName);
+      } else {
+        // Dietician sending to user - send push to specific user
+        await sendPushNotification(userId, inputText, senderName);
+      }
     } catch (error) {
       console.error('[DieticianMessageScreen] Error sending message:', error);
       alert('Failed to send message. Please try again.');
