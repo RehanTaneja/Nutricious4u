@@ -301,7 +301,17 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
       {item.type && <Text style={styles.recipeType}>Type: {item.type}</Text>}
       {item.allergies && <Text style={styles.recipeAllergies}>Allergies: {item.allergies}</Text>}
       {item.link && (
-        <TouchableOpacity onPress={() => Linking.openURL(item.link)}>
+        <TouchableOpacity 
+          onPress={() => {
+            if (item.link && item.link.trim() !== '') {
+              Linking.openURL(item.link.trim()).catch(err => {
+                console.error('Error opening URL:', err);
+                Alert.alert('Error', 'Could not open recipe link');
+              });
+            }
+          }}
+          style={styles.recipeLinkContainer}
+        >
           <Text style={styles.recipeLink}>View Recipe →</Text>
         </TouchableOpacity>
       )}
@@ -326,59 +336,72 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Recipes</Text>
-        {isDietician && (
-          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-            <Text style={[styles.addButtonText, { color: COLORS.primary }]}>+ Add</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Search color={COLORS.placeholder} size={20} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search recipes..."
-            placeholderTextColor={COLORS.placeholder}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Search</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recipes List */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading recipes...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredRecipes}
-          renderItem={renderRecipeCard}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.recipesList}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView 
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {searchQuery ? 'No recipes found matching your search' : 'No recipes available yet'}
-              </Text>
-              {isDietician && !searchQuery && (
-                <TouchableOpacity style={styles.addFirstButton} onPress={openAddModal}>
-                  <Text style={styles.addFirstButtonText}>Add First Recipe</Text>
-                </TouchableOpacity>
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Recipes</Text>
+            {isDietician && (
+              <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+                <Text style={[styles.addButtonText, { color: COLORS.primary }]}>+ Add</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Search color={COLORS.placeholder} size={20} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search recipes..."
+                placeholderTextColor={COLORS.placeholder}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+              <Text style={styles.searchButtonText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Recipes List */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading recipes...</Text>
+            </View>
+          ) : (
+            <View style={styles.recipesContainer}>
+              {filteredRecipes.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    {searchQuery ? 'No recipes found matching your search' : 'No recipes available yet'}
+                  </Text>
+                  {isDietician && !searchQuery && (
+                    <TouchableOpacity style={styles.addFirstButton} onPress={openAddModal}>
+                      <Text style={styles.addFirstButtonText}>Add First Recipe</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                filteredRecipes.map((item) => (
+                  <View key={item.id}>
+                    {renderRecipeCard({ item })}
+                  </View>
+                ))
               )}
             </View>
-          }
-        />
-      )}
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Add/Edit Modal */}
       <Modal
@@ -5160,20 +5183,66 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
     async function fetchData() {
       setLoading(true);
       try {
-        // 1. Fetch all user profiles (excluding the dietician by email)
-        const usersSnap = await firestore.collection('user_profiles').get();
-        const allProfiles: any[] = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-        const dieticianEmail = 'nutricious4u@gmail.com';
-        // Filter out placeholder users
-        const filteredProfiles = allProfiles.filter(u => {
-          const isPlaceholder =
-            (u.firstName === 'User' && (!u.lastName || u.lastName === '')) &&
-            (!u.email || u.email.endsWith('@example.com'));
-          if (isPlaceholder) {
-            console.log('[DieticianMessagesListScreen] Skipping placeholder user:', u);
+        // 1. Fetch users directly from Firebase Auth and Firestore
+        let filteredProfiles: any[] = [];
+        
+        try {
+          // First try the API
+          const usersFromAPI = await listNonDieticianUsers();
+          console.log('[DieticianMessagesListScreen] Users from API:', usersFromAPI);
+          
+          if (usersFromAPI && usersFromAPI.length > 0) {
+            filteredProfiles = usersFromAPI.filter((u: any) => {
+              const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
+              if (!isValid) {
+                console.log('[DieticianMessagesListScreen] Skipping invalid user:', u);
+              }
+              return isValid;
+            });
+          } else {
+            throw new Error('API returned empty or invalid data');
           }
-          return u.email !== dieticianEmail && !isPlaceholder;
-        });
+        } catch (error) {
+          console.error('[DieticianMessagesListScreen] Error fetching users from API:', error);
+          console.log('[DieticianMessagesListScreen] Falling back to direct Firestore query...');
+          
+          // Fallback: Get all Firebase Auth users and their profiles
+          const [usersSnap, userProfilesSnap] = await Promise.all([
+            firestore.collection('users').get(),
+            firestore.collection('user_profiles').get()
+          ]);
+          
+          console.log('[DieticianMessagesListScreen] Found users in users collection:', usersSnap.docs.length);
+          console.log('[DieticianMessagesListScreen] Found users in user_profiles collection:', userProfilesSnap.docs.length);
+          
+          const usersFromUsers = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+          const usersFromProfiles = userProfilesSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+          
+          // Merge and deduplicate
+          const allUsers = [...usersFromUsers, ...usersFromProfiles];
+          const uniqueUsers = allUsers.reduce((acc: any, user: any) => {
+            if (!acc[user.userId]) {
+              acc[user.userId] = user;
+            } else {
+              acc[user.userId] = { ...acc[user.userId], ...user };
+            }
+            return acc;
+          }, {});
+          
+          const allProfiles = Object.values(uniqueUsers);
+          const dieticianEmail = 'nutricious4u@gmail.com';
+          
+          filteredProfiles = allProfiles.filter((u: any) => {
+            const isPlaceholder = (u.firstName === 'User' && (!u.lastName || u.lastName === '')) && (!u.email || u.email.endsWith('@example.com'));
+            const isValid = u.email !== dieticianEmail && !isPlaceholder && u.email;
+            if (!isValid) {
+              console.log('[DieticianMessagesListScreen] Filtered out user:', { userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName });
+            }
+            return isValid;
+          });
+          
+          console.log('[DieticianMessagesListScreen] Final filtered users:', filteredProfiles.length);
+        }
         // 2. Fetch all chat summaries
         const chatsSnap = await firestore.collection('chats').get();
         const chatsMap: Record<string, any> = {};
@@ -5187,13 +5256,13 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
           }
         });
         // 3. Merge: attach chat summary to each user
-        const merged = filteredProfiles.map(user => ({
+        const merged = filteredProfiles.map((user: any) => ({
           ...user,
           lastMessage: chatsMap[user.userId]?.lastMessage || '',
           lastMessageTimestamp: chatsMap[user.userId]?.lastMessageTimestamp || null,
         }));
         // 4. Sort: most recent chat at top, users with no chat at bottom
-        merged.sort((a, b) => {
+        merged.sort((a: any, b: any) => {
           if (a.lastMessageTimestamp && b.lastMessageTimestamp) {
             return b.lastMessageTimestamp.toDate() - a.lastMessageTimestamp.toDate();
           } else if (a.lastMessageTimestamp) {
@@ -5204,6 +5273,9 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
             return 0;
           }
         });
+        console.log('[DieticianMessagesListScreen] Found users:', merged.length);
+        console.log('[DieticianMessagesListScreen] Users:', merged.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
+        
         if (isMounted) {
           setUserList(merged);
           setLoading(false);
@@ -5265,8 +5337,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingTop: 24,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.background,
@@ -5291,8 +5364,8 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.background,
@@ -5337,6 +5410,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: COLORS.placeholder,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  recipesContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   recipesList: {
     padding: 20,
@@ -5394,6 +5477,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.primaryDark,
     marginBottom: 2,
+  },
+  recipeLinkContainer: {
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.background,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
   },
   editButton: {
     marginTop: 8,
@@ -7963,6 +8054,30 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
+// Helper function to create missing user profiles
+const createMissingUserProfile = async (userId: string, userData: any) => {
+  try {
+    console.log('[UploadDietScreen] Attempting to create missing user profile for:', userId);
+    await createUserProfile({
+      userId: userId,
+      firstName: userData.firstName || 'User',
+      lastName: userData.lastName || '',
+      age: userData.age || 25,
+      gender: userData.gender || 'other',
+      email: userData.email || '',
+      currentWeight: userData.currentWeight || 70,
+      height: userData.height || 170,
+      activityLevel: userData.activityLevel || 'moderate',
+      goalWeight: userData.goalWeight || 70
+    });
+    console.log('[UploadDietScreen] Successfully created user profile for:', userId);
+    return true;
+  } catch (error) {
+    console.error('[UploadDietScreen] Failed to create user profile for:', userId, error);
+    return false;
+  }
+};
+
 // --- UploadDietScreen (Dietician) ---
 const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [users, setUsers] = useState<any[]>([]);
@@ -7977,25 +8092,71 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
-  useEffect(() => {
+    useEffect(() => {
     let isMounted = true;
     async function fetchData() {
       setLoading(true);
       try {
-        // 1. Fetch all user profiles (excluding the dietician by email)
-        const usersSnap = await firestore.collection('user_profiles').get();
-        const allProfiles: any[] = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-        const dieticianEmail = 'nutricious4u@gmail.com';
-        // Filter out placeholder users and dietician
-        const filteredProfiles = allProfiles.filter(u => {
-          const isPlaceholder =
-            (u.firstName === 'User' && (!u.lastName || u.lastName === '')) &&
-            (!u.email || u.email.endsWith('@example.com'));
-          if (isPlaceholder) {
-            console.log('[UploadDietScreen] Skipping placeholder user:', u);
+        // 1. Fetch users directly from Firebase Auth and Firestore
+        let filteredProfiles: any[] = [];
+        
+        try {
+          // First try the API
+          const usersFromAPI = await listNonDieticianUsers();
+          console.log('[UploadDietScreen] Users from API:', usersFromAPI);
+          
+          if (usersFromAPI && usersFromAPI.length > 0) {
+            filteredProfiles = usersFromAPI.filter((u: any) => {
+              const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
+              if (!isValid) {
+                console.log('[UploadDietScreen] Skipping invalid user:', u);
+              }
+              return isValid;
+            });
+          } else {
+            throw new Error('API returned empty or invalid data');
           }
-          return u.email !== dieticianEmail && !isPlaceholder;
-        });
+        } catch (error) {
+          console.error('[UploadDietScreen] Error fetching users from API:', error);
+          console.log('[UploadDietScreen] Falling back to direct Firestore query...');
+          
+          // Fallback: Get all Firebase Auth users and their profiles
+          const [usersSnap, userProfilesSnap] = await Promise.all([
+            firestore.collection('users').get(),
+            firestore.collection('user_profiles').get()
+          ]);
+          
+          console.log('[UploadDietScreen] Found users in users collection:', usersSnap.docs.length);
+          console.log('[UploadDietScreen] Found users in user_profiles collection:', userProfilesSnap.docs.length);
+          
+          const usersFromUsers = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+          const usersFromProfiles = userProfilesSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+          
+          // Merge and deduplicate
+          const allUsers = [...usersFromUsers, ...usersFromProfiles];
+          const uniqueUsers = allUsers.reduce((acc: any, user: any) => {
+            if (!acc[user.userId]) {
+              acc[user.userId] = user;
+            } else {
+              acc[user.userId] = { ...acc[user.userId], ...user };
+            }
+            return acc;
+          }, {});
+          
+          const allProfiles = Object.values(uniqueUsers);
+          const dieticianEmail = 'nutricious4u@gmail.com';
+          
+          filteredProfiles = allProfiles.filter((u: any) => {
+            const isPlaceholder = (u.firstName === 'User' && (!u.lastName || u.lastName === '')) && (!u.email || u.email.endsWith('@example.com'));
+            const isValid = u.email !== dieticianEmail && !isPlaceholder && u.email;
+            if (!isValid) {
+              console.log('[UploadDietScreen] Filtered out user:', { userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName });
+            }
+            return isValid;
+          });
+          
+          console.log('[UploadDietScreen] Final filtered users:', filteredProfiles.length);
+        }
         
         // 2. Fetch diet countdowns and PDF URLs for each user
         const countdownsObj: { [userId: string]: { days: number; hours: number } } = {};
@@ -8026,6 +8187,9 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             countdownsObj[u.userId] = { days: 0, hours: 0 };
           }
         }));
+        
+        console.log('[UploadDietScreen] Found users:', filteredProfiles.length);
+        console.log('[UploadDietScreen] Users:', filteredProfiles.map(u => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
         
         if (isMounted) {
           setUsers(filteredProfiles);

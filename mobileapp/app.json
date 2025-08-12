@@ -73,14 +73,15 @@
           "color": "#ffffff",
           "mode": "production"
         }
-      ]
+      ],
+      "expo-document-picker"
     ],
     "extra": {
       "eas": {
         "projectId": "56c008a1-a0af-423d-b407-f55c95410861"
       }
     },
-    "sdkVersion": "53.0.0",
+
     "platforms": [
       "ios",
       "android"
