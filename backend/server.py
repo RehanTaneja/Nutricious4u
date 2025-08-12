@@ -1449,6 +1449,78 @@ async def test_diet_notification(user_id: str):
         logger.error(f"Error sending test notification for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send test notification: {e}")
 
+# --- Message Notification Endpoints ---
+@api_router.post("/notifications/send-message")
+async def send_message_notification(request: dict):
+    """
+    Send a push notification for a new message.
+    """
+    try:
+        recipient_user_id = request.get("recipientUserId")
+        message = request.get("message", "")
+        sender_name = request.get("senderName", "")
+        sender_user_id = request.get("senderUserId")
+        
+        if not recipient_user_id:
+            raise HTTPException(status_code=400, detail="recipientUserId is required")
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="message is required")
+        
+        # Get recipient's notification token
+        user_token = get_user_notification_token(recipient_user_id)
+        if not user_token:
+            logger.warning(f"No notification token found for user {recipient_user_id}")
+            return {"message": "Notification prepared but not sent (no notification token found)"}
+        
+        # Determine notification title based on recipient type
+        if recipient_user_id == "dietician":
+            # User is sending to dietician - get dietician's token
+            dietician_token = get_dietician_notification_token()
+            if dietician_token:
+                title = f"New message from {sender_name or 'User'}"
+                success = send_push_notification(
+                    token=dietician_token,
+                    title=title,
+                    body=message,
+                    data={
+                        "type": "message_notification",
+                        "fromUser": sender_user_id,
+                        "message": message,
+                        "senderName": sender_name
+                    }
+                )
+                if success:
+                    return {"message": "Message notification sent to dietician successfully"}
+                else:
+                    return {"message": "Failed to send message notification to dietician"}
+            else:
+                return {"message": "Dietician notification token not found"}
+        else:
+            # Dietician is sending to specific user
+            title = "New message from dietician"
+            success = send_push_notification(
+                token=user_token,
+                title=title,
+                body=message,
+                data={
+                    "type": "message_notification",
+                    "fromDietician": True,
+                    "message": message,
+                    "senderName": sender_name
+                }
+            )
+            if success:
+                return {"message": "Message notification sent successfully"}
+            else:
+                return {"message": "Failed to send message notification"}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message notification: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send message notification: {e}")
+
 # Include the router in the main app
 app.include_router(api_router)
 
