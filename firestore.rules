@@ -43,6 +43,20 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true);
     }
     
+    // Chat messages - users can read/write their own chats, dietician can access all
+    match /chats/{chatUserId} {
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == chatUserId || 
+         get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true);
+      
+      // Chat messages subcollection
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && 
+          (request.auth.uid == chatUserId || 
+           get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true);
+      }
+    }
+    
     // Recipes - everyone can read, only dietician can write
     match /recipes/{recipeId} {
       allow read: if request.auth != null;

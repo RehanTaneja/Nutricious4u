@@ -4870,6 +4870,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   const [initializing, setInitializing] = React.useState(true); // <-- new state
   const [profileLoading, setProfileLoading] = React.useState(false);
   const [profileLoaded, setProfileLoaded] = React.useState(false);
+  const [userList, setUserList] = React.useState<any[]>([]);
 
   // Determine chat userId (for user: their own, for dietician: from route param)
   React.useEffect(() => {
@@ -4921,36 +4922,65 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     });
   }, [route?.params?.userId]);
 
+  // Fetch user list for dieticians to get user profiles
+  React.useEffect(() => {
+    if (isDietician) {
+      const fetchUserList = async () => {
+        try {
+          const usersFromAPI = await listNonDieticianUsers();
+          console.log('[DieticianMessageScreen] Fetched user list:', usersFromAPI?.length, 'users');
+          setUserList(usersFromAPI || []);
+        } catch (error) {
+          console.error('[DieticianMessageScreen] Error fetching user list:', error);
+          setUserList([]);
+        }
+      };
+      fetchUserList();
+    }
+  }, [isDietician]);
+
   // Fetch user profile for chat header (for dietician)
   React.useEffect(() => {
     if (isDietician && userId) {
       setProfileLoading(true);
       setProfileLoaded(false);
       console.log('[DieticianMessageScreen] Fetching profile for userId:', userId);
-      firestore.collection('user_profiles').doc(userId).get().then(doc => {
-        if (doc.exists) {
-          const profileData = doc.data();
-          console.log('[DieticianMessageScreen] Profile data:', profileData);
-          setChatUserProfile(profileData);
-        } else {
-          console.log('[DieticianMessageScreen] Profile not found for userId:', userId);
+      
+      // Try to get profile from the user list first (which comes from backend API)
+      // This avoids the placeholder profile issue
+      const userFromList = userList?.find((u: any) => u.userId === userId);
+      if (userFromList) {
+        console.log('[DieticianMessageScreen] Found user in list:', userFromList);
+        setChatUserProfile(userFromList);
+        setProfileLoading(false);
+        setProfileLoaded(true);
+      } else {
+        // Fallback to Firestore
+        firestore.collection('user_profiles').doc(userId).get().then(doc => {
+          if (doc.exists) {
+            const profileData = doc.data();
+            console.log('[DieticianMessageScreen] Profile data from Firestore:', profileData);
+            setChatUserProfile(profileData);
+          } else {
+            console.log('[DieticianMessageScreen] Profile not found for userId:', userId);
+            setChatUserProfile(null);
+          }
+          setProfileLoading(false);
+          setProfileLoaded(true);
+        }).catch((error) => {
+          console.error('[DieticianMessageScreen] Error fetching profile:', error);
+          setProfileLoading(false);
+          setProfileLoaded(true);
           setChatUserProfile(null);
-        }
-        setProfileLoading(false);
-        setProfileLoaded(true);
-      }).catch((error) => {
-        console.error('[DieticianMessageScreen] Error fetching profile:', error);
-        setProfileLoading(false);
-        setProfileLoaded(true);
-        setChatUserProfile(null);
-      });
+        });
+      }
     } else if (!isDietician) {
       // For regular users, we don't need to fetch any profile since they're messaging the dietician
       setProfileLoading(false);
       setProfileLoaded(true);
       setChatUserProfile(null);
     }
-  }, [isDietician, userId]);
+  }, [isDietician, userId, userList]);
 
   // Fetch messages from Firestore (last 7 days only)
   React.useEffect(() => {
@@ -5273,8 +5303,23 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
             const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
             if (!isValid) {
               console.log('[DieticianMessagesListScreen] Skipping invalid user:', u);
+              return false;
             }
-            return isValid;
+            
+            // Skip test users and placeholder users
+            const isTestUser = (
+              u.firstName?.toLowerCase() === 'test' ||
+              u.email?.startsWith('test@') ||
+              u.userId?.toLowerCase().includes('test') ||
+              (u.firstName === 'User' && u.lastName === '')
+            );
+            
+            if (isTestUser) {
+              console.log('[DieticianMessagesListScreen] Skipping test user:', u);
+              return false;
+            }
+            
+            return true;
           });
           console.log('[DieticianMessagesListScreen] After filtering:', filteredProfiles.length, 'users');
         }
@@ -8159,8 +8204,23 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
             if (!isValid) {
               console.log('[UploadDietScreen] Skipping invalid user:', u);
+              return false;
             }
-            return isValid;
+            
+            // Skip test users and placeholder users
+            const isTestUser = (
+              u.firstName?.toLowerCase() === 'test' ||
+              u.email?.startsWith('test@') ||
+              u.userId?.toLowerCase().includes('test') ||
+              (u.firstName === 'User' && u.lastName === '')
+            );
+            
+            if (isTestUser) {
+              console.log('[UploadDietScreen] Skipping test user:', u);
+              return false;
+            }
+            
+            return true;
           });
           console.log('[UploadDietScreen] After filtering:', filteredProfiles.length, 'users');
         }
@@ -8415,24 +8475,6 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               </Text>
             </TouchableOpacity>
             
-            <TouchableOpacity
-              style={[
-                styles.viewDietButton,
-                { 
-                  width: '100%', 
-                  marginBottom: 12,
-                  minHeight: 48,
-                  justifyContent: 'center',
-                  backgroundColor: selectedUser?.dietPdfUrl ? '#FFA500' : COLORS.placeholder,
-                  opacity: selectedUser?.dietPdfUrl ? 1 : 0.5
-                }
-              ]}
-              onPress={handleViewDiet}
-              disabled={!selectedUser?.dietPdfUrl}
-            >
-              <Text style={styles.viewDietButtonText}>View Current Diet</Text>
-            </TouchableOpacity>
-            
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[
@@ -8445,17 +8487,6 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  { backgroundColor: selectedUser?.dietPdfUrl ? '#FFA500' : COLORS.placeholder }
-                ]}
-                onPress={handleViewDiet}
-                disabled={!selectedUser?.dietPdfUrl}
-              >
-                <Text style={styles.saveButtonText}>View Diet</Text>
               </TouchableOpacity>
             </View>
           </View>

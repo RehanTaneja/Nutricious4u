@@ -258,10 +258,23 @@ export default function App() {
                   setHasCompletedQuiz(true);
                   console.log('[Dietician Debug] Skipping quiz for dietician');
                 } else {
-                  // For regular users, skip profile check to avoid 404 errors
-                  setHasCompletedQuiz(false);
-                  await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-                  console.log('[Dietician Debug] User quiz status: false (skipped profile check)');
+                  // For regular users, check if they have a profile
+                  try {
+                    const profile = await getUserProfile(firebaseUser.uid);
+                    if (profile && profile.firstName && profile.firstName !== 'User') {
+                      setHasCompletedQuiz(true);
+                      await AsyncStorage.setItem('hasCompletedQuiz', 'true');
+                      console.log('[Profile Check] User has completed profile, quiz status: true');
+                    } else {
+                      setHasCompletedQuiz(false);
+                      await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                      console.log('[Profile Check] User has no profile or placeholder profile, quiz status: false');
+                    }
+                  } catch (error) {
+                    console.log('[Profile Check] Error checking profile, assuming quiz not completed:', error);
+                    setHasCompletedQuiz(false);
+                    await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                  }
                 }
               } catch (e) {
                 console.error('Error in user profile setup:', e);

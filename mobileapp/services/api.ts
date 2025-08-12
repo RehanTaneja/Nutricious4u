@@ -11,20 +11,20 @@ console.log('Platform:', Platform.OS);
 console.log('==========================');
 
 // Environment-based API URL configuration
-let apiHost = 'localhost';
-let port = ':8000';
-let protocol = 'http';
+let apiHost = 'nutricious4u-production.up.railway.app';
+let port = '';
+let protocol = 'https';
 
-// For production builds, use environment variable or default to your production backend
+// Always use production backend URL for now (since localhost backend is not running)
 if (__DEV__) {
-  // Development: Use localhost for Expo Go development
-  apiHost = 'localhost';
-  port = ':8000';
-  protocol = 'http';
-  logger.log('[API] Using localhost for development:', apiHost);
+  // Development: Use Railway URL for Expo Go testing
+  apiHost = PRODUCTION_BACKEND_URL || 'nutricious4u-production.up.railway.app';
+  port = '';
+  protocol = 'https';
+  logger.log('[API] Using Railway backend for development:', apiHost);
 } else {
   // Production: Use Railway URL
-  apiHost = PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+  apiHost = PRODUCTION_BACKEND_URL || 'nutricious4u-production.up.railway.app';
   port = '';
   protocol = 'https';
   logger.log('[API] Using production backend:', apiHost);
