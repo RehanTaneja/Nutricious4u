@@ -4987,12 +4987,10 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     if (!userId) return;
     console.log('[DieticianMessageScreen] Fetching messages for userId:', userId);
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const unsubscribe = firestore
       .collection('chats')
       .doc(userId)
       .collection('messages')
-      .where('timestamp', '>=', weekAgo)
       .orderBy('timestamp', 'asc')
       .onSnapshot(snapshot => {
         const msgs: any[] = [];
@@ -5003,16 +5001,6 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         setMessages(msgs);
       }, (error) => {
         console.error('[DieticianMessageScreen] Error fetching messages:', error);
-      });
-    // Cleanup: delete messages older than 7 days
-    firestore
-      .collection('chats')
-      .doc(userId)
-      .collection('messages')
-      .where('timestamp', '<', weekAgo)
-      .get()
-      .then(snapshot => {
-        snapshot.forEach(doc => doc.ref.delete());
       });
     return () => unsubscribe();
   }, [userId]);
