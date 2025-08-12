@@ -207,8 +207,25 @@ def list_non_dietician_users():
     
     try:
         users_ref = db.collection("user_profiles")
-        users = users_ref.where("isDietician", "!=", True).stream()
-        return [u.to_dict() for u in users]
+        # Get all users and filter in Python instead of Firestore query
+        all_users = users_ref.stream()
+        non_dietician_users = []
+        
+        for user in all_users:
+            user_data = user.to_dict()
+            # Skip users with isDietician = True, include all others
+            if user_data.get("isDietician") != True:
+                # Also skip placeholder users
+                is_placeholder = (
+                    user_data.get("firstName", "User") == "User" and
+                    user_data.get("lastName", "") == "" and
+                    (not user_data.get("email") or user_data.get("email", "").endswith("@example.com"))
+                )
+                if not is_placeholder:
+                    non_dietician_users.append(user_data)
+        
+        print(f"Found {len(non_dietician_users)} non-dietician users")
+        return non_dietician_users
     except Exception as e:
         print(f"Failed to list users: {e}")
         raise HTTPException(status_code=500, detail="Failed to list users.")

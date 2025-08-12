@@ -564,8 +564,14 @@ async def create_user_profile(profile: UserProfile):
         if doc.exists:
             return doc.to_dict()
 
+        # Add isDietician field based on email
+        if profile_dict.get("email") == "nutricious4u@gmail.com":
+            profile_dict["isDietician"] = True
+        else:
+            profile_dict["isDietician"] = False
+        
         await loop.run_in_executor(executor, lambda: doc_ref.set(profile_dict))
-        logger.info(f"Created profile for user {user_id}")
+        logger.info(f"Created profile for user {user_id} with isDietician={profile_dict.get('isDietician')}")
         return profile_dict
     except Exception as e:
         logger.error(f"Error creating user profile: {e}")

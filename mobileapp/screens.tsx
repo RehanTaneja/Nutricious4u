@@ -4790,10 +4790,23 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
   React.useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    // Check Firestore profile for isDietician flag
-    firestore.collection('users').doc(user.uid).get().then(doc => {
-      const data = doc.data();
-      setIsDietician(!!data?.isDietician);
+    
+    // Check both collections for dietician status
+    Promise.all([
+      firestore.collection('users').doc(user.uid).get(),
+      firestore.collection('user_profiles').doc(user.uid).get()
+    ]).then(([userDoc, profileDoc]) => {
+      const userData = userDoc.data();
+      const profileData = profileDoc.data();
+      
+      // Check for dietician status in both collections
+      const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
+      setIsDietician(isDieticianAccount);
+    }).catch(error => {
+      console.error('[Messages] Error checking dietician status:', error);
+      // Fallback: check email
+      const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
+      setIsDietician(isDieticianAccount);
     });
   }, []);
   if (isDietician) {
@@ -4862,10 +4875,19 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   React.useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    firestore.collection('users').doc(user.uid).get().then(doc => {
-      const data = doc.data();
-      const isDieticianAccount = !!data?.isDietician;
+    
+    // Check both collections for dietician status
+    Promise.all([
+      firestore.collection('users').doc(user.uid).get(),
+      firestore.collection('user_profiles').doc(user.uid).get()
+    ]).then(([userDoc, profileDoc]) => {
+      const userData = userDoc.data();
+      const profileData = profileDoc.data();
+      
+      // Check for dietician status in both collections
+      const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
       setIsDietician(isDieticianAccount);
+      
       if (isDieticianAccount) {
         // Dietician must have a userId param to chat with a user
         if (route?.params?.userId) {
@@ -4876,7 +4898,14 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       } else {
         setUserId(user.uid || null);
       }
-      setInitializing(false); // <-- set loading false after determining userId
+      setInitializing(false);
+    }).catch(error => {
+      console.error('[DieticianMessageScreen] Error checking dietician status:', error);
+      // Fallback: check email
+      const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
+      setIsDietician(isDieticianAccount);
+      setUserId(isDieticianAccount ? (route?.params?.userId || null) : (user.uid || null));
+      setInitializing(false);
     });
   }, []);
 
@@ -5183,65 +5212,23 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
     async function fetchData() {
       setLoading(true);
       try {
-        // 1. Fetch users directly from Firebase Auth and Firestore
-        let filteredProfiles: any[] = [];
+        // 1. Fetch users from backend API only
+        const usersFromAPI = await listNonDieticianUsers();
+        console.log('[DieticianMessagesListScreen] Users from API:', usersFromAPI);
         
-        try {
-          // First try the API
-          const usersFromAPI = await listNonDieticianUsers();
-          console.log('[DieticianMessagesListScreen] Users from API:', usersFromAPI);
-          
-          if (usersFromAPI && usersFromAPI.length > 0) {
-            filteredProfiles = usersFromAPI.filter((u: any) => {
-              const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
-              if (!isValid) {
-                console.log('[DieticianMessagesListScreen] Skipping invalid user:', u);
-              }
-              return isValid;
-            });
-          } else {
-            throw new Error('API returned empty or invalid data');
-          }
-        } catch (error) {
-          console.error('[DieticianMessagesListScreen] Error fetching users from API:', error);
-          console.log('[DieticianMessagesListScreen] Falling back to direct Firestore query...');
-          
-          // Fallback: Get all Firebase Auth users and their profiles
-          const [usersSnap, userProfilesSnap] = await Promise.all([
-            firestore.collection('users').get(),
-            firestore.collection('user_profiles').get()
-          ]);
-          
-          console.log('[DieticianMessagesListScreen] Found users in users collection:', usersSnap.docs.length);
-          console.log('[DieticianMessagesListScreen] Found users in user_profiles collection:', userProfilesSnap.docs.length);
-          
-          const usersFromUsers = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-          const usersFromProfiles = userProfilesSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-          
-          // Merge and deduplicate
-          const allUsers = [...usersFromUsers, ...usersFromProfiles];
-          const uniqueUsers = allUsers.reduce((acc: any, user: any) => {
-            if (!acc[user.userId]) {
-              acc[user.userId] = user;
-            } else {
-              acc[user.userId] = { ...acc[user.userId], ...user };
-            }
-            return acc;
-          }, {});
-          
-          const allProfiles = Object.values(uniqueUsers);
-          const dieticianEmail = 'nutricious4u@gmail.com';
-          
-          filteredProfiles = allProfiles.filter((u: any) => {
-            const isPlaceholder = (u.firstName === 'User' && (!u.lastName || u.lastName === '')) && (!u.email || u.email.endsWith('@example.com'));
-            const isValid = u.email !== dieticianEmail && !isPlaceholder && u.email;
+        let filteredProfiles: any[] = [];
+        if (!usersFromAPI || usersFromAPI.length === 0) {
+          console.log('[DieticianMessagesListScreen] No users found from API');
+        } else {
+          console.log('[DieticianMessagesListScreen] API returned users:', usersFromAPI.length);
+          filteredProfiles = usersFromAPI.filter((u: any) => {
+            const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
             if (!isValid) {
-              console.log('[DieticianMessagesListScreen] Filtered out user:', { userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName });
+              console.log('[DieticianMessagesListScreen] Skipping invalid user:', u);
             }
             return isValid;
           });
-          
-          console.log('[DieticianMessagesListScreen] Final filtered users:', filteredProfiles.length);
+          console.log('[DieticianMessagesListScreen] After filtering:', filteredProfiles.length, 'users');
         }
         // 2. Fetch all chat summaries
         const chatsSnap = await firestore.collection('chats').get();
@@ -8097,65 +8084,23 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     async function fetchData() {
       setLoading(true);
       try {
-        // 1. Fetch users directly from Firebase Auth and Firestore
-        let filteredProfiles: any[] = [];
+        // 1. Fetch users from backend API only
+        const usersFromAPI = await listNonDieticianUsers();
+        console.log('[UploadDietScreen] Users from API:', usersFromAPI);
         
-        try {
-          // First try the API
-          const usersFromAPI = await listNonDieticianUsers();
-          console.log('[UploadDietScreen] Users from API:', usersFromAPI);
-          
-          if (usersFromAPI && usersFromAPI.length > 0) {
-            filteredProfiles = usersFromAPI.filter((u: any) => {
-              const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
-              if (!isValid) {
-                console.log('[UploadDietScreen] Skipping invalid user:', u);
-              }
-              return isValid;
-            });
-          } else {
-            throw new Error('API returned empty or invalid data');
-          }
-        } catch (error) {
-          console.error('[UploadDietScreen] Error fetching users from API:', error);
-          console.log('[UploadDietScreen] Falling back to direct Firestore query...');
-          
-          // Fallback: Get all Firebase Auth users and their profiles
-          const [usersSnap, userProfilesSnap] = await Promise.all([
-            firestore.collection('users').get(),
-            firestore.collection('user_profiles').get()
-          ]);
-          
-          console.log('[UploadDietScreen] Found users in users collection:', usersSnap.docs.length);
-          console.log('[UploadDietScreen] Found users in user_profiles collection:', userProfilesSnap.docs.length);
-          
-          const usersFromUsers = usersSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-          const usersFromProfiles = userProfilesSnap.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
-          
-          // Merge and deduplicate
-          const allUsers = [...usersFromUsers, ...usersFromProfiles];
-          const uniqueUsers = allUsers.reduce((acc: any, user: any) => {
-            if (!acc[user.userId]) {
-              acc[user.userId] = user;
-            } else {
-              acc[user.userId] = { ...acc[user.userId], ...user };
-            }
-            return acc;
-          }, {});
-          
-          const allProfiles = Object.values(uniqueUsers);
-          const dieticianEmail = 'nutricious4u@gmail.com';
-          
-          filteredProfiles = allProfiles.filter((u: any) => {
-            const isPlaceholder = (u.firstName === 'User' && (!u.lastName || u.lastName === '')) && (!u.email || u.email.endsWith('@example.com'));
-            const isValid = u.email !== dieticianEmail && !isPlaceholder && u.email;
+        let filteredProfiles: any[] = [];
+        if (!usersFromAPI || usersFromAPI.length === 0) {
+          console.log('[UploadDietScreen] No users found from API');
+        } else {
+          console.log('[UploadDietScreen] API returned users:', usersFromAPI.length);
+          filteredProfiles = usersFromAPI.filter((u: any) => {
+            const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
             if (!isValid) {
-              console.log('[UploadDietScreen] Filtered out user:', { userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName });
+              console.log('[UploadDietScreen] Skipping invalid user:', u);
             }
             return isValid;
           });
-          
-          console.log('[UploadDietScreen] Final filtered users:', filteredProfiles.length);
+          console.log('[UploadDietScreen] After filtering:', filteredProfiles.length, 'users');
         }
         
         // 2. Fetch diet countdowns and PDF URLs for each user
