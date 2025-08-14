@@ -8006,6 +8006,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  subscriptionHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.placeholder,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: COLORS.placeholder,
+  },
+  subscriptionHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 40,
+  },
 });
 
 export { 
@@ -8252,8 +8277,21 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.container, { paddingTop: 32 }]}>
+      {/* Header with Back Button */}
+      <View style={styles.subscriptionHeaderContainer}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={24} color={COLORS.text} />
+        </TouchableOpacity>
+        <Text style={styles.subscriptionHeaderTitle}>My Subscriptions</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+      
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
         <View style={styles.settingsContainer}>
           <Text style={styles.screenTitle}>My Subscriptions</Text>
         
