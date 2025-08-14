@@ -91,6 +91,8 @@ class NotificationScheduler:
                 logger.warning(f"No notification token found for user {user_id}")
                 return 0
             
+            # Prepare batch operations for better performance
+            batch = self.db.batch()
             scheduled_count = 0
             
             for notification in notifications:
@@ -103,11 +105,18 @@ class NotificationScheduler:
                 
                 # Schedule notification for each selected day
                 for day in selected_days:
-                    success = await self._schedule_notification_for_day(
+                    scheduled_notification = self._prepare_scheduled_notification(
                         user_token, notification, day, user_id
                     )
-                    if success:
+                    if scheduled_notification:
+                        # Add to batch instead of individual operations
+                        doc_ref = self.db.collection("scheduled_notifications").document()
+                        batch.set(doc_ref, scheduled_notification)
                         scheduled_count += 1
+            
+            # Commit all operations in a single batch
+            if scheduled_count > 0:
+                batch.commit()
             
             logger.info(f"Scheduled {scheduled_count} notifications for user {user_id}")
             return scheduled_count
@@ -116,9 +125,10 @@ class NotificationScheduler:
             logger.error(f"Error scheduling notifications for user {user_id}: {e}")
             return 0
     
-    async def _schedule_notification_for_day(self, user_token: str, notification: dict, day: int, user_id: str) -> bool:
+    def _prepare_scheduled_notification(self, user_token: str, notification: dict, day: int, user_id: str) -> dict:
         """
-        Schedule a notification for a specific day of the week.
+        Prepare a scheduled notification document for a specific day of the week.
+        Returns the notification data to be stored in Firestore.
         """
         try:
             # Get current time in UTC
@@ -143,7 +153,7 @@ class NotificationScheduler:
             if next_occurrence.tzinfo is None:
                 next_occurrence = pytz.UTC.localize(next_occurrence)
             
-            # Store the scheduled notification in Firestore for tracking
+            # Prepare the scheduled notification document
             scheduled_notification = {
                 'user_id': user_id,
                 'notification_id': notification['id'],
@@ -155,11 +165,25 @@ class NotificationScheduler:
                 'created_at': datetime.now(pytz.UTC).isoformat()
             }
             
-            # Store in scheduled_notifications collection
-            self.db.collection("scheduled_notifications").add(scheduled_notification)
+            logger.info(f"Prepared notification for user {user_id} on {self.days_of_week[day]} at {notification['time']}")
+            return scheduled_notification
             
-            logger.info(f"Scheduled notification for user {user_id} on {self.days_of_week[day]} at {notification['time']}")
-            return True
+        except Exception as e:
+            logger.error(f"Error preparing notification for day {day}: {e}")
+            return None
+
+    async def _schedule_notification_for_day(self, user_token: str, notification: dict, day: int, user_id: str) -> bool:
+        """
+        Schedule a notification for a specific day of the week.
+        This method is kept for backward compatibility but uses the new batch approach.
+        """
+        try:
+            scheduled_notification = self._prepare_scheduled_notification(user_token, notification, day, user_id)
+            if scheduled_notification:
+                # Store in scheduled_notifications collection
+                self.db.collection("scheduled_notifications").add(scheduled_notification)
+                return True
+            return False
             
         except Exception as e:
             logger.error(f"Error scheduling notification for day {day}: {e}")

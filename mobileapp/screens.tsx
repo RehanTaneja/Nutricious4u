@@ -4164,7 +4164,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setShowEditDaySelector(false);
 
       // Show success message
-      setSuccessMessage('Notification updated and rescheduled successfully!');
+      setSuccessMessage('Notification updated successfully! Rescheduling in background...');
       setShowSuccessModal(true);
 
     } catch (error: any) {

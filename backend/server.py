@@ -1604,10 +1604,12 @@ async def update_diet_notification(user_id: str, notification_id: str, notificat
             "updated_at": datetime.now().isoformat()
         }, merge=True)
         
-        # Reschedule notifications for this user
-        await schedule_diet_notifications(user_id)
+        # Return immediately, reschedule notifications asynchronously
+        # This prevents the API from timing out
+        import asyncio
+        asyncio.create_task(schedule_diet_notifications(user_id))
         
-        return {"message": "Notification updated and rescheduled successfully"}
+        return {"message": "Notification updated successfully. Rescheduling in background..."}
         
     except Exception as e:
         logger.error(f"Error updating notification for user {user_id}: {e}")
@@ -1641,10 +1643,12 @@ async def delete_diet_notification(user_id: str, notification_id: str):
             "updated_at": datetime.now().isoformat()
         }, merge=True)
         
-        # Reschedule remaining notifications
-        await schedule_diet_notifications(user_id)
+        # Return immediately, reschedule notifications asynchronously
+        # This prevents the API from timing out
+        import asyncio
+        asyncio.create_task(schedule_diet_notifications(user_id))
         
-        return {"message": "Notification deleted and remaining notifications rescheduled"}
+        return {"message": "Notification deleted successfully. Rescheduling remaining notifications in background..."}
         
     except Exception as e:
         logger.error(f"Error deleting notification for user {user_id}: {e}")
