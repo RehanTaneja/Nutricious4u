@@ -38,8 +38,7 @@ import {
   UploadDietScreen, // <-- import the new screen
   RecipesScreen, // <-- import the new recipes screen
   SubscriptionSelectionScreen, // <-- import subscription selection screen
-  MySubscriptionsScreen, // <-- import my subscriptions screen
-  NotificationsScreen // <-- import notifications screen
+  MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
 
 type User = firebase.User;
@@ -452,7 +451,6 @@ export default function App() {
               <Stack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: false }} />
               <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} options={{ headerShown: false }} />
               <Stack.Screen name="MySubscriptions" component={MySubscriptionsScreen} options={{ headerShown: false }} />
-              <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
             </>
           )}
         </Stack.Navigator>

@@ -2765,15 +2765,6 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.settingsButtonRow}>
-              <TouchableOpacity
-                style={styles.notificationsButton}
-                onPress={() => navigation.navigate('Notifications')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.notificationsButtonText}>Notifications</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.settingsButtonRow}>
               <StyledButton 
                 title="Logout" 
                 onPress={handleLogout}
@@ -8031,6 +8022,27 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
+  customButtonContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  customGreenBlackButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  customGreenBlackButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
 });
 
 export { 
@@ -8051,8 +8063,7 @@ export {
   DieticianDashboardScreen, // <-- export the dietician dashboard screen
   RecipesScreen, // <-- export RecipesScreen
   SubscriptionSelectionScreen, // <-- export subscription selection screen
-  MySubscriptionsScreen, // <-- export my subscriptions screen
-  NotificationsScreen // <-- export notifications screen
+  MySubscriptionsScreen // <-- export my subscriptions screen
 };
 
 // --- Subscription Selection Screen ---
@@ -8277,21 +8288,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32 }]}>
-      {/* Header with Back Button */}
-      <View style={styles.subscriptionHeaderContainer}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.subscriptionHeaderTitle}>My Subscriptions</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-      
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.settingsContainer}>
           <Text style={styles.screenTitle}>My Subscriptions</Text>
         
@@ -8373,6 +8371,17 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                 ))}
               </View>
+            </View>
+            
+            {/* Custom Green Black Button */}
+            <View style={styles.customButtonContainer}>
+              <TouchableOpacity
+                style={styles.customGreenBlackButton}
+                onPress={() => navigation.navigate('SubscriptionSelection')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.customGreenBlackButtonText}>Get New Subscription</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : (
