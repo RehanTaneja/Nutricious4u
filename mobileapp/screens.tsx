@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, SubscriptionPlan, SubscriptionStatus } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -2762,6 +2762,15 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 activeOpacity={0.85}
               >
                 <Text style={styles.mySubscriptionsButtonText}>My Subscriptions</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.settingsButtonRow}>
+              <TouchableOpacity
+                style={styles.notificationsButton}
+                onPress={() => navigation.navigate('Notifications')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.notificationsButtonText}>Notifications</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.settingsButtonRow}>
@@ -7876,6 +7885,87 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 20,
   },
+  scrollView: {
+    flex: 1,
+  },
+  errorContainer: {
+    backgroundColor: '#fee',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: COLORS.placeholder,
+    textAlign: 'center',
+  },
+  notificationsList: {
+    gap: 12,
+  },
+  notificationItem: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  unreadNotification: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    backgroundColor: '#f8f9ff',
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    flex: 1,
+    marginRight: 8,
+  },
+  notificationTime: {
+    fontSize: 12,
+    color: COLORS.placeholder,
+  },
+  notificationBody: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  notificationActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  notificationActionButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  notificationActionText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '500',
+  },
+  deleteButton: {
+    backgroundColor: '#dc3545',
+  },
+  deleteButtonText: {
+    color: COLORS.white,
+  },
 
   mySubscriptionsButton: {
     width: '100%',
@@ -7898,6 +7988,24 @@ const styles = StyleSheet.create({
     fontSize: 28,
     letterSpacing: 1,
   },
+  notificationsButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  notificationsButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export { 
@@ -7918,7 +8026,8 @@ export {
   DieticianDashboardScreen, // <-- export the dietician dashboard screen
   RecipesScreen, // <-- export RecipesScreen
   SubscriptionSelectionScreen, // <-- export subscription selection screen
-  MySubscriptionsScreen // <-- export my subscriptions screen
+  MySubscriptionsScreen, // <-- export my subscriptions screen
+  NotificationsScreen // <-- export notifications screen
 };
 
 // --- Subscription Selection Screen ---
@@ -8144,8 +8253,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
-      <View style={styles.settingsContainer}>
-        <Text style={styles.screenTitle}>My Subscriptions</Text>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.settingsContainer}>
+          <Text style={styles.screenTitle}>My Subscriptions</Text>
         
         {error && (
           <View style={styles.subscriptionErrorContainer}>
@@ -8237,10 +8347,179 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             />
           </View>
         )}
-      </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }; 
+
+// --- Notifications Screen ---
+const NotificationsScreen = ({ navigation }: { navigation: any }) => {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const currentUser = auth.currentUser;
+
+  const fetchNotifications = async () => {
+    if (!currentUser?.uid) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Check if user is dietician (using email or special logic)
+      const userProfile = await getUserProfile(currentUser.uid);
+      const userEmail = currentUser.email;
+      const isDietician = userEmail === "dietician@nutricious4u.com" || userEmail?.includes("dietician");
+      const userId = isDietician ? "dietician" : currentUser.uid;
+      
+      const response = await getUserNotifications(userId);
+      setNotifications(response.notifications);
+    } catch (err: any) {
+      console.error('Error fetching notifications:', err);
+      setError(err.message || 'Failed to fetch notifications');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+    setRefreshing(false);
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await markNotificationRead(notificationId);
+      // Update local state
+      setNotifications(prev => 
+        prev.map(notification => 
+          notification.id === notificationId 
+            ? { ...notification, read: true }
+            : notification
+        )
+      );
+    } catch (err: any) {
+      console.error('Error marking notification as read:', err);
+      Alert.alert('Error', 'Failed to mark notification as read');
+    }
+  };
+
+  const handleDeleteNotification = async (notificationId: string) => {
+    try {
+      await deleteNotification(notificationId);
+      // Remove from local state
+      setNotifications(prev => 
+        prev.filter(notification => notification.id !== notificationId)
+      );
+    } catch (err: any) {
+      console.error('Error deleting notification:', err);
+      Alert.alert('Error', 'Failed to delete notification');
+    }
+  };
+
+  const formatNotificationTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+      
+      if (diffInHours < 1) {
+        const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+        return `${diffInMinutes} minutes ago`;
+      } else if (diffInHours < 24) {
+        return `${Math.floor(diffInHours)} hours ago`;
+      } else {
+        const diffInDays = Math.floor(diffInHours / 24);
+        return `${diffInDays} days ago`;
+      }
+    } catch {
+      return 'Unknown time';
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [currentUser?.uid]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        <View style={styles.settingsContainer}>
+          <Text style={styles.screenTitle}>Notifications</Text>
+          
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {notifications.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>No notifications yet</Text>
+            </View>
+          ) : (
+            <View style={styles.notificationsList}>
+              {notifications.map((notification) => (
+                <View 
+                  key={notification.id} 
+                  style={[
+                    styles.notificationItem,
+                    !notification.read && styles.unreadNotification
+                  ]}
+                >
+                  <View style={styles.notificationHeader}>
+                    <Text style={styles.notificationTitle}>{notification.title}</Text>
+                    <Text style={styles.notificationTime}>
+                      {formatNotificationTime(notification.timestamp)}
+                    </Text>
+                  </View>
+                  
+                  <Text style={styles.notificationBody}>{notification.body}</Text>
+                  
+                  <View style={styles.notificationActions}>
+                    {!notification.read && (
+                      <TouchableOpacity
+                        style={styles.notificationActionButton}
+                        onPress={() => handleMarkAsRead(notification.id)}
+                      >
+                        <Text style={styles.notificationActionText}>Mark as Read</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    <TouchableOpacity
+                      style={[styles.notificationActionButton, styles.deleteButton]}
+                      onPress={() => handleDeleteNotification(notification.id)}
+                    >
+                      <Text style={[styles.notificationActionText, styles.deleteButtonText]}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
 
 // Firebase Auth error code to user-friendly message mapping
 const firebaseErrorMessages: { [key: string]: string } = {

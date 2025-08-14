@@ -1983,68 +1983,177 @@ async def check_diet_reminders_job():
         print(f"[Diet Reminders] Error in scheduled job: {e}")
 
 async def check_subscription_reminders_job():
-    """
-    Scheduled job to check for users with subscription expiring in 1 week
-    """
+    """Check for subscription reminders and send notifications"""
     try:
-        print("[Subscription Reminders] Running scheduled check for expiring subscriptions...")
-        
-        if not FIREBASE_AVAILABLE or not firestore_db:
-            print("[Subscription Reminders] Firebase not available")
-            return
+        check_firebase_availability()
         
         # Get all users with active subscriptions
-        users_ref = firestore_db.collection("users")
+        users_ref = firestore_db.collection("user_profiles")
         users = users_ref.where("isSubscriptionActive", "==", True).stream()
         
-        one_week_from_now = datetime.now() + timedelta(days=7)
-        users_to_notify = []
+        current_time = datetime.now()
         
         for user_doc in users:
-            user_data = user_doc.to_dict()
-            subscription_end = user_data.get("subscriptionEndDate")
-            
-            if subscription_end:
-                try:
-                    end_date = datetime.fromisoformat(subscription_end)
-                    # Check if subscription expires within 1 week
-                    if end_date <= one_week_from_now:
-                        users_to_notify.append({
-                            "userId": user_doc.id,
-                            "userName": f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip(),
-                            "endDate": subscription_end,
-                            "notificationToken": user_data.get("notificationToken")
-                        })
-                except Exception as e:
-                    print(f"[Subscription Reminders] Error parsing date for user {user_doc.id}: {e}")
+            try:
+                user_data = user_doc.to_dict()
+                user_id = user_doc.id
+                
+                # Skip if user is a dietician
+                if user_data.get("isDietician", False):
+                    continue
+                
+                subscription_end_date = user_data.get("subscriptionEndDate")
+                if not subscription_end_date:
+                    continue
+                
+                end_date = datetime.fromisoformat(subscription_end_date)
+                time_until_expiry = end_date - current_time
+                
+                # Check if subscription expires in 1 week
+                if timedelta(days=6) <= time_until_expiry <= timedelta(days=7):
+                    # Send reminder notification
+                    await send_subscription_reminder_notification(user_id, user_data)
+                
+                # Check if subscription has expired
+                elif time_until_expiry <= timedelta(0):
+                    # Send expiry notification to both user and dietician
+                    await send_subscription_expiry_notifications(user_id, user_data)
+                    
+            except Exception as e:
+                logger.error(f"[SUBSCRIPTION REMINDER] Error processing user {user_doc.id}: {e}")
+                continue
+                
+    except Exception as e:
+        logger.error(f"[SUBSCRIPTION REMINDERS JOB] Error: {e}")
+
+async def send_subscription_reminder_notification(user_id: str, user_data: dict):
+    """Send reminder notification to user about subscription expiry"""
+    try:
+        user_name = user_data.get("name", "User")
+        subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
         
-        if users_to_notify:
-            print(f"[Subscription Reminders] Found {len(users_to_notify)} users with expiring subscriptions")
-            
-            for user in users_to_notify:
-                if user["notificationToken"]:
-                    try:
-                        end_date = datetime.fromisoformat(user["endDate"])
-                        days_left = (end_date - datetime.now()).days
-                        
-                        message = f"Your subscription expires in {days_left} days. Renew now to continue enjoying all features!"
-                        
-                        send_push_notification(
-                            user["notificationToken"],
-                            "Subscription Expiring Soon",
-                            message,
-                            {"type": "subscription_reminder", "daysLeft": days_left}
-                        )
-                        print(f"[Subscription Reminders] Sent reminder to {user['userName']}")
-                    except Exception as e:
-                        print(f"[Subscription Reminders] Error sending notification to {user['userName']}: {e}")
-                else:
-                    print(f"[Subscription Reminders] No notification token for {user['userName']}")
-        else:
-            print("[Subscription Reminders] No users with expiring subscriptions")
+        # Create notification data
+        notification_data = {
+            "userId": user_id,
+            "title": "Subscription Expiring Soon",
+            "body": f"Hi {user_name}, your {subscription_plan} subscription will expire in 1 week. Renew now to continue your fitness journey!",
+            "type": "subscription_reminder",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        # Save notification to Firestore
+        firestore_db.collection("notifications").add(notification_data)
+        
+        # Send push notification if FCM token exists
+        fcm_token = user_data.get("fcmToken")
+        if fcm_token:
+            await send_push_notification(
+                fcm_token,
+                "Subscription Expiring Soon",
+                f"Hi {user_name}, your {subscription_plan} subscription will expire in 1 week. Renew now to continue your fitness journey!"
+            )
             
     except Exception as e:
-        print(f"[Subscription Reminders] Error in scheduled job: {e}")
+        logger.error(f"[SUBSCRIPTION REMINDER NOTIFICATION] Error: {e}")
+
+async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
+    """Send expiry notifications to both user and dietician"""
+    try:
+        user_name = user_data.get("name", "User")
+        subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
+        
+        # Send notification to user
+        user_notification = {
+            "userId": user_id,
+            "title": "Subscription Expired",
+            "body": f"Hi {user_name}, your {subscription_plan} subscription has expired. Renew now to continue your fitness journey!",
+            "type": "subscription_expired",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(user_notification)
+        
+        # Send push notification to user if FCM token exists
+        user_fcm_token = user_data.get("fcmToken")
+        if user_fcm_token:
+            await send_push_notification(
+                user_fcm_token,
+                "Subscription Expired",
+                f"Hi {user_name}, your {subscription_plan} subscription has expired. Renew now to continue your fitness journey!"
+            )
+        
+        # Send notification to dietician
+        dietician_notification = {
+            "userId": "dietician",  # Special ID for dietician
+            "title": "User Subscription Expired",
+            "body": f"User {user_name} ({user_id}) subscription ({subscription_plan}) has expired.",
+            "type": "user_subscription_expired",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(dietician_notification)
+        
+        # Get dietician FCM token and send push notification
+        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
+        for dietician in dietician_doc:
+            dietician_data = dietician.to_dict()
+            dietician_fcm_token = dietician_data.get("fcmToken")
+            if dietician_fcm_token:
+                await send_push_notification(
+                    dietician_fcm_token,
+                    "User Subscription Expired",
+                    f"User {user_name} ({user_id}) subscription ({subscription_plan}) has expired."
+                )
+            break
+            
+    except Exception as e:
+        logger.error(f"[SUBSCRIPTION EXPIRY NOTIFICATIONS] Error: {e}")
+
+async def send_new_subscription_notification(user_id: str, user_data: dict, plan_id: str):
+    """Send notification to dietician about new subscription"""
+    try:
+        user_name = user_data.get("name", "User")
+        plan_name = get_plan_name(plan_id)
+        
+        # Send notification to dietician
+        dietician_notification = {
+            "userId": "dietician",  # Special ID for dietician
+            "title": "New Subscription",
+            "body": f"User {user_name} ({user_id}) has subscribed to {plan_name}.",
+            "type": "new_subscription",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(dietician_notification)
+        
+        # Get dietician FCM token and send push notification
+        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
+        for dietician in dietician_doc:
+            dietician_data = dietician.to_dict()
+            dietician_fcm_token = dietician_data.get("fcmToken")
+            if dietician_fcm_token:
+                await send_push_notification(
+                    dietician_fcm_token,
+                    "New Subscription",
+                    f"User {user_name} ({user_id}) has subscribed to {plan_name}."
+                )
+            break
+            
+    except Exception as e:
+        logger.error(f"[NEW SUBSCRIPTION NOTIFICATION] Error: {e}")
+
+def get_plan_name(plan_id: str) -> str:
+    """Get plan name from plan ID"""
+    plan_names = {
+        "1month": "1 Month Plan",
+        "3months": "3 Months Plan", 
+        "6months": "6 Months Plan"
+    }
+    return plan_names.get(plan_id, "Unknown Plan")
 
 # Start scheduled job (check every 6 hours)
 import asyncio
@@ -2126,6 +2235,11 @@ async def select_subscription(request: SelectSubscriptionRequest):
             raise HTTPException(status_code=404, detail="User not found")
         
         user_data = user_doc.to_dict()
+        
+        # Check if user is a dietician (prevent dieticians from subscribing)
+        user_email = user_data.get("email", "")
+        if user_email == "dietician@nutricious4u.com" or "dietician" in user_email.lower():
+            raise HTTPException(status_code=403, detail="Dieticians cannot subscribe to plans")
         current_total = user_data.get("totalAmountPaid", 0.0)
         current_subscription_active = user_data.get("isSubscriptionActive", False)
         current_subscription_end_date = user_data.get("subscriptionEndDate")
@@ -2167,6 +2281,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         }
         
         firestore_db.collection("user_profiles").document(request.userId).update(update_data)
+        
+        # Send notification to dietician about new subscription
+        await send_new_subscription_notification(request.userId, user_data, request.planId)
         
         message = f"Successfully subscribed to {request.planId} plan"
         if not should_add_to_total:
@@ -2228,6 +2345,64 @@ async def get_subscription_status(userId: str):
     except Exception as e:
         logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get subscription status")
+
+@api_router.get("/notifications/{userId}")
+async def get_user_notifications(userId: str):
+    """Get notifications for a user"""
+    try:
+        check_firebase_availability()
+        
+        # Get notifications for the user (including dietician notifications if user is dietician)
+        notifications_ref = firestore_db.collection("notifications")
+        
+        if userId == "dietician":
+            # For dietician, get all notifications sent to dietician
+            notifications = notifications_ref.where("userId", "==", "dietician").order_by("timestamp", direction="DESCENDING").limit(50).stream()
+        else:
+            # For regular users, get their notifications
+            notifications = notifications_ref.where("userId", "==", userId).order_by("timestamp", direction="DESCENDING").limit(50).stream()
+        
+        notifications_list = []
+        for notification in notifications:
+            notification_data = notification.to_dict()
+            notification_data["id"] = notification.id
+            notifications_list.append(notification_data)
+        
+        return {"notifications": notifications_list}
+        
+    except Exception as e:
+        logger.error(f"[GET NOTIFICATIONS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get notifications")
+
+@api_router.put("/notifications/{notificationId}/read")
+async def mark_notification_read(notificationId: str):
+    """Mark a notification as read"""
+    try:
+        check_firebase_availability()
+        
+        firestore_db.collection("notifications").document(notificationId).update({
+            "read": True
+        })
+        
+        return {"success": True, "message": "Notification marked as read"}
+        
+    except Exception as e:
+        logger.error(f"[MARK NOTIFICATION READ] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark notification as read")
+
+@api_router.delete("/notifications/{notificationId}")
+async def delete_notification(notificationId: str):
+    """Delete a notification"""
+    try:
+        check_firebase_availability()
+        
+        firestore_db.collection("notifications").document(notificationId).delete()
+        
+        return {"success": True, "message": "Notification deleted"}
+        
+    except Exception as e:
+        logger.error(f"[DELETE NOTIFICATION] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete notification")
 
 
 

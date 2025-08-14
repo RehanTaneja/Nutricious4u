@@ -181,6 +181,16 @@ export interface SubscriptionStatus {
   isSubscriptionActive: boolean;
 }
 
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  type: string;
+  timestamp: string;
+  read: boolean;
+}
+
 
 
 
@@ -524,6 +534,20 @@ export const getSubscriptionStatus = async (userId: string): Promise<Subscriptio
   return response.data;
 };
 
+// --- Notification Management ---
+export const getUserNotifications = async (userId: string): Promise<{ notifications: Notification[] }> => {
+  const response = await api.get(`/notifications/${userId}`);
+  return response.data;
+};
 
+export const markNotificationRead = async (notificationId: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.put(`/notifications/${notificationId}/read`);
+  return response.data;
+};
+
+export const deleteNotification = async (notificationId: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.delete(`/notifications/${notificationId}`);
+  return response.data;
+};
 
 export default api; 
