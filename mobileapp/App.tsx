@@ -6,7 +6,7 @@ import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-
 import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
-import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
 import { getUserProfile, createUserProfile } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
