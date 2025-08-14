@@ -1266,6 +1266,27 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, [isFocused, userId, refresh, showFoodSuccess, showWorkoutSuccess]);
 
+  // Check for daily reset when dashboard is focused
+  useEffect(() => {
+    if (isFocused && userId) {
+      const checkDailyReset = async () => {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
+          
+          if (lastReset !== today) {
+            console.log('[Dashboard] Daily reset needed, refreshing data');
+            fetchSummary();
+          }
+        } catch (error) {
+          console.error('[Dashboard] Error checking daily reset:', error);
+        }
+      };
+      
+      checkDailyReset();
+    }
+  }, [isFocused, userId]);
+
   // Handler to update calories burned from workout log
   const handleWorkoutLogged = (caloriesBurned: number) => {
     setBurnedToday(prev => prev + caloriesBurned);

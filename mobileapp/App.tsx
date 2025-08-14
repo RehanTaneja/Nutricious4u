@@ -40,6 +40,7 @@ import {
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
+import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan } from './services/api';
 
 type User = firebase.User;
 
@@ -102,6 +103,69 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
+  const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [processingSubscription, setProcessingSubscription] = useState(false);
+  const [lastResetDate, setLastResetDate] = useState<string | null>(null);
+
+  // Daily reset mechanism
+  const checkAndResetDailyData = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const storedDate = await AsyncStorage.getItem(`lastResetDate_${user.uid}`);
+      
+      if (storedDate !== today) {
+        console.log('[Daily Reset] New day detected, resetting daily data');
+        
+        // Reset daily data by calling the backend
+        await fetch(`${API_URL}/user/${user.uid}/reset-daily`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        // Store the new date
+        await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
+        setLastResetDate(today);
+        
+        // Force refresh of dashboard data
+        setForceReload(x => x + 1);
+      }
+    } catch (error) {
+      console.error('[Daily Reset] Error resetting daily data:', error);
+    }
+  };
+
+  const handleSubscriptionSelection = async (planId: string) => {
+    if (!user?.uid) return;
+    
+    try {
+      setProcessingSubscription(true);
+      
+      // First, select the subscription
+      await selectSubscription(user.uid, planId);
+      
+      // Then, add the amount to total due
+      const result = await addSubscriptionAmount(user.uid, planId);
+      
+      if (result.success) {
+        setShowSubscriptionPopup(false);
+        setSelectedPlan(null);
+        setHasActiveSubscription(true);
+        // Refresh the app state
+        setForceReload(x => x + 1);
+      }
+    } catch (error: any) {
+      console.error('Error selecting subscription:', error);
+      alert(error.message || 'Failed to select subscription');
+    } finally {
+      setProcessingSubscription(false);
+    }
+  };
 
   useEffect(() => {
     let unsubscribe: any;
@@ -286,16 +350,26 @@ export default function App() {
                       const { getSubscriptionStatus } = await import('./services/api');
                       const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
                       
-                      // If user has no active subscription, redirect to subscription selection
+                      // If user has no active subscription, show popup
                       if (!subscriptionStatus.isSubscriptionActive) {
-                        // Navigate to subscription selection
-                        // This will be handled in the navigation logic
-                        console.log('[Subscription Check] User has no active subscription');
+                        console.log('[Subscription Check] User has no active subscription, showing popup');
                         setHasActiveSubscription(false);
+                        
+                        // Fetch plans and show popup
+                        try {
+                          const plans = await getSubscriptionPlans();
+                          setSubscriptionPlans(plans);
+                          setShowSubscriptionPopup(true);
+                        } catch (error) {
+                          console.error('Error fetching subscription plans:', error);
+                        }
                       } else {
                         console.log('[Subscription Check] User has active subscription');
                         setHasActiveSubscription(true);
                       }
+                      
+                      // Check and reset daily data
+                      await checkAndResetDailyData();
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
                       // If we can't check subscription, assume they need one
@@ -476,6 +550,74 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      {/* Subscription Popup Modal */}
+      <Modal
+        visible={showSubscriptionPopup}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSubscriptionPopup(false)}
+      >
+        <View style={styles.subscriptionPopupOverlay}>
+          <View style={styles.subscriptionPopupContainer}>
+            <Text style={styles.subscriptionPopupTitle}>Select a Subscription Plan</Text>
+            <Text style={styles.subscriptionPopupSubtitle}>
+              Choose a plan to continue your fitness journey
+            </Text>
+            
+            <ScrollView style={styles.subscriptionPlansScrollView} showsVerticalScrollIndicator={false}>
+              {subscriptionPlans.map((plan) => (
+                <TouchableOpacity
+                  key={plan.planId}
+                  style={[
+                    styles.subscriptionPopupPlanItem,
+                    selectedPlan === plan.planId && styles.subscriptionSelectedPlanItem
+                  ]}
+                  onPress={() => setSelectedPlan(plan.planId)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.subscriptionPopupPlanHeader}>
+                    <Text style={styles.subscriptionPopupPlanName}>{plan.name}</Text>
+                    <Text style={styles.subscriptionPopupPlanPrice}>₹{plan.price.toLocaleString()}</Text>
+                  </View>
+                  <Text style={styles.subscriptionPopupPlanDuration}>{plan.duration}</Text>
+                  <Text style={styles.subscriptionPopupPlanDescription}>{plan.description}</Text>
+                  {selectedPlan === plan.planId && (
+                    <View style={styles.subscriptionPopupPlanSelectedIndicator}>
+                      <Text style={styles.subscriptionPopupPlanSelectedText}>✓ Selected</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.subscriptionPopupButtons}>
+              <TouchableOpacity
+                style={styles.subscriptionPopupCancelButton}
+                onPress={() => {
+                  setShowSubscriptionPopup(false);
+                  setSelectedPlan(null);
+                }}
+              >
+                <Text style={styles.subscriptionPopupCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.subscriptionPopupConfirmButton,
+                  !selectedPlan && styles.subscriptionPopupConfirmButtonDisabled
+                ]}
+                onPress={() => selectedPlan && handleSubscriptionSelection(selectedPlan)}
+                disabled={!selectedPlan || processingSubscription}
+              >
+                <Text style={styles.subscriptionPopupConfirmButtonText}>
+                  {processingSubscription ? 'Processing...' : 'Confirm Selection'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AppContext.Provider>
   );
 }
@@ -524,5 +666,122 @@ const styles = StyleSheet.create({
     color: '#34D399',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  subscriptionPopupOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subscriptionPopupContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  subscriptionPopupTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#27272A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subscriptionPopupSubtitle: {
+    fontSize: 14,
+    color: '#A1A1AA',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  subscriptionPlansScrollView: {
+    maxHeight: 300,
+  },
+  subscriptionPopupPlanItem: {
+    backgroundColor: '#E6F8F0',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  subscriptionSelectedPlanItem: {
+    borderColor: '#6EE7B7',
+    backgroundColor: '#f0fff4',
+  },
+  subscriptionPopupPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  subscriptionPopupPlanName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#27272A',
+  },
+  subscriptionPopupPlanPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#6EE7B7',
+  },
+  subscriptionPopupPlanDuration: {
+    fontSize: 14,
+    color: '#A1A1AA',
+    marginBottom: 4,
+  },
+  subscriptionPopupPlanDescription: {
+    fontSize: 14,
+    color: '#27272A',
+    lineHeight: 20,
+  },
+  subscriptionPopupPlanSelectedIndicator: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  subscriptionPopupPlanSelectedText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#6EE7B7',
+  },
+  subscriptionPopupButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  subscriptionPopupCancelButton: {
+    flex: 1,
+    backgroundColor: '#A1A1AA',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  subscriptionPopupCancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  subscriptionPopupConfirmButton: {
+    flex: 1,
+    backgroundColor: '#6EE7B7',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  subscriptionPopupConfirmButtonDisabled: {
+    backgroundColor: '#A1A1AA',
+  },
+  subscriptionPopupConfirmButtonText: {
+    color: '#27272A',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

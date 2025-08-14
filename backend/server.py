@@ -2359,6 +2359,31 @@ async def reset_subscription(userId: str):
         logger.error(f"[RESET SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset subscription")
 
+@api_router.post("/user/{userId}/reset-daily")
+async def reset_daily_data(userId: str):
+    """Reset daily tracking data for a user"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile to update lastFoodLogDate
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update the lastFoodLogDate to today to trigger daily reset
+        today = datetime.now().strftime('%Y-%m-%d')
+        firestore_db.collection("user_profiles").document(userId).update({
+            "lastFoodLogDate": today
+        })
+        
+        logger.info(f"[DAILY RESET] Reset daily data for user {userId} on {today}")
+        
+        return {"success": True, "message": "Daily data reset successfully"}
+        
+    except Exception as e:
+        logger.error(f"[DAILY RESET] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset daily data")
+
 @api_router.post("/subscription/add-amount/{userId}")
 async def add_subscription_amount(userId: str, planId: str):
     """Add subscription amount to total due (only called from popup)"""
