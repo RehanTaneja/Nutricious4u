@@ -262,8 +262,9 @@ export default function App() {
                   console.log('[Dietician Debug] Skipping quiz for dietician');
                 } else {
                   // For regular users, check if they have a profile
+                  let profile = null;
                   try {
-                    const profile = await getUserProfile(firebaseUser.uid);
+                    profile = await getUserProfile(firebaseUser.uid);
                     if (profile && profile.firstName && profile.firstName !== 'User') {
                       setHasCompletedQuiz(true);
                       await AsyncStorage.setItem('hasCompletedQuiz', 'true');

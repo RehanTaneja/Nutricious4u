@@ -7965,9 +7965,14 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       setLoading(true);
       const subscriptionPlans = await getSubscriptionPlans();
       setPlans(subscriptionPlans);
-    } catch (e) {
-      setError('Failed to load subscription plans');
+    } catch (e: any) {
       console.error('Error fetching plans:', e);
+      // Show a more user-friendly error message
+      if (e.response?.status === 404) {
+        setError('Subscription service is being updated. Please try again in a few minutes.');
+      } else {
+        setError('Failed to load subscription plans. Please check your connection and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -7981,8 +7986,9 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       const { queuedPlans: plans, totalDueAmount: due } = await getQueuedPlans(userId);
       setQueuedPlans(plans);
       setTotalDueAmount(due);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error fetching queued plans:', e);
+      // Don't show error for queued plans as it's not critical
     }
   };
 
@@ -8003,12 +8009,17 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       
       if (response.success) {
         Alert.alert(
-          'Subscription Successful!',
+          'Subscription Successful! 🎉',
           response.message,
           [
             {
-              text: 'OK',
-              onPress: () => navigation.navigate('MySubscriptions')
+              text: 'View My Subscriptions',
+              onPress: () => navigation.navigate('MySubscriptions'),
+              style: 'default'
+            },
+            {
+              text: 'Continue',
+              style: 'cancel'
             }
           ]
         );
@@ -8042,7 +8053,16 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         setQueuedPlans(response.queuedPlans);
         setTotalDueAmount(response.totalDueAmount);
         setSelectedPlan(null);
-        Alert.alert('Success', response.message);
+        Alert.alert(
+          'Plan Added to Queue',
+          response.message,
+          [
+            {
+              text: 'OK',
+              style: 'default'
+            }
+          ]
+        );
       } else {
         setError(response.message || 'Failed to queue plan');
       }
@@ -8064,7 +8084,16 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       if (response.success) {
         setQueuedPlans(response.queuedPlans);
         setTotalDueAmount(response.totalDueAmount);
-        Alert.alert('Success', response.message);
+        Alert.alert(
+          'Plan Removed from Queue',
+          response.message,
+          [
+            {
+              text: 'OK',
+              style: 'default'
+            }
+          ]
+        );
       } else {
         setError(response.message || 'Failed to remove plan');
       }
@@ -8091,12 +8120,17 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       
       if (response.success) {
         Alert.alert(
-          'Subscription Successful!',
+          'Subscription Successful! 🎉',
           response.message,
           [
             {
-              text: 'OK',
-              onPress: () => navigation.navigate('MySubscriptions')
+              text: 'View My Subscriptions',
+              onPress: () => navigation.navigate('MySubscriptions'),
+              style: 'default'
+            },
+            {
+              text: 'Continue',
+              style: 'cancel'
             }
           ]
         );
