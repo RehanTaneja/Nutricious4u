@@ -473,7 +473,9 @@ class DietNotificationService:
             'minute': activity['minute'],
             'scheduledId': None,  # Will be set when scheduled
             'source': 'diet_pdf',
-            'original_text': activity['original_text']
+            'original_text': activity['original_text'],
+            'selectedDays': [0, 1, 2, 3, 4, 5, 6],  # Default to all days for extracted notifications
+            'isActive': True  # Track if notification is active
         }
     
     def extract_and_create_notifications(self, user_id: str, diet_pdf_url: str, db) -> List[Dict]:

@@ -34,6 +34,8 @@ except Exception as e:
 from services.pdf_rag_service import pdf_rag_service
 # Add import for diet notification service
 from services.diet_notification_service import diet_notification_service
+# Add import for notification scheduler
+from services.notification_scheduler import get_notification_scheduler
 import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -1337,10 +1339,17 @@ async def extract_diet_notifications(user_id: str):
             "diet_pdf_url": diet_pdf_url
         }, merge=True)
         
+        # Schedule the notifications on the backend
+        try:
+            await schedule_diet_notifications(user_id)
+            logger.info(f"Successfully scheduled {len(notifications)} notifications for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to schedule notifications for user {user_id}: {e}")
+        
         logger.info(f"Extracted {len(notifications)} notifications from diet PDF for user {user_id}")
         
         return {
-            "message": f"Successfully extracted {len(notifications)} timed activities from diet PDF",
+            "message": f"Successfully extracted and scheduled {len(notifications)} timed activities from diet PDF",
             "notifications": notifications
         }
         
@@ -1401,40 +1410,7 @@ async def get_diet_raw_text(user_id: str):
         logger.error(f"Error getting raw diet text for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get raw diet text")
 
-@api_router.delete("/users/{user_id}/diet/notifications/{notification_id}")
-async def delete_diet_notification(user_id: str, notification_id: str):
-    """
-    Delete a specific diet notification for a user.
-    """
-    try:
-        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
-        doc = user_notifications_ref.get()
-        
-        if not doc.exists:
-            raise HTTPException(status_code=404, detail="No notifications found for this user")
-        
-        data = doc.to_dict()
-        notifications = data.get("diet_notifications", [])
-        
-        # Find and remove the notification
-        updated_notifications = [n for n in notifications if n.get("id") != notification_id]
-        
-        if len(updated_notifications) == len(notifications):
-            raise HTTPException(status_code=404, detail="Notification not found")
-        
-        # Update Firestore
-        user_notifications_ref.set({
-            "diet_notifications": updated_notifications,
-            "updated_at": datetime.now().isoformat()
-        }, merge=True)
-        
-        logger.info(f"Deleted diet notification {notification_id} for user {user_id}")
-        
-        return {"message": "Notification deleted successfully"}
-        
-    except Exception as e:
-        logger.error(f"Error deleting diet notification for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete diet notification: {e}")
+
 
 @api_router.post("/users/{user_id}/diet/notifications/test")
 async def test_diet_notification(user_id: str):
@@ -1547,6 +1523,134 @@ async def send_message_notification(request: dict):
     except Exception as e:
         logger.error(f"Error sending message notification: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send message notification: {e}")
+
+@api_router.post("/users/{user_id}/diet/notifications/schedule")
+async def schedule_diet_notifications(user_id: str):
+    """
+    Schedule diet notifications for a user based on their day preferences.
+    This endpoint should be called after notifications are extracted or updated.
+    """
+    try:
+        check_firebase_availability()
+        
+        # Get the notification scheduler
+        scheduler = get_notification_scheduler(firestore_db)
+        
+        # Schedule notifications for the user
+        scheduled_count = await scheduler.schedule_user_notifications(user_id)
+        
+        return {
+            "message": f"Successfully scheduled {scheduled_count} notifications",
+            "scheduled": scheduled_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error scheduling notifications for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to schedule notifications: {e}")
+
+@api_router.post("/users/{user_id}/diet/notifications/cancel")
+async def cancel_diet_notifications(user_id: str):
+    """
+    Cancel all scheduled diet notifications for a user.
+    """
+    try:
+        check_firebase_availability()
+        
+        # Get the notification scheduler
+        scheduler = get_notification_scheduler(firestore_db)
+        
+        # Cancel notifications for the user
+        cancelled_count = await scheduler.cancel_user_notifications(user_id)
+        
+        return {
+            "message": f"Successfully cancelled {cancelled_count} notifications",
+            "cancelled": cancelled_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error cancelling notifications for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel notifications: {e}")
+
+@api_router.put("/users/{user_id}/diet/notifications/{notification_id}")
+async def update_diet_notification(user_id: str, notification_id: str, notification_update: dict):
+    """
+    Update a specific diet notification including its day preferences.
+    """
+    try:
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        doc = user_notifications_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="User notifications not found")
+        
+        data = doc.to_dict()
+        notifications = data.get("diet_notifications", [])
+        
+        # Find and update the specific notification
+        notification_found = False
+        for i, notification in enumerate(notifications):
+            if notification.get('id') == notification_id:
+                # Update the notification with new data
+                notifications[i].update(notification_update)
+                notification_found = True
+                break
+        
+        if not notification_found:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        # Save updated notifications
+        user_notifications_ref.set({
+            "diet_notifications": notifications,
+            "updated_at": datetime.now().isoformat()
+        }, merge=True)
+        
+        # Reschedule notifications for this user
+        await schedule_diet_notifications(user_id)
+        
+        return {"message": "Notification updated and rescheduled successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error updating notification for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update notification: {e}")
+
+@api_router.delete("/users/{user_id}/diet/notifications/{notification_id}")
+async def delete_diet_notification(user_id: str, notification_id: str):
+    """
+    Delete a specific diet notification.
+    """
+    try:
+        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+        doc = user_notifications_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="User notifications not found")
+        
+        data = doc.to_dict()
+        notifications = data.get("diet_notifications", [])
+        
+        # Remove the specific notification
+        original_count = len(notifications)
+        notifications = [n for n in notifications if n.get('id') != notification_id]
+        
+        if len(notifications) == original_count:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        # Save updated notifications
+        user_notifications_ref.set({
+            "diet_notifications": notifications,
+            "updated_at": datetime.now().isoformat()
+        }, merge=True)
+        
+        # Reschedule remaining notifications
+        await schedule_diet_notifications(user_id)
+        
+        return {"message": "Notification deleted and remaining notifications rescheduled"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting notification for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete notification: {e}")
+
+
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -1822,11 +1926,30 @@ import asyncio
 import threading
 import time
 
+async def notification_scheduler_job():
+    """
+    Scheduled job to send due notifications and clean up old ones.
+    This runs every minute to check for notifications that need to be sent.
+    """
+    try:
+        if FIREBASE_AVAILABLE and firestore_db:
+            scheduler = get_notification_scheduler(firestore_db)
+            
+            # Send due notifications
+            sent_count = await scheduler.send_due_notifications()
+            
+            # Clean up old notifications (run once per hour)
+            if datetime.now().minute == 0:  # Only run at the top of each hour
+                await scheduler.cleanup_old_notifications()
+                
+    except Exception as e:
+        print(f"[Notification Scheduler] Error: {e}")
+
 def run_scheduled_jobs():
     """Run scheduled jobs in a separate thread"""
     while True:
         try:
-            # Run the job
+            # Run the diet reminders job (every 6 hours)
             asyncio.run(check_diet_reminders_job())
         except Exception as e:
             print(f"[Scheduled Jobs] Error: {e}")
@@ -1834,9 +1957,24 @@ def run_scheduled_jobs():
         # Wait for 6 hours
         time.sleep(6 * 60 * 60)
 
-# Start the scheduled job thread
+def run_notification_scheduler():
+    """Run notification scheduler in a separate thread (every minute)"""
+    while True:
+        try:
+            # Run the notification scheduler job
+            asyncio.run(notification_scheduler_job())
+        except Exception as e:
+            print(f"[Notification Scheduler] Error: {e}")
+        
+        # Wait for 1 minute
+        time.sleep(60)
+
+# Start the scheduled job threads
 scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
 scheduler_thread.start()
+
+notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
+notification_scheduler_thread.start()
 
 if __name__ == "__main__":
     import uvicorn

@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -3611,6 +3611,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [editMessage, setEditMessage] = useState('');
 
   // Day selection for notifications
+  const [editSelectedDays, setEditSelectedDays] = useState<number[]>([]);
+  const [showEditDaySelector, setShowEditDaySelector] = useState(false);
+
+  // Day selection for notifications
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [showDaySelector, setShowDaySelector] = useState(false);
 
@@ -3672,6 +3676,22 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       .filter(day => days.includes(day.id))
       .map(day => day.name)
       .join(', ');
+  };
+
+  // Helper functions for edit modal day selection
+  const toggleEditDay = (dayId: number) => {
+    setEditSelectedDays(prev => 
+      prev.includes(dayId) 
+        ? prev.filter(id => id !== dayId)
+        : [...prev, dayId]
+    );
+  };
+
+  const getEditSelectedDaysText = (days: number[]) => {
+    if (days.length === 0) return 'Select days';
+    if (days.length === 7) return 'Every day';
+    if (days.length === 1) return daysOfWeek.find(d => d.id === days[0])?.name || 'Select days';
+    return `${days.length} days selected`;
   };
 
   useEffect(() => {
@@ -3773,45 +3793,60 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     console.log('[Notifications] Deleted notification with id:', id);
   };
 
+  // Function to cancel all scheduled diet notifications
+  const cancelAllDietNotifications = async () => {
+    try {
+      console.log('[Diet Notifications] Cancelling all scheduled diet notifications...');
+      
+      // Cancel all current diet notifications
+      for (const notification of dietNotifications) {
+        if (notification.scheduledId) {
+          try {
+            await Notifications.cancelScheduledNotificationAsync(notification.scheduledId);
+            console.log('[Diet Notifications] Cancelled scheduled notification:', notification.scheduledId);
+          } catch (error) {
+            console.error('[Diet Notifications] Error cancelling notification:', notification.scheduledId, error);
+          }
+        }
+        
+        // Also cancel backup notifications if they exist
+        if (notification.backupIds && Array.isArray(notification.backupIds)) {
+          for (const backupId of notification.backupIds) {
+            try {
+              await Notifications.cancelScheduledNotificationAsync(backupId);
+              console.log('[Diet Notifications] Cancelled backup notification:', backupId);
+            } catch (error) {
+              console.error('[Diet Notifications] Error cancelling backup notification:', backupId, error);
+            }
+          }
+        }
+      }
+      
+      // Clear local state
+      setDietNotifications([]);
+      console.log('[Diet Notifications] All diet notifications cancelled and cleared from local state');
+      
+    } catch (error) {
+      console.error('[Diet Notifications] Error cancelling all notifications:', error);
+    }
+  };
+
   // Diet notification functions
   const loadDietNotifications = async () => {
-    setLoadingDietNotifications(true);
     try {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
       const response = await getDietNotifications(userId);
       if (response.notifications) {
-        // Reschedule notifications that don't have scheduledId
-        const rescheduledNotifications = [];
-        for (const notification of response.notifications) {
-          if (!notification.scheduledId) {
-            try {
-              const scheduledId = await scheduleDietNotification(notification);
-              rescheduledNotifications.push({
-                ...notification,
-                scheduledId
-              });
-              console.log('[Diet Notifications] Rescheduled existing notification:', notification.message);
-            } catch (error) {
-              console.error('[Diet Notifications] Failed to reschedule:', notification.message, error);
-              rescheduledNotifications.push(notification);
-            }
-          } else {
-            rescheduledNotifications.push(notification);
-          }
-        }
-        
-        setDietNotifications(rescheduledNotifications);
-        console.log('[Diet Notifications] Loaded and rescheduled:', rescheduledNotifications.length);
+        setDietNotifications(response.notifications);
+        console.log('[Diet Notifications] Loaded:', response.notifications.length);
       } else {
         setDietNotifications([]);
       }
     } catch (error) {
       console.error('[Diet Notifications] Error loading:', error);
       setDietNotifications([]);
-    } finally {
-      setLoadingDietNotifications(false);
     }
   };
 
@@ -3820,31 +3855,23 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
+      setLoadingDietNotifications(true);
+
+      // First, cancel all existing diet notifications on the backend
+      try {
+        await cancelDietNotifications(userId);
+        console.log('[Diet Notifications] Cancelled existing notifications on backend');
+      } catch (error) {
+        console.error('[Diet Notifications] Error cancelling notifications on backend:', error);
+      }
+
       const response = await extractDietNotifications(userId);
       if (response.notifications && response.notifications.length > 0) {
-        // Schedule each notification locally with enhanced reliability
-        const scheduledNotifications = [];
-        for (const notification of response.notifications) {
-          try {
-            const schedulingResult = await scheduleMultipleDays(notification);
-            scheduledNotifications.push({
-              ...notification,
-              scheduledId: schedulingResult.primaryId,
-              backupIds: schedulingResult.backupIds,
-              selectedDays: [0, 1, 2, 3, 4, 5, 6] // All days for extracted notifications
-            });
-            console.log('[Diet Notifications] Scheduled with backup:', notification.message, 'at', notification.time);
-          } catch (error) {
-            console.error('[Diet Notifications] Failed to schedule:', notification.message, error);
-            // Still add the notification even if scheduling fails
-            scheduledNotifications.push(notification);
-          }
-        }
-        
-        setDietNotifications(scheduledNotifications);
-        console.log('[Diet Notifications] Extracted and scheduled:', scheduledNotifications.length);
+        // The backend automatically schedules notifications after extraction
+        setDietNotifications(response.notifications);
+        console.log('[Diet Notifications] Extracted and scheduled:', response.notifications.length);
         // Show custom success modal
-        setSuccessMessage(`Successfully extracted and scheduled ${scheduledNotifications.length} timed activities from your diet plan! 🎉`);
+        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} timed activities from your diet plan! 🎉`);
         setShowSuccessModal(true);
       } else {
         Alert.alert(
@@ -3857,6 +3884,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       console.error('[Diet Notifications] Error extracting:', error);
       setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
       setShowErrorModal(true);
+    } finally {
+      setLoadingDietNotifications(false);
     }
   };
 
@@ -4069,13 +4098,22 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     setEditingNotification(notification);
     setEditTime(notification.time);
     setEditMessage(notification.message);
+    setEditSelectedDays(notification.selectedDays || [0, 1, 2, 3, 4, 5, 6]);
     setShowEditModal(true);
   };
 
   const handleSaveEdit = async () => {
     try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
       if (!editingNotification || !editTime || !editMessage) {
         setErrorMessage('Please fill in all fields.');
+        setShowErrorModal(true);
+        return;
+      }
+      if (editSelectedDays.length === 0) {
+        setErrorMessage('Please select at least one day');
         setShowErrorModal(true);
         return;
       }
@@ -4088,34 +4126,19 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         return;
       }
 
-      // Cancel the old scheduled notification if it exists
-      if (editingNotification.scheduledId) {
-        try {
-          await Notifications.cancelScheduledNotificationAsync(editingNotification.scheduledId);
-          console.log('[Diet Notifications] Cancelled old scheduled notification:', editingNotification.scheduledId);
-        } catch (error) {
-          console.error('[Diet Notifications] Error cancelling old notification:', error);
-        }
-      }
+      // Update the notification on the backend
+      const updatedNotification = {
+        message: editMessage,
+        time: editTime,
+        selectedDays: editSelectedDays
+      };
 
-      // Schedule the new notification
-      let newScheduledId = null;
-      try {
-        const updatedNotification = {
-          ...editingNotification,
-          time: editTime,
-          message: editMessage
-        };
-        newScheduledId = await scheduleDietNotification(updatedNotification);
-        console.log('[Diet Notifications] Rescheduled notification:', editMessage, 'at', editTime);
-      } catch (error) {
-        console.error('[Diet Notifications] Error rescheduling notification:', error);
-      }
+      await updateDietNotification(userId, editingNotification.id, updatedNotification);
 
       // Update the notification in local state
       setDietNotifications(prev => prev.map(n => 
         n.id === editingNotification.id 
-          ? { ...n, time: editTime, message: editMessage, scheduledId: newScheduledId }
+          ? { ...n, time: editTime, message: editMessage, selectedDays: editSelectedDays }
           : n
       ));
 
@@ -4124,6 +4147,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setEditingNotification(null);
       setEditTime('');
       setEditMessage('');
+      setEditSelectedDays([]);
+      setShowEditDaySelector(false);
 
       // Show success message
       setSuccessMessage('Notification updated and rescheduled successfully!');
@@ -4576,6 +4601,38 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                   />
                 )}
                 
+                <Text style={styles.modalLabel}>Days</Text>
+                <TouchableOpacity
+                  style={[styles.modalInput, { justifyContent: 'center', height: 48 }]}
+                  onPress={() => setShowEditDaySelector(!showEditDaySelector)}
+                >
+                  <Text style={{ color: COLORS.text, fontSize: 16 }}>
+                    {getEditSelectedDaysText(editSelectedDays)}
+                  </Text>
+                </TouchableOpacity>
+                
+                {showEditDaySelector && (
+                  <View style={styles.daySelectorContainer}>
+                    {daysOfWeek.map((day) => (
+                      <TouchableOpacity
+                        key={day.id}
+                        style={[
+                          styles.dayOption,
+                          editSelectedDays.includes(day.id) && styles.dayOptionSelected
+                        ]}
+                        onPress={() => toggleEditDay(day.id)}
+                      >
+                        <Text style={[
+                          styles.dayOptionText,
+                          editSelectedDays.includes(day.id) && styles.dayOptionTextSelected
+                        ]}>
+                          {day.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }}>
                   <TouchableOpacity
                     style={[styles.modalButton, { 
@@ -4587,6 +4644,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                       setEditingNotification(null);
                       setEditTime('');
                       setEditMessage('');
+                      setEditSelectedDays([]);
+                      setShowEditDaySelector(false);
                     }}
                   >
                     <Text style={styles.modalButtonText}>Cancel</Text>

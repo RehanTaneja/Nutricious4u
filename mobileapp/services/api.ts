@@ -434,6 +434,21 @@ export const deleteDietNotification = async (userId: string, notificationId: str
   return response.data;
 };
 
+export const updateDietNotification = async (userId: string, notificationId: string, notificationUpdate: any) => {
+  const response = await api.put(`/users/${userId}/diet/notifications/${notificationId}`, notificationUpdate);
+  return response.data;
+};
+
+export const scheduleDietNotifications = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/diet/notifications/schedule`);
+  return response.data;
+};
+
+export const cancelDietNotifications = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/diet/notifications/cancel`);
+  return response.data;
+};
+
 export const testDietNotification = async (userId: string) => {
   const response = await api.post(`/users/${userId}/diet/notifications/test`);
   return response.data;
