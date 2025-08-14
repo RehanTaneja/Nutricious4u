@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -8181,6 +8181,82 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // User Info Modal Styles
+  userInfoModalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  userInfoModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  userInfoContent: {
+    marginBottom: 20,
+  },
+  userInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  userInfoLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    flex: 1,
+  },
+  userInfoValue: {
+    fontSize: 16,
+    color: COLORS.text,
+    flex: 1,
+    textAlign: 'right',
+  },
+  userInfoButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  userInfoButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paidButton: {
+    backgroundColor: '#34D399',
+  },
+  paidButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  lockButton: {
+    backgroundColor: '#FF4444',
+  },
+  unlockButton: {
+    backgroundColor: '#34D399',
+  },
+  lockButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export { 
@@ -9986,6 +10062,12 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [loading, setLoading] = useState(true);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  
+  // New state for user info popup
+  const [showUserInfoModal, setShowUserInfoModal] = useState(false);
+  const [selectedUserInfo, setSelectedUserInfo] = useState<any | null>(null);
+  const [userInfoLoading, setUserInfoLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
     console.log('[UploadDietScreen] useEffect triggered, refresh value:', refresh);
@@ -10082,6 +10164,74 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     setShowUploadModal(true);
     setSuccessMsg('');
     setErrorMsg('');
+  };
+
+  // New function to handle info icon press
+  const handleInfoPress = async (user: any) => {
+    try {
+      setUserInfoLoading(true);
+      setSelectedUserInfo(null);
+      setShowUserInfoModal(true);
+      
+      // Fetch detailed user information
+      const userDetails = await getUserDetails(user.userId);
+      setSelectedUserInfo(userDetails);
+    } catch (error) {
+      console.error('Error fetching user details:', error);
+      alert('Failed to load user details');
+    } finally {
+      setUserInfoLoading(false);
+    }
+  };
+
+  // New function to handle mark as paid
+  const handleMarkAsPaid = async () => {
+    if (!selectedUserInfo) return;
+    
+    try {
+      setActionLoading(true);
+      await markUserPaid(selectedUserInfo.userId);
+      
+      // Update the user info
+      setSelectedUserInfo((prev: any) => prev ? { ...prev, amountDue: 0 } : null);
+      
+      // Show success message
+      setSuccessMsg('User marked as paid successfully');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      console.error('Error marking user as paid:', error);
+      alert('Failed to mark user as paid');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // New function to handle lock/unlock app
+  const handleToggleAppLock = async () => {
+    if (!selectedUserInfo) return;
+    
+    try {
+      setActionLoading(true);
+      
+      if (selectedUserInfo.isAppLocked) {
+        // Unlock the app
+        await unlockUserApp(selectedUserInfo.userId);
+        setSelectedUserInfo((prev: any) => prev ? { ...prev, isAppLocked: false } : null);
+        setSuccessMsg('User app unlocked successfully');
+      } else {
+        // Lock the app
+        await lockUserApp(selectedUserInfo.userId);
+        setSelectedUserInfo((prev: any) => prev ? { ...prev, isAppLocked: true } : null);
+        setSuccessMsg('User app locked successfully');
+      }
+      
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      console.error('Error toggling app lock:', error);
+      alert('Failed to update app lock status');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Helper function to get the correct PDF URL for a user
@@ -10221,20 +10371,153 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 Days Until New Diet: {countdowns[item.userId] ? `${countdowns[item.userId].days} days ${countdowns[item.userId].hours} hours` : '-'}
               </Text>
             </View>
-              <View style={{ 
-                backgroundColor: COLORS.primary, 
-                borderRadius: 12, 
-                width: 24, 
-                height: 24, 
-                alignItems: 'center', 
-                justifyContent: 'center' 
-              }}>
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>+</Text>
+              {/* Action buttons container */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {/* Info icon */}
+                <TouchableOpacity
+                  style={{ 
+                    backgroundColor: COLORS.primaryDark, 
+                    borderRadius: 12, 
+                    width: 24, 
+                    height: 24, 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}
+                  onPress={() => handleInfoPress(item)}
+                >
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>i</Text>
+                </TouchableOpacity>
+                
+                {/* Plus icon */}
+                <TouchableOpacity
+                  style={{ 
+                    backgroundColor: COLORS.primary, 
+                    borderRadius: 12, 
+                    width: 24, 
+                    height: 24, 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}
+                  onPress={() => handleUserSelect(item)}
+                >
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>+</Text>
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
           )}
         />
       )}
+
+      {/* User Info Modal */}
+      <Modal
+        visible={showUserInfoModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowUserInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.userInfoModalContent}>
+            {userInfoLoading ? (
+              <View style={{ alignItems: 'center', padding: 20 }}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ marginTop: 10, color: COLORS.text }}>Loading user details...</Text>
+              </View>
+            ) : selectedUserInfo ? (
+              <>
+                <Text style={styles.userInfoModalTitle}>
+                  User Information
+                </Text>
+                
+                <View style={styles.userInfoContent}>
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>Name:</Text>
+                    <Text style={styles.userInfoValue}>
+                      {selectedUserInfo.firstName} {selectedUserInfo.lastName}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>Email:</Text>
+                    <Text style={styles.userInfoValue}>{selectedUserInfo.email}</Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>Plan:</Text>
+                    <Text style={styles.userInfoValue}>{selectedUserInfo.plan}</Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>Start Date:</Text>
+                    <Text style={styles.userInfoValue}>
+                      {selectedUserInfo.startDate ? new Date(selectedUserInfo.startDate).toLocaleDateString() : 'Not set'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>End Date:</Text>
+                    <Text style={styles.userInfoValue}>
+                      {selectedUserInfo.endDate ? new Date(selectedUserInfo.endDate).toLocaleDateString() : 'Not set'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>Amount Due:</Text>
+                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.amountDue > 0 ? '#FF4444' : '#34D399' }]}>
+                      ₹{selectedUserInfo.amountDue.toLocaleString()}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.userInfoRow}>
+                    <Text style={styles.userInfoLabel}>App Status:</Text>
+                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.isAppLocked ? '#FF4444' : '#34D399' }]}>
+                      {selectedUserInfo.isAppLocked ? 'Locked' : 'Unlocked'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.userInfoButtons}>
+                  <TouchableOpacity
+                    style={[styles.userInfoButton, styles.cancelButton]}
+                    onPress={() => setShowUserInfoModal(false)}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.userInfoButton, 
+                      styles.paidButton,
+                      { backgroundColor: actionLoading ? COLORS.placeholder : '#34D399' }
+                    ]}
+                    onPress={handleMarkAsPaid}
+                    disabled={actionLoading || selectedUserInfo.amountDue === 0}
+                  >
+                    <Text style={styles.paidButtonText}>
+                      {actionLoading ? 'Processing...' : 'Paid'}
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.userInfoButton, 
+                      selectedUserInfo.isAppLocked ? styles.unlockButton : styles.lockButton,
+                      { backgroundColor: actionLoading ? COLORS.placeholder : selectedUserInfo.isAppLocked ? '#34D399' : '#FF4444' }
+                    ]}
+                    onPress={handleToggleAppLock}
+                    disabled={actionLoading}
+                  >
+                    <Text style={styles.lockButtonText}>
+                      {actionLoading ? 'Processing...' : selectedUserInfo.isAppLocked ? 'Unlock' : 'Lock'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <Text style={{ textAlign: 'center', color: COLORS.text }}>Failed to load user details</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Upload Modal */}
       <Modal

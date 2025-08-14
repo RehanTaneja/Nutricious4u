@@ -403,6 +403,23 @@ async def log_food_item(request: FoodLogRequest):
         if not user_id:
             logger.error("[FOOD LOG] userId missing in request")
             raise HTTPException(status_code=400, detail="userId is required")
+        
+        # Check if daily reset is needed
+        try:
+            user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                last_food_log_date = user_data.get("lastFoodLogDate")
+                today = datetime.utcnow().strftime('%Y-%m-%d')
+                
+                if last_food_log_date != today:
+                    logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
+                    # Reset daily data
+                    await reset_daily_data(user_id)
+        except Exception as reset_error:
+            logger.warning(f"[FOOD LOG] Error checking daily reset: {reset_error}")
+            # Continue with food logging even if reset fails
+        
         # Use Gemini to get nutrition
         nutrition = await get_nutrition_from_gemini(request.foodName, request.servingSize)
         logger.info(f"[FOOD LOG] Gemini nutrition response: {nutrition}")
@@ -2370,15 +2387,31 @@ async def reset_daily_data(userId: str):
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Update the lastFoodLogDate to today to trigger daily reset
-        today = datetime.now().strftime('%Y-%m-%d')
+        # Get today's date in UTC
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_str = today.strftime('%Y-%m-%d')
+        
+        # Clear today's food logs to reset daily nutritional values
+        food_logs_ref = firestore_db.collection(f"users/{userId}/food_logs")
+        today_logs = food_logs_ref.where("timestamp", ">=", today).stream()
+        
+        deleted_count = 0
+        for doc in today_logs:
+            doc.reference.delete()
+            deleted_count += 1
+        
+        # Update the lastFoodLogDate to today
         firestore_db.collection("user_profiles").document(userId).update({
-            "lastFoodLogDate": today
+            "lastFoodLogDate": today_str
         })
         
-        logger.info(f"[DAILY RESET] Reset daily data for user {userId} on {today}")
+        logger.info(f"[DAILY RESET] Reset daily data for user {userId} on {today_str}. Deleted {deleted_count} food logs.")
         
-        return {"success": True, "message": "Daily data reset successfully"}
+        return {
+            "success": True, 
+            "message": f"Daily data reset successfully. Deleted {deleted_count} food logs.",
+            "deleted_logs": deleted_count
+        }
         
     except Exception as e:
         logger.error(f"[DAILY RESET] Error: {e}")
@@ -2525,6 +2558,161 @@ notification_scheduler_thread.start()
 
 # Include the router in the main app (after all endpoints are defined)
 app.include_router(api_router)
+
+# Add new endpoints for dietician user management
+@api_router.get("/users/{user_id}/details")
+async def get_user_details(user_id: str):
+    """Get detailed user information for dietician view"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        # Calculate amount due (totalAmountPaid is the amount due, not paid)
+        amount_due = user_data.get("totalAmountPaid", 0.0)
+        
+        # Get subscription details
+        subscription_plan = user_data.get("subscriptionPlan")
+        subscription_start_date = user_data.get("subscriptionStartDate")
+        subscription_end_date = user_data.get("subscriptionEndDate")
+        is_app_locked = user_data.get("isAppLocked", False)
+        
+        # Format plan name for display
+        plan_names = {
+            "1month": "1 Month Plan",
+            "3months": "3 Months Plan", 
+            "6months": "6 Months Plan"
+        }
+        plan_display_name = plan_names.get(subscription_plan, subscription_plan or "No Plan")
+        
+        return {
+            "userId": user_id,
+            "firstName": user_data.get("firstName", ""),
+            "lastName": user_data.get("lastName", ""),
+            "email": user_data.get("email", ""),
+            "plan": plan_display_name,
+            "startDate": subscription_start_date,
+            "endDate": subscription_end_date,
+            "amountDue": amount_due,
+            "isAppLocked": is_app_locked
+        }
+        
+    except Exception as e:
+        logger.error(f"[GET USER DETAILS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user details")
+
+@api_router.post("/users/{user_id}/mark-paid")
+async def mark_user_paid(user_id: str):
+    """Mark user's amount as paid (set totalAmountPaid to 0)"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update totalAmountPaid to 0 (marking as paid)
+        firestore_db.collection("user_profiles").document(user_id).update({
+            "totalAmountPaid": 0.0
+        })
+        
+        logger.info(f"[MARK PAID] User {user_id} marked as paid")
+        
+        return {
+            "success": True,
+            "message": "User marked as paid successfully",
+            "amountDue": 0.0
+        }
+        
+    except Exception as e:
+        logger.error(f"[MARK PAID] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark user as paid")
+
+@api_router.post("/users/{user_id}/lock-app")
+async def lock_user_app(user_id: str):
+    """Lock user's app"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Lock the app
+        firestore_db.collection("user_profiles").document(user_id).update({
+            "isAppLocked": True
+        })
+        
+        logger.info(f"[LOCK APP] User {user_id} app locked")
+        
+        return {
+            "success": True,
+            "message": "User app locked successfully",
+            "isAppLocked": True
+        }
+        
+    except Exception as e:
+        logger.error(f"[LOCK APP] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to lock user app")
+
+@api_router.post("/users/{user_id}/unlock-app")
+async def unlock_user_app(user_id: str):
+    """Unlock user's app"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Unlock the app
+        firestore_db.collection("user_profiles").document(user_id).update({
+            "isAppLocked": False
+        })
+        
+        logger.info(f"[UNLOCK APP] User {user_id} app unlocked")
+        
+        return {
+            "success": True,
+            "message": "User app unlocked successfully",
+            "isAppLocked": False
+        }
+        
+    except Exception as e:
+        logger.error(f"[UNLOCK APP] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to unlock user app")
+
+@api_router.get("/users/{user_id}/lock-status")
+async def get_user_lock_status(user_id: str):
+    """Get user's app lock status"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        is_app_locked = user_data.get("isAppLocked", False)
+        amount_due = user_data.get("totalAmountPaid", 0.0)
+        
+        return {
+            "isAppLocked": is_app_locked,
+            "amountDue": amount_due
+        }
+        
+    except Exception as e:
+        logger.error(f"[GET LOCK STATUS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user lock status")
 
 if __name__ == "__main__":
     import uvicorn

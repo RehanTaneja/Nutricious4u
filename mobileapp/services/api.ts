@@ -555,4 +555,30 @@ export const deleteNotification = async (notificationId: string): Promise<{ succ
   return response.data;
 };
 
+// --- User Management (Dietician) ---
+export const getUserDetails = async (userId: string) => {
+  const response = await api.get(`/users/${userId}/details`);
+  return response.data;
+};
+
+export const markUserPaid = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/mark-paid`);
+  return response.data;
+};
+
+export const lockUserApp = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/lock-app`);
+  return response.data;
+};
+
+export const unlockUserApp = async (userId: string) => {
+  const response = await api.post(`/users/${userId}/unlock-app`);
+  return response.data;
+};
+
+export const getUserLockStatus = async (userId: string) => {
+  const response = await api.get(`/users/${userId}/lock-status`);
+  return response.data;
+};
+
 export default api; 

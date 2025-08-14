@@ -40,7 +40,7 @@ import {
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan } from './services/api';
+import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan, getUserLockStatus } from './services/api';
 
 type User = firebase.User;
 
@@ -108,6 +108,11 @@ export default function App() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
+  
+  // App lock state
+  const [isAppLocked, setIsAppLocked] = useState(false);
+  const [amountDue, setAmountDue] = useState(0);
+  const [showLockModal, setShowLockModal] = useState(false);
 
   // Daily reset mechanism
   const checkAndResetDailyData = async () => {
@@ -137,6 +142,24 @@ export default function App() {
       }
     } catch (error) {
       console.error('[Daily Reset] Error resetting daily data:', error);
+    }
+  };
+
+  // App lock check function
+  const checkAppLockStatus = async () => {
+    if (!user?.uid || isDietician) return; // Don't check for dieticians
+    
+    try {
+      const lockStatus = await getUserLockStatus(user.uid);
+      setIsAppLocked(lockStatus.isAppLocked);
+      setAmountDue(lockStatus.amountDue);
+      
+      // Show lock modal if app is locked
+      if (lockStatus.isAppLocked) {
+        setShowLockModal(true);
+      }
+    } catch (error) {
+      console.error('[App Lock] Error checking lock status:', error);
     }
   };
 
@@ -370,6 +393,9 @@ export default function App() {
                       
                       // Check and reset daily data
                       await checkAndResetDailyData();
+                      
+                      // Check app lock status
+                      await checkAppLockStatus();
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
                       // If we can't check subscription, assume they need one
@@ -447,6 +473,23 @@ export default function App() {
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [forceReload]);
+
+  // Check app lock status when app comes to foreground
+  useEffect(() => {
+    if (user?.uid && !isDietician) {
+      const checkLockOnFocus = () => {
+        checkAppLockStatus();
+      };
+
+      // Check immediately
+      checkLockOnFocus();
+
+      // Set up interval to check periodically (every 30 seconds)
+      const interval = setInterval(checkLockOnFocus, 30000);
+
+      return () => clearInterval(interval);
+    }
+  }, [user?.uid, isDietician]);
 
   // Show error screen if there's a critical error
   if (error) {
@@ -547,6 +590,48 @@ export default function App() {
             >
               <Text style={styles.notificationButtonText}>OK</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* App Lock Modal */}
+      <Modal
+        visible={showLockModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {}} // Prevent closing by back button
+      >
+        <View style={styles.lockModalOverlay}>
+          <View style={styles.lockModalContainer}>
+            <Text style={styles.lockModalTitle}>Amount Due Not Paid</Text>
+            <Text style={styles.lockModalSubtitle}>
+              Your app has been locked due to unpaid amount
+            </Text>
+            
+            <View style={styles.lockModalAmountContainer}>
+              <Text style={styles.lockModalAmountLabel}>Amount Due:</Text>
+              <Text style={styles.lockModalAmount}>₹{amountDue.toLocaleString()}</Text>
+            </View>
+            
+            <Text style={styles.lockModalMessage}>
+              Please contact your dietician to unlock your app or pay the due amount.
+            </Text>
+            
+            <View style={styles.lockModalButtons}>
+              <TouchableOpacity
+                style={styles.lockModalContactButton}
+                onPress={() => {
+                  // This could open a contact form or messaging feature
+                  Alert.alert(
+                    'Contact Dietician',
+                    'Please contact your dietician to unlock your app.',
+                    [{ text: 'OK' }]
+                  );
+                }}
+              >
+                <Text style={styles.lockModalContactButtonText}>Contact Dietician</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -781,6 +866,86 @@ const styles = StyleSheet.create({
   },
   subscriptionPopupConfirmButtonText: {
     color: '#27272A',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // App Lock Modal Styles
+  lockModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lockModalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    width: '90%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  lockModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF4444',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  lockModalSubtitle: {
+    fontSize: 16,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  lockModalAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: '#FFF5F5',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FF4444',
+  },
+  lockModalAmountLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginRight: 8,
+  },
+  lockModalAmount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF4444',
+  },
+  lockModalMessage: {
+    fontSize: 16,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  lockModalButtons: {
+    width: '100%',
+  },
+  lockModalContactButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockModalContactButtonText: {
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '600',
   },
