@@ -6255,13 +6255,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#FF4444', // Red color
     borderRadius: 8,
     marginRight: 8,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: COLORS.text,
+    color: COLORS.white, // White text for red background
     fontSize: 16,
     fontWeight: '600',
   },
@@ -8239,10 +8239,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   paidButton: {
-    backgroundColor: '#34D399',
+    backgroundColor: '#FFD700', // Yellow color
   },
   paidButtonText: {
-    color: COLORS.white,
+    color: '#000000', // Black text for yellow background
     fontSize: 16,
     fontWeight: '600',
   },
@@ -10458,11 +10458,6 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                   
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>Email:</Text>
-                    <Text style={styles.userInfoValue}>{selectedUserInfo.email}</Text>
-                  </View>
-                  
-                  <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>Plan:</Text>
                     <Text style={styles.userInfoValue}>{selectedUserInfo.plan}</Text>
                   </View>
@@ -10470,14 +10465,14 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>Start Date:</Text>
                     <Text style={styles.userInfoValue}>
-                      {selectedUserInfo.startDate ? new Date(selectedUserInfo.startDate).toLocaleDateString() : 'Not set'}
+                      {selectedUserInfo.startDate ? new Date(selectedUserInfo.startDate).toLocaleDateString('en-GB') : 'Not set'}
                     </Text>
                   </View>
                   
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>End Date:</Text>
                     <Text style={styles.userInfoValue}>
-                      {selectedUserInfo.endDate ? new Date(selectedUserInfo.endDate).toLocaleDateString() : 'Not set'}
+                      {selectedUserInfo.endDate ? new Date(selectedUserInfo.endDate).toLocaleDateString('en-GB') : 'Not set'}
                     </Text>
                   </View>
                   
@@ -10508,7 +10503,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                     style={[
                       styles.userInfoButton, 
                       styles.paidButton,
-                      { backgroundColor: actionLoading ? COLORS.placeholder : '#34D399' }
+                      { backgroundColor: actionLoading ? COLORS.placeholder : '#FFD700' }
                     ]}
                     onPress={handleMarkAsPaid}
                     disabled={actionLoading || selectedUserInfo.amountDue === 0}

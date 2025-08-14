@@ -40,7 +40,7 @@ import {
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan, getUserLockStatus } from './services/api';
+import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan, getUserLockStatus, API_URL } from './services/api';
 
 type User = firebase.User;
 
