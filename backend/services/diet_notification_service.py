@@ -390,9 +390,9 @@ class DietNotificationService:
                         activities.append(activity)
                         print(f"  ✅ {hour:02d}:{minute:02d} - {activity_text}")
                         
-            except (ValueError, IndexError) as e:
-                logger.warning(f"Error parsing time in line: {line}, error: {e}")
-                continue
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"Error parsing time in line: {line}, error: {e}")
+                    continue
         
         # Remove duplicates and sort by time
         unique_activities = []
@@ -461,7 +461,7 @@ class DietNotificationService:
                         except (ValueError, IndexError):
                             continue
         
-                return None
+        return None
 
     def _clean_activity_text(self, text: str, original_line: str = "") -> Optional[str]:
         """
