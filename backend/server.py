@@ -2127,6 +2127,20 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         user_data = user_doc.to_dict()
         current_total = user_data.get("totalAmountPaid", 0.0)
+        current_subscription_active = user_data.get("isSubscriptionActive", False)
+        current_subscription_end_date = user_data.get("subscriptionEndDate")
+        
+        # Check if current subscription is still active
+        should_add_to_total = True
+        if current_subscription_active and current_subscription_end_date:
+            try:
+                end_date = datetime.fromisoformat(current_subscription_end_date)
+                if datetime.now() <= end_date:
+                    # Current subscription is still active, don't add to total
+                    should_add_to_total = False
+            except:
+                # If date parsing fails, assume we should add to total
+                should_add_to_total = True
         
         # Calculate subscription dates
         from datetime import datetime, timedelta
@@ -2139,27 +2153,34 @@ async def select_subscription(request: SelectSubscriptionRequest):
         elif request.planId == "6months":
             end_date = start_date + timedelta(days=180)
         
+        # Calculate new total amount
+        new_total = current_total + (plan_prices[request.planId] if should_add_to_total else 0)
+        
         # Update user profile with subscription
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
             "currentSubscriptionAmount": plan_prices[request.planId],
-            "totalAmountPaid": current_total + plan_prices[request.planId],
+            "totalAmountPaid": new_total,
             "isSubscriptionActive": True
         }
         
         firestore_db.collection("user_profiles").document(request.userId).update(update_data)
         
+        message = f"Successfully subscribed to {request.planId} plan"
+        if not should_add_to_total:
+            message += " (replaced existing active subscription)"
+        
         return SubscriptionResponse(
             success=True,
-            message=f"Successfully subscribed to {request.planId} plan",
+            message=message,
             subscription={
                 "planId": request.planId,
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
                 "amountPaid": plan_prices[request.planId],
-                "totalAmountPaid": current_total + plan_prices[request.planId]
+                "totalAmountPaid": new_total
             }
         )
         

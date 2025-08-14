@@ -7823,6 +7823,59 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 24,
   },
+  ourPlansContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ourPlansTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  plansList: {
+    gap: 12,
+  },
+  planItem: {
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  planItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  planItemName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  planItemPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  planItemDuration: {
+    fontSize: 14,
+    color: COLORS.placeholder,
+    marginBottom: 4,
+  },
+  planItemDescription: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
 
   mySubscriptionsButton: {
     width: '100%',
@@ -8057,6 +8110,30 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  const availablePlans = [
+    {
+      planId: '1month',
+      name: '1 Month Plan',
+      duration: '1 month',
+      price: 5000,
+      description: 'Perfect for getting started with your fitness journey'
+    },
+    {
+      planId: '3months',
+      name: '3 Months Plan',
+      duration: '3 months',
+      price: 8000,
+      description: 'Great value for consistent progress tracking'
+    },
+    {
+      planId: '6months',
+      name: '6 Months Plan',
+      duration: '6 months',
+      price: 20000,
+      description: 'Best value for long-term fitness goals'
+    }
+  ];
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
@@ -8132,6 +8209,23 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 />
               </View>
             )}
+            
+            {/* Our Plans Widget */}
+            <View style={styles.ourPlansContainer}>
+              <Text style={styles.ourPlansTitle}>Our Plans</Text>
+              <View style={styles.plansList}>
+                {availablePlans.map((plan) => (
+                  <View key={plan.planId} style={styles.planItem}>
+                    <View style={styles.planItemHeader}>
+                      <Text style={styles.planItemName}>{plan.name}</Text>
+                      <Text style={styles.planItemPrice}>₹{plan.price.toLocaleString()}</Text>
+                    </View>
+                    <Text style={styles.planItemDuration}>{plan.duration}</Text>
+                    <Text style={styles.planItemDescription}>{plan.description}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
           </View>
         ) : (
           <View style={styles.noSubscriptionContainer}>
