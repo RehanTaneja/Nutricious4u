@@ -126,6 +126,15 @@ export interface UserProfile {
   dietPdfUrl?: string; // URL to the user's diet PDF
   lastDietUpload?: string; // Timestamp of last diet upload
   dieticianId?: string; // ID of the dietician who uploaded the diet
+  // Subscription fields
+  subscriptionPlan?: string; // '1month', '3months', '6months'
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  totalAmountPaid?: number;
+  isSubscriptionActive?: boolean;
+  // Plan queuing fields
+  queuedPlans?: QueuedPlan[];
+  totalDueAmount?: number;
 }
 
 export interface UpdateUserProfile {
@@ -147,6 +156,56 @@ export interface UpdateUserProfile {
   stepGoal?: number;
   caloriesBurnedGoal?: number;
   email?: string;
+  // Subscription fields
+  subscriptionPlan?: string;
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  totalAmountPaid?: number;
+  isSubscriptionActive?: boolean;
+}
+
+export interface SubscriptionPlan {
+  planId: string;
+  name: string;
+  duration: string;
+  price: number;
+  description: string;
+}
+
+export interface SubscriptionStatus {
+  subscriptionPlan?: string;
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  totalAmountPaid: number;
+  isSubscriptionActive: boolean;
+}
+
+export interface QueuedPlan {
+  planId: string;
+  name: string;
+  duration: string;
+  price: number;
+  description: string;
+  addedAt: string;
+}
+
+export interface SubscriptionQueueResponse {
+  success: boolean;
+  message: string;
+  queuedPlans: QueuedPlan[];
+  totalDueAmount: number;
+}
+
+export interface SubscriptionResponse {
+  success: boolean;
+  message: string;
+  subscription?: {
+    planId: string;
+    startDate: string;
+    endDate: string;
+    amountPaid: number;
+    totalAmountPaid: number;
+  };
 }
 
 export async function searchFood(query: string): Promise<FoodItem[]> {
@@ -457,6 +516,43 @@ export const testDietNotification = async (userId: string) => {
 // --- List All Users Except Dietician ---
 export const listNonDieticianUsers = async () => {
   const response = await api.get('/users/non-dietician');
+  return response.data;
+};
+
+// --- Subscription Management ---
+export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
+  const response = await api.get('/subscription/plans');
+  return response.data.plans;
+};
+
+export const selectSubscription = async (userId: string, planId: string): Promise<SubscriptionResponse> => {
+  const response = await api.post('/subscription/select', { userId, planId });
+  return response.data;
+};
+
+export const getSubscriptionStatus = async (userId: string): Promise<SubscriptionStatus> => {
+  const response = await api.get(`/subscription/status/${userId}`);
+  return response.data;
+};
+
+// --- Plan Queuing Functions ---
+export const queuePlan = async (userId: string, planId: string): Promise<SubscriptionQueueResponse> => {
+  const response = await api.post('/subscription/queue', { userId, planId });
+  return response.data;
+};
+
+export const removeQueuedPlan = async (userId: string, planIndex: number): Promise<SubscriptionQueueResponse> => {
+  const response = await api.delete('/subscription/queue', { data: { userId, planIndex } });
+  return response.data;
+};
+
+export const getQueuedPlans = async (userId: string): Promise<{ queuedPlans: QueuedPlan[], totalDueAmount: number }> => {
+  const response = await api.get(`/subscription/queue/${userId}`);
+  return response.data;
+};
+
+export const processQueuedPlans = async (userId: string): Promise<SubscriptionResponse> => {
+  const response = await api.post(`/subscription/process-queue/${userId}`);
   return response.data;
 };
 

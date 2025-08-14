@@ -36,7 +36,9 @@ import {
   ScheduleAppointmentScreen, // <-- import the schedule appointment screen
   DieticianDashboardScreen, // <-- import the dietician dashboard screen
   UploadDietScreen, // <-- import the new screen
-  RecipesScreen // <-- import the new recipes screen
+  RecipesScreen, // <-- import the new recipes screen
+  SubscriptionSelectionScreen, // <-- import subscription selection screen
+  MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
 
 type User = firebase.User;
@@ -99,6 +101,7 @@ export default function App() {
   const [notificationMessage, setNotificationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
 
   useEffect(() => {
     let unsubscribe: any;
@@ -275,6 +278,32 @@ export default function App() {
                     setHasCompletedQuiz(false);
                     await AsyncStorage.setItem('hasCompletedQuiz', 'false');
                   }
+                  
+                  // Check subscription status for non-dietician users
+                  if (!isDieticianAccount && profile) {
+                    try {
+                      const { getSubscriptionStatus } = await import('./services/api');
+                      const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
+                      
+                      // If user has no active subscription, redirect to subscription selection
+                      if (!subscriptionStatus.isSubscriptionActive) {
+                        // Navigate to subscription selection
+                        // This will be handled in the navigation logic
+                        console.log('[Subscription Check] User has no active subscription');
+                        setHasActiveSubscription(false);
+                      } else {
+                        console.log('[Subscription Check] User has active subscription');
+                        setHasActiveSubscription(true);
+                      }
+                    } catch (error) {
+                      console.log('[Subscription Check] Error checking subscription status:', error);
+                      // If we can't check subscription, assume they need one
+                      setHasActiveSubscription(false);
+                    }
+                  } else if (!isDieticianAccount && !profile) {
+                    // New user without profile - they'll need subscription after quiz
+                    setHasActiveSubscription(false);
+                  }
                 }
               } catch (e) {
                 console.error('Error in user profile setup:', e);
@@ -286,6 +315,7 @@ export default function App() {
               setUser(null);
               setHasCompletedQuiz(false);
               setIsDietician(false);
+              setHasActiveSubscription(null);
               
               // Only check for saved credentials and auto-login on app start, not on every logout
               try {
@@ -396,6 +426,12 @@ export default function App() {
               initialParams={{ userId: user.uid }}
               options={{ headerShown: false }}
             />
+          ) : hasCompletedQuiz && !isDietician && hasActiveSubscription === false ? (
+            <Stack.Screen
+              name="SubscriptionSelection"
+              component={SubscriptionSelectionScreen}
+              options={{ headerShown: false }}
+            />
           ) : (
             <>
               <Stack.Screen
@@ -412,6 +448,8 @@ export default function App() {
               <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="TrackingDetails" component={TrackingDetailsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="MySubscriptions" component={MySubscriptionsScreen} options={{ headerShown: false }} />
             </>
           )}
         </Stack.Navigator>

@@ -119,6 +119,15 @@ class UserProfile(BaseModel):
     dietPdfUrl: Optional[str] = None
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
+    # Subscription fields
+    subscriptionPlan: Optional[str] = None  # '1month', '3months', '6months'
+    subscriptionStartDate: Optional[str] = None
+    subscriptionEndDate: Optional[str] = None
+    totalAmountPaid: Optional[float] = 0.0
+    isSubscriptionActive: Optional[bool] = False
+    # Plan queuing fields
+    queuedPlans: Optional[List[dict]] = []  # List of queued plans
+    totalDueAmount: Optional[float] = 0.0  # Total amount due for queued plans
 
 class UpdateUserProfile(BaseModel):
     firstName: Optional[str] = None
@@ -138,6 +147,15 @@ class UpdateUserProfile(BaseModel):
     targetFat: Optional[float] = None
     stepGoal: Optional[int] = None
     caloriesBurnedGoal: Optional[int] = None
+    # Subscription fields
+    subscriptionPlan: Optional[str] = None
+    subscriptionStartDate: Optional[str] = None
+    subscriptionEndDate: Optional[str] = None
+    totalAmountPaid: Optional[float] = None
+    isSubscriptionActive: Optional[bool] = None
+    # Plan queuing fields
+    queuedPlans: Optional[List[dict]] = None
+    totalDueAmount: Optional[float] = None
 
 class ChatMessageRequest(BaseModel):
     userId: str
@@ -147,6 +165,44 @@ class ChatMessageRequest(BaseModel):
 
 class ChatMessageResponse(BaseModel):
     bot_message: str
+
+class SubscriptionPlan(BaseModel):
+    planId: str
+    name: str
+    duration: str
+    price: float
+    description: str
+
+class SelectSubscriptionRequest(BaseModel):
+    userId: str
+    planId: str
+
+class SubscriptionResponse(BaseModel):
+    success: bool
+    message: str
+    subscription: Optional[dict] = None
+
+class QueuedPlan(BaseModel):
+    planId: str
+    name: str
+    duration: str
+    price: float
+    description: str
+    addedAt: str
+
+class QueuePlanRequest(BaseModel):
+    userId: str
+    planId: str
+
+class RemoveQueuedPlanRequest(BaseModel):
+    userId: str
+    planIndex: int
+
+class SubscriptionQueueResponse(BaseModel):
+    success: bool
+    message: str
+    queuedPlans: List[QueuedPlan]
+    totalDueAmount: float
 
 # Define app before any usage
 app = FastAPI(title="Fitness Tracker API", version="1.0.0")
@@ -1948,6 +2004,70 @@ async def check_diet_reminders_job():
     except Exception as e:
         print(f"[Diet Reminders] Error in scheduled job: {e}")
 
+async def check_subscription_reminders_job():
+    """
+    Scheduled job to check for users with subscription expiring in 1 week
+    """
+    try:
+        print("[Subscription Reminders] Running scheduled check for expiring subscriptions...")
+        
+        if not FIREBASE_AVAILABLE or not firestore_db:
+            print("[Subscription Reminders] Firebase not available")
+            return
+        
+        # Get all users with active subscriptions
+        users_ref = firestore_db.collection("users")
+        users = users_ref.where("isSubscriptionActive", "==", True).stream()
+        
+        one_week_from_now = datetime.now() + timedelta(days=7)
+        users_to_notify = []
+        
+        for user_doc in users:
+            user_data = user_doc.to_dict()
+            subscription_end = user_data.get("subscriptionEndDate")
+            
+            if subscription_end:
+                try:
+                    end_date = datetime.fromisoformat(subscription_end)
+                    # Check if subscription expires within 1 week
+                    if end_date <= one_week_from_now:
+                        users_to_notify.append({
+                            "userId": user_doc.id,
+                            "userName": f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip(),
+                            "endDate": subscription_end,
+                            "notificationToken": user_data.get("notificationToken")
+                        })
+                except Exception as e:
+                    print(f"[Subscription Reminders] Error parsing date for user {user_doc.id}: {e}")
+        
+        if users_to_notify:
+            print(f"[Subscription Reminders] Found {len(users_to_notify)} users with expiring subscriptions")
+            
+            for user in users_to_notify:
+                if user["notificationToken"]:
+                    try:
+                        end_date = datetime.fromisoformat(user["endDate"])
+                        days_left = (end_date - datetime.now()).days
+                        
+                        message = f"Your subscription expires in {days_left} days. Renew now to continue enjoying all features!"
+                        
+                        send_push_notification(
+                            user["notificationToken"],
+                            "Subscription Expiring Soon",
+                            message,
+                            {"type": "subscription_reminder", "daysLeft": days_left}
+                        )
+                        print(f"[Subscription Reminders] Sent reminder to {user['userName']}")
+                    except Exception as e:
+                        print(f"[Subscription Reminders] Error sending notification to {user['userName']}: {e}")
+                else:
+                    print(f"[Subscription Reminders] No notification token for {user['userName']}")
+        else:
+            print("[Subscription Reminders] No users with expiring subscriptions")
+            
+    except Exception as e:
+        print(f"[Subscription Reminders] Error in scheduled job: {e}")
+
 # Start scheduled job (check every 6 hours)
 import asyncio
 import threading
@@ -1978,8 +2098,362 @@ def run_scheduled_jobs():
         try:
             # Run the diet reminders job (every 6 hours)
             asyncio.run(check_diet_reminders_job())
+            
+            # Run the subscription reminders job (every 6 hours)
+            asyncio.run(check_subscription_reminders_job())
         except Exception as e:
             print(f"[Scheduled Jobs] Error: {e}")
+        
+        # Sleep for 6 hours
+        time.sleep(6 * 60 * 60)
+
+# --- Subscription Endpoints ---
+
+@api_router.get("/subscription/plans")
+async def get_subscription_plans():
+    """Get available subscription plans"""
+    try:
+        plans = [
+            {
+                "planId": "1month",
+                "name": "1 Month Plan",
+                "duration": "1 month",
+                "price": 5000.0,
+                "description": "Perfect for getting started with your fitness journey"
+            },
+            {
+                "planId": "3months", 
+                "name": "3 Months Plan",
+                "duration": "3 months",
+                "price": 8000.0,
+                "description": "Great value for consistent progress tracking"
+            },
+            {
+                "planId": "6months",
+                "name": "6 Months Plan", 
+                "duration": "6 months",
+                "price": 20000.0,
+                "description": "Best value for long-term fitness goals"
+            }
+        ]
+        return {"plans": plans}
+    except Exception as e:
+        logger.error(f"[GET SUBSCRIPTION PLANS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch subscription plans")
+
+@api_router.post("/subscription/select")
+async def select_subscription(request: SelectSubscriptionRequest):
+    """Select a subscription plan for a user"""
+    try:
+        check_firebase_availability()
+        
+        # Get plan details
+        plan_prices = {
+            "1month": 5000.0,
+            "3months": 8000.0,
+            "6months": 20000.0
+        }
+        
+        if request.planId not in plan_prices:
+            raise HTTPException(status_code=400, detail="Invalid plan ID")
+        
+        # Get user profile
+        user_doc = firestore_db.collection("users").document(request.userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        # Calculate subscription dates
+        from datetime import datetime, timedelta
+        
+        start_date = datetime.now()
+        if request.planId == "1month":
+            end_date = start_date + timedelta(days=30)
+        elif request.planId == "3months":
+            end_date = start_date + timedelta(days=90)
+        elif request.planId == "6months":
+            end_date = start_date + timedelta(days=180)
+        
+        # Update user profile with subscription
+        update_data = {
+            "subscriptionPlan": request.planId,
+            "subscriptionStartDate": start_date.isoformat(),
+            "subscriptionEndDate": end_date.isoformat(),
+            "totalAmountPaid": current_total + plan_prices[request.planId],
+            "isSubscriptionActive": True
+        }
+        
+        firestore_db.collection("users").document(request.userId).update(update_data)
+        
+        return SubscriptionResponse(
+            success=True,
+            message=f"Successfully subscribed to {request.planId} plan",
+            subscription={
+                "planId": request.planId,
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+                "amountPaid": plan_prices[request.planId],
+                "totalAmountPaid": current_total + plan_prices[request.planId]
+            }
+        )
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[SELECT SUBSCRIPTION] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to select subscription")
+
+@api_router.get("/subscription/status/{userId}")
+async def get_subscription_status(userId: str):
+    """Get subscription status for a user"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("users").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        subscription_data = {
+            "subscriptionPlan": user_data.get("subscriptionPlan"),
+            "subscriptionStartDate": user_data.get("subscriptionStartDate"),
+            "subscriptionEndDate": user_data.get("subscriptionEndDate"),
+            "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
+            "isSubscriptionActive": user_data.get("isSubscriptionActive", False)
+        }
+        
+        # Check if subscription is still active
+        if subscription_data["subscriptionEndDate"]:
+            end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
+            if datetime.now() > end_date:
+                # Update subscription status to inactive
+                firestore_db.collection("users").document(userId).update({
+                    "isSubscriptionActive": False
+                })
+                subscription_data["isSubscriptionActive"] = False
+        
+        return subscription_data
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get subscription status")
+
+@api_router.post("/subscription/queue")
+async def queue_plan(request: QueuePlanRequest):
+    """Add a plan to user's queue (max 3 plans)"""
+    try:
+        check_firebase_availability()
+        
+        # Get plan details
+        plan_prices = {
+            "1month": 5000.0,
+            "3months": 8000.0,
+            "6months": 20000.0
+        }
+        
+        plan_names = {
+            "1month": "1 Month Plan",
+            "3months": "3 Months Plan", 
+            "6months": "6 Months Plan"
+        }
+        
+        plan_durations = {
+            "1month": "1 month",
+            "3months": "3 months",
+            "6months": "6 months"
+        }
+        
+        plan_descriptions = {
+            "1month": "Perfect for getting started with your fitness journey",
+            "3months": "Great value for consistent progress tracking",
+            "6months": "Best value for long-term fitness goals"
+        }
+        
+        if request.planId not in plan_prices:
+            raise HTTPException(status_code=400, detail="Invalid plan ID")
+        
+        # Get user profile
+        user_doc = firestore_db.collection("users").document(request.userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        queued_plans = user_data.get("queuedPlans", [])
+        
+        # Check if queue is full (max 3 plans)
+        if len(queued_plans) >= 3:
+            raise HTTPException(status_code=400, detail="Queue is full. Maximum 3 plans allowed.")
+        
+        # Check if plan is already in queue
+        for plan in queued_plans:
+            if plan.get("planId") == request.planId:
+                raise HTTPException(status_code=400, detail="Plan is already in queue")
+        
+        # Add plan to queue
+        new_plan = {
+            "planId": request.planId,
+            "name": plan_names[request.planId],
+            "duration": plan_durations[request.planId],
+            "price": plan_prices[request.planId],
+            "description": plan_descriptions[request.planId],
+            "addedAt": datetime.now().isoformat()
+        }
+        
+        queued_plans.append(new_plan)
+        total_due = sum(plan["price"] for plan in queued_plans)
+        
+        # Update user profile
+        firestore_db.collection("users").document(request.userId).update({
+            "queuedPlans": queued_plans,
+            "totalDueAmount": total_due
+        })
+        
+        return SubscriptionQueueResponse(
+            success=True,
+            message=f"Plan added to queue. Total due: ₹{total_due:,.0f}",
+            queuedPlans=queued_plans,
+            totalDueAmount=total_due
+        )
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[QUEUE PLAN] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to queue plan")
+
+@api_router.delete("/subscription/queue")
+async def remove_queued_plan(request: RemoveQueuedPlanRequest):
+    """Remove a plan from user's queue"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("users").document(request.userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        queued_plans = user_data.get("queuedPlans", [])
+        
+        # Check if index is valid
+        if request.planIndex < 0 or request.planIndex >= len(queued_plans):
+            raise HTTPException(status_code=400, detail="Invalid plan index")
+        
+        # Remove plan from queue
+        removed_plan = queued_plans.pop(request.planIndex)
+        total_due = sum(plan["price"] for plan in queued_plans)
+        
+        # Update user profile
+        firestore_db.collection("users").document(request.userId).update({
+            "queuedPlans": queued_plans,
+            "totalDueAmount": total_due
+        })
+        
+        return SubscriptionQueueResponse(
+            success=True,
+            message=f"Plan removed from queue. Total due: ₹{total_due:,.0f}",
+            queuedPlans=queued_plans,
+            totalDueAmount=total_due
+        )
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[REMOVE QUEUED PLAN] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove queued plan")
+
+@api_router.get("/subscription/queue/{userId}")
+async def get_queued_plans(userId: str):
+    """Get user's queued plans"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("users").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        queued_plans = user_data.get("queuedPlans", [])
+        total_due = user_data.get("totalDueAmount", 0.0)
+        
+        return {
+            "queuedPlans": queued_plans,
+            "totalDueAmount": total_due
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[GET QUEUED PLANS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get queued plans")
+
+@api_router.post("/subscription/process-queue/{userId}")
+async def process_queued_plans(userId: str):
+    """Process all queued plans and activate them"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("users").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        queued_plans = user_data.get("queuedPlans", [])
+        
+        if not queued_plans:
+            raise HTTPException(status_code=400, detail="No plans in queue")
+        
+        # Calculate total duration and amount
+        total_amount = sum(plan["price"] for plan in queued_plans)
+        total_days = 0
+        
+        for plan in queued_plans:
+            if plan["planId"] == "1month":
+                total_days += 30
+            elif plan["planId"] == "3months":
+                total_days += 90
+            elif plan["planId"] == "6months":
+                total_days += 180
+        
+        # Set subscription dates
+        start_date = datetime.now()
+        end_date = start_date + timedelta(days=total_days)
+        
+        # Update user profile
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        firestore_db.collection("users").document(userId).update({
+            "subscriptionPlan": f"{len(queued_plans)}_plans_combined",
+            "subscriptionStartDate": start_date.isoformat(),
+            "subscriptionEndDate": end_date.isoformat(),
+            "totalAmountPaid": current_total + total_amount,
+            "isSubscriptionActive": True,
+            "queuedPlans": [],  # Clear queue
+            "totalDueAmount": 0.0  # Clear due amount
+        })
+        
+        return SubscriptionResponse(
+            success=True,
+            message=f"Successfully processed {len(queued_plans)} plans. Subscription active until {end_date.strftime('%B %d, %Y')}",
+            subscription={
+                "planId": f"{len(queued_plans)}_plans_combined",
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+                "amountPaid": total_amount,
+                "totalAmountPaid": current_total + total_amount
+            }
+        )
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[PROCESS QUEUED PLANS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process queued plans")
         
         # Wait for 6 hours
         time.sleep(6 * 60 * 60)

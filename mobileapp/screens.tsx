@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, queuePlan, removeQueuedPlan, getQueuedPlans, processQueuedPlans, SubscriptionPlan, SubscriptionStatus, QueuedPlan } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -2753,6 +2753,15 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 activeOpacity={0.85}
               >
                 <Text style={styles.notificationSettingsButtonText}>Notification Settings</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.settingsButtonRow}>
+              <TouchableOpacity
+                style={styles.mySubscriptionsButton}
+                onPress={() => navigation.navigate('MySubscriptions')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.mySubscriptionsButtonText}>My Subscriptions</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.settingsButtonRow}>
@@ -7623,6 +7632,295 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  // Subscription styles
+  screenSubtitle: {
+    fontSize: 16,
+    color: COLORS.placeholder,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  subscriptionErrorContainer: {
+    backgroundColor: COLORS.error,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  plansContainer: {
+    flex: 1,
+    marginBottom: 20,
+  },
+  planCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectedPlanCard: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.lightGreen,
+  },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  planName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    flex: 1,
+  },
+  planPrice: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  planDuration: {
+    fontSize: 16,
+    color: COLORS.placeholder,
+    marginBottom: 8,
+  },
+  planDescription: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  planSelectedIndicator: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: 12,
+  },
+  planSelectedIndicatorText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  subscriptionButtonContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  subscriptionButton: {
+    backgroundColor: COLORS.primary,
+    height: 56,
+    borderRadius: 28,
+  },
+  subscriptionContainer: {
+    flex: 1,
+  },
+  subscriptionCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  subscriptionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  activeBadge: {
+    backgroundColor: COLORS.primary,
+  },
+  inactiveBadge: {
+    backgroundColor: COLORS.error,
+  },
+  statusText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  subscriptionDetails: {
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailLabel: {
+    fontSize: 16,
+    color: COLORS.placeholder,
+    fontWeight: '500',
+  },
+  detailValue: {
+    fontSize: 16,
+    color: COLORS.text,
+    fontWeight: '600',
+    textAlign: 'right',
+    flex: 1,
+  },
+  renewalContainer: {
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  renewalText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  renewalButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  noSubscriptionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  noSubscriptionText: {
+    fontSize: 18,
+    color: COLORS.placeholder,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  getSubscriptionButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 24,
+  },
+  // Plan queuing styles
+  modeToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+  },
+  modeToggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modeToggleButtonActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  modeToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.placeholder,
+  },
+  modeToggleTextActive: {
+    color: COLORS.primary,
+  },
+  queuedPlansContainer: {
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  queuedPlansTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  queuedPlansSubtitle: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  queuedPlanCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  queuedPlanInfo: {
+    flex: 1,
+  },
+  queuedPlanName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  queuedPlanPrice: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  removeQueuedPlanButton: {
+    backgroundColor: COLORS.error,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  removeQueuedPlanButtonText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  processQueueButton: {
+    backgroundColor: COLORS.primary,
+    marginTop: 12,
+  },
+  mySubscriptionsButton: {
+    width: '100%',
+    height: 100,
+    borderRadius: 24,
+    backgroundColor: COLORS.logFood,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginVertical: 0,
+    shadowColor: COLORS.logFood,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  mySubscriptionsButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: 28,
+    letterSpacing: 1,
+  },
 });
 
 export { 
@@ -7641,7 +7939,446 @@ export {
   DieticianMessagesListScreen, // <-- export the messages list screen for dietician
   ScheduleAppointmentScreen, // <-- export the schedule appointment screen
   DieticianDashboardScreen, // <-- export the dietician dashboard screen
-  RecipesScreen // <-- export RecipesScreen
+  RecipesScreen, // <-- export RecipesScreen
+  SubscriptionSelectionScreen, // <-- export subscription selection screen
+  MySubscriptionsScreen // <-- export my subscriptions screen
+};
+
+// --- Subscription Selection Screen ---
+const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [subscribing, setSubscribing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [queuedPlans, setQueuedPlans] = useState<QueuedPlan[]>([]);
+  const [totalDueAmount, setTotalDueAmount] = useState(0);
+  const [showQueueMode, setShowQueueMode] = useState(false);
+
+  useEffect(() => {
+    fetchPlans();
+    fetchQueuedPlans();
+  }, []);
+
+  const fetchPlans = async () => {
+    try {
+      setLoading(true);
+      const subscriptionPlans = await getSubscriptionPlans();
+      setPlans(subscriptionPlans);
+    } catch (e) {
+      setError('Failed to load subscription plans');
+      console.error('Error fetching plans:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchQueuedPlans = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+      
+      const { queuedPlans: plans, totalDueAmount: due } = await getQueuedPlans(userId);
+      setQueuedPlans(plans);
+      setTotalDueAmount(due);
+    } catch (e) {
+      console.error('Error fetching queued plans:', e);
+    }
+  };
+
+  const handleSelectPlan = async () => {
+    if (!selectedPlan) return;
+    
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      setError('User not authenticated');
+      return;
+    }
+
+    try {
+      setSubscribing(true);
+      setError(null);
+      
+      const response = await selectSubscription(userId, selectedPlan);
+      
+      if (response.success) {
+        Alert.alert(
+          'Subscription Successful!',
+          response.message,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('MySubscriptions')
+            }
+          ]
+        );
+      } else {
+        setError(response.message || 'Failed to subscribe');
+      }
+    } catch (e) {
+      setError('Failed to subscribe to plan');
+      console.error('Error selecting subscription:', e);
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handleQueuePlan = async () => {
+    if (!selectedPlan) return;
+    
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      setError('User not authenticated');
+      return;
+    }
+
+    try {
+      setSubscribing(true);
+      setError(null);
+      
+      const response = await queuePlan(userId, selectedPlan);
+      
+      if (response.success) {
+        setQueuedPlans(response.queuedPlans);
+        setTotalDueAmount(response.totalDueAmount);
+        setSelectedPlan(null);
+        Alert.alert('Success', response.message);
+      } else {
+        setError(response.message || 'Failed to queue plan');
+      }
+    } catch (e) {
+      setError('Failed to queue plan');
+      console.error('Error queuing plan:', e);
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handleRemoveQueuedPlan = async (planIndex: number) => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+
+    try {
+      const response = await removeQueuedPlan(userId, planIndex);
+      
+      if (response.success) {
+        setQueuedPlans(response.queuedPlans);
+        setTotalDueAmount(response.totalDueAmount);
+        Alert.alert('Success', response.message);
+      } else {
+        setError(response.message || 'Failed to remove plan');
+      }
+    } catch (e) {
+      setError('Failed to remove plan');
+      console.error('Error removing queued plan:', e);
+    }
+  };
+
+  const handleProcessQueue = async () => {
+    if (queuedPlans.length === 0) return;
+    
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      setError('User not authenticated');
+      return;
+    }
+
+    try {
+      setSubscribing(true);
+      setError(null);
+      
+      const response = await processQueuedPlans(userId);
+      
+      if (response.success) {
+        Alert.alert(
+          'Subscription Successful!',
+          response.message,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('MySubscriptions')
+            }
+          ]
+        );
+      } else {
+        setError(response.message || 'Failed to process plans');
+      }
+    } catch (e) {
+      setError('Failed to process plans');
+      console.error('Error processing queued plans:', e);
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <View style={styles.settingsContainer}>
+        <Text style={styles.screenTitle}>Choose Your Plan</Text>
+        <Text style={styles.screenSubtitle}>Select a subscription plan to continue using the app</Text>
+        
+        {/* Mode Toggle */}
+        <View style={styles.modeToggleContainer}>
+          <TouchableOpacity
+            style={[
+              styles.modeToggleButton,
+              !showQueueMode && styles.modeToggleButtonActive
+            ]}
+            onPress={() => setShowQueueMode(false)}
+          >
+            <Text style={[
+              styles.modeToggleText,
+              !showQueueMode && styles.modeToggleTextActive
+            ]}>Subscribe Now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.modeToggleButton,
+              showQueueMode && styles.modeToggleButtonActive
+            ]}
+            onPress={() => setShowQueueMode(true)}
+          >
+            <Text style={[
+              styles.modeToggleText,
+              showQueueMode && styles.modeToggleTextActive
+            ]}>Queue Plans</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {error && (
+          <View style={styles.subscriptionErrorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Queued Plans Section */}
+        {showQueueMode && queuedPlans.length > 0 && (
+          <View style={styles.queuedPlansContainer}>
+            <Text style={styles.queuedPlansTitle}>Queued Plans ({queuedPlans.length}/3)</Text>
+            <Text style={styles.queuedPlansSubtitle}>Total Due: ₹{totalDueAmount.toLocaleString()}</Text>
+            
+            {queuedPlans.map((plan, index) => (
+              <View key={index} style={styles.queuedPlanCard}>
+                <View style={styles.queuedPlanInfo}>
+                  <Text style={styles.queuedPlanName}>{plan.name}</Text>
+                  <Text style={styles.queuedPlanPrice}>₹{plan.price.toLocaleString()}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.removeQueuedPlanButton}
+                  onPress={() => handleRemoveQueuedPlan(index)}
+                >
+                  <Text style={styles.removeQueuedPlanButtonText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            
+            <StyledButton
+              title="Process All Plans"
+              onPress={handleProcessQueue}
+              disabled={subscribing}
+              style={styles.processQueueButton}
+            />
+          </View>
+        )}
+
+        {/* Available Plans */}
+        <ScrollView style={styles.plansContainer} showsVerticalScrollIndicator={false}>
+          {plans.map((plan) => (
+            <TouchableOpacity
+              key={plan.planId}
+              style={[
+                styles.planCard,
+                selectedPlan === plan.planId && styles.selectedPlanCard
+              ]}
+              onPress={() => setSelectedPlan(plan.planId)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.planHeader}>
+                <Text style={styles.planName}>{plan.name}</Text>
+                <Text style={styles.planPrice}>₹{plan.price.toLocaleString()}</Text>
+              </View>
+              <Text style={styles.planDuration}>{plan.duration}</Text>
+              <Text style={styles.planDescription}>{plan.description}</Text>
+              {selectedPlan === plan.planId && (
+                <View style={styles.planSelectedIndicator}>
+                  <Text style={styles.planSelectedIndicatorText}>✓ Selected</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <View style={styles.subscriptionButtonContainer}>
+          {showQueueMode ? (
+            <StyledButton
+              title={subscribing ? "Adding to Queue..." : "Add to Queue"}
+              onPress={handleQueuePlan}
+              disabled={!selectedPlan || subscribing || queuedPlans.length >= 3}
+              style={styles.subscriptionButton}
+            />
+          ) : (
+            <StyledButton
+              title={subscribing ? "Subscribing..." : "Subscribe Now"}
+              onPress={handleSelectPlan}
+              disabled={!selectedPlan || subscribing}
+              style={styles.subscriptionButton}
+            />
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+// --- My Subscriptions Screen ---
+const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
+  const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSubscriptionStatus();
+  }, []);
+
+  const fetchSubscriptionStatus = async () => {
+    try {
+      setLoading(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        setError('User not authenticated');
+        return;
+      }
+      
+      const status = await getSubscriptionStatus(userId);
+      setSubscription(status);
+    } catch (e) {
+      setError('Failed to load subscription status');
+      console.error('Error fetching subscription status:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+
+  const getPlanName = (planId: string) => {
+    switch (planId) {
+      case '1month': return '1 Month Plan';
+      case '3months': return '3 Months Plan';
+      case '6months': return '6 Months Plan';
+      default: return 'Unknown Plan';
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <View style={styles.settingsContainer}>
+        <Text style={styles.screenTitle}>My Subscriptions</Text>
+        
+        {error && (
+          <View style={styles.subscriptionErrorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {subscription ? (
+          <View style={styles.subscriptionContainer}>
+            <View style={styles.subscriptionCard}>
+              <View style={styles.subscriptionHeader}>
+                <Text style={styles.subscriptionTitle}>Current Plan</Text>
+                <View style={[
+                  styles.statusBadge,
+                  subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge
+                ]}>
+                  <Text style={styles.statusText}>
+                    {subscription.isSubscriptionActive ? 'Active' : 'Inactive'}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.subscriptionDetails}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Plan:</Text>
+                  <Text style={styles.detailValue}>
+                    {subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan'}
+                  </Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Start Date:</Text>
+                  <Text style={styles.detailValue}>
+                    {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
+                  </Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>End Date:</Text>
+                  <Text style={styles.detailValue}>
+                    {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
+                  </Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Total Amount Paid:</Text>
+                  <Text style={styles.detailValue}>
+                    ₹{subscription.totalAmountPaid.toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            
+            {!subscription.isSubscriptionActive && (
+              <View style={styles.renewalContainer}>
+                <Text style={styles.renewalText}>Your subscription has expired</Text>
+                <StyledButton
+                  title="Renew Subscription"
+                  onPress={() => navigation.navigate('SubscriptionSelection')}
+                  style={styles.renewalButton}
+                />
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.noSubscriptionContainer}>
+            <Text style={styles.noSubscriptionText}>No subscription found</Text>
+            <StyledButton
+              title="Get a Subscription"
+              onPress={() => navigation.navigate('SubscriptionSelection')}
+              style={styles.getSubscriptionButton}
+            />
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
 }; 
 
 // Firebase Auth error code to user-friendly message mapping
