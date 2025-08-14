@@ -2121,7 +2121,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             raise HTTPException(status_code=400, detail="Invalid plan ID")
         
         # Get user profile
-        user_doc = firestore_db.collection("users").document(request.userId).get()
+        user_doc = firestore_db.collection("user_profiles").document(request.userId).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -2148,7 +2148,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             "isSubscriptionActive": True
         }
         
-        firestore_db.collection("users").document(request.userId).update(update_data)
+        firestore_db.collection("user_profiles").document(request.userId).update(update_data)
         
         return SubscriptionResponse(
             success=True,
@@ -2174,7 +2174,7 @@ async def get_subscription_status(userId: str):
     try:
         check_firebase_availability()
         
-        user_doc = firestore_db.collection("users").document(userId).get()
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -2193,7 +2193,7 @@ async def get_subscription_status(userId: str):
             end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
             if datetime.now() > end_date:
                 # Update subscription status to inactive
-                firestore_db.collection("users").document(userId).update({
+                firestore_db.collection("user_profiles").document(userId).update({
                     "isSubscriptionActive": False
                 })
                 subscription_data["isSubscriptionActive"] = False
