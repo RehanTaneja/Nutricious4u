@@ -1096,6 +1096,20 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 }, merge=True))
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
+                
+                # Automatically schedule the notifications
+                try:
+                    # Get the notification scheduler
+                    scheduler = get_notification_scheduler(firestore_db)
+                    
+                    # Schedule notifications for the user
+                    scheduled_count = await scheduler.schedule_user_notifications(user_id)
+                    print(f"Successfully scheduled {scheduled_count} notifications for user {user_id}")
+                    
+                except Exception as schedule_error:
+                    print(f"Error scheduling notifications for user {user_id}: {schedule_error}")
+                    # Don't fail the upload if scheduling fails
+                    
             else:
                 print(f"No timed activities found in new diet PDF for user {user_id}")
                 

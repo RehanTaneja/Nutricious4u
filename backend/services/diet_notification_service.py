@@ -311,18 +311,27 @@ class DietNotificationService:
             if not line:
                 continue
             
-            # Check if this is a day header
+            # Check if this is a day header (improved pattern)
             day_match = re.search(r'^([A-Z]+)\s*-\s*\d+', line, re.IGNORECASE)
             if day_match:
                 day_name = day_match.group(1).lower()
                 if day_name in day_mapping:
                     current_day = day_mapping[day_name]
+                    print(f"  📅 Found day: {day_name.upper()} (day {current_day})")
                     continue
             
-            # Look for time patterns in the line
+            # Skip lines that don't contain time patterns
+            if not re.search(r'\d{1,2}([:.]?\d{2})?\s*(AM|PM|am|pm)?', line):
+                continue
+            
+            # Look for time patterns in the line (improved patterns)
             time_patterns = [
                 r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?',  # 5:30 AM, 6:00 PM
                 r'(\d{1,2})\s*(AM|PM|am|pm)',  # 6 AM, 8 PM
+                r'(\d{1,2})AM',  # 8AM
+                r'(\d{1,2})PM',  # 8PM
+                r'(\d{1,2})AM-',  # 8AM-
+                r'(\d{1,2})PM-',  # 8PM-
             ]
             
             time_match = None
@@ -332,7 +341,7 @@ class DietNotificationService:
                     time_match = match
                     break
             
-            if time_match:
+            if time_match and current_day is not None:
                 try:
                     # Extract time components
                     if ':' in time_match.group(0):
@@ -342,7 +351,13 @@ class DietNotificationService:
                     else:
                         hour = int(time_match.group(1))
                         minute = 0
-                        period = time_match.group(2) if len(time_match.groups()) > 1 else None
+                        # Check if the pattern ends with AM/PM
+                        if time_match.group(0).upper().endswith('AM'):
+                            period = 'AM'
+                        elif time_match.group(0).upper().endswith('PM'):
+                            period = 'PM'
+                        else:
+                            period = time_match.group(2) if len(time_match.groups()) > 1 else None
                     
                     # Convert to 24-hour format
                     if period:
@@ -357,58 +372,66 @@ class DietNotificationService:
                     # Extract activity text (everything after the time)
                     activity_text = line[time_match.end():].strip()
                     
-                    # Clean up the activity text
+                    # Clean up the activity text more thoroughly
                     if activity_text:
                         # Remove leading dashes, colons, or other separators
                         activity_text = re.sub(r'^[-:\s]+', '', activity_text)
                         
-                        # Stop at the next time pattern to avoid merging activities
-                        # Look for the next time pattern in the same line
-                        next_time_match = re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', activity_text)
-                        if next_time_match:
-                            activity_text = activity_text[:next_time_match.start()].strip()
+                        # Remove any remaining time patterns to prevent merging
+                        activity_text = re.sub(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', '', activity_text)
                         
-                        # If activity is too short, try to get more context from next line
-                        if len(activity_text.split()) <= 3:
-                            line_index = lines.index(line)
-                            if line_index + 1 < len(lines):
-                                next_line = lines[line_index + 1].strip()
-                                if next_line and not re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', next_line):
-                                    activity_text += " " + next_line
+                        # Remove day abbreviations that might be left over
+                        activity_text = re.sub(r'\b(MON|TUE|WED|THU|FRI|SAT|SUN)\b', '', activity_text, flags=re.IGNORECASE)
                         
-                        # Create activity object
-                        activity = {
-                            'time': {'hour': hour, 'minute': minute, 'type': 'numeric'},
-                            'activity': activity_text,
-                            'original_text': line,
-                            'hour': hour,
-                            'minute': minute,
-                            'day': current_day,  # Include day information
-                            'unique_id': f"{hour:02d}:{minute:02d}_{hash(activity_text.lower().strip()) % 1000000}"
-                        }
+                        # Remove any remaining artifacts
+                        activity_text = re.sub(r'^[)\s]+', '', activity_text)  # Remove leading ) and spaces
+                        activity_text = re.sub(r'[)\s]+$', '', activity_text)  # Remove trailing ) and spaces
                         
-                        activities.append(activity)
-                        print(f"  ✅ {hour:02d}:{minute:02d} - {activity_text}")
+                        # Clean up backslashes and other formatting artifacts
+                        activity_text = re.sub(r'\\+', ' ', activity_text)  # Replace backslashes with spaces
+                        activity_text = re.sub(r'[{}]', '', activity_text)  # Remove curly braces
+                        activity_text = re.sub(r'[()]', '', activity_text)  # Remove parentheses
+                        
+                        # Clean up extra whitespace
+                        activity_text = re.sub(r'\s+', ' ', activity_text).strip()
+                        
+                        # Only add if we have meaningful activity text
+                        if len(activity_text) > 3 and not activity_text.lower().startswith(('am', 'pm')):
+                            # Create activity object
+                            activity = {
+                                'time': {'hour': hour, 'minute': minute, 'type': 'numeric'},
+                                'activity': activity_text,
+                                'original_text': line,
+                                'hour': hour,
+                                'minute': minute,
+                                'day': current_day,  # Include day information
+                                'unique_id': f"{hour:02d}:{minute:02d}_{hash(activity_text.lower().strip()) % 1000000}"
+                            }
+                            
+                            activities.append(activity)
+                            print(f"  ✅ {hour:02d}:{minute:02d} - {activity_text} (Day {current_day})")
                         
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Error parsing time in line: {line}, error: {e}")
                     continue
         
-        # Remove duplicates and sort by time
+        # Remove duplicates and sort by time (improved for day-specific activities)
         unique_activities = []
         seen_combinations = set()
         
         for activity in activities:
+            # Include day in the combination key to allow same activities on different days
             time_key = f"{activity['hour']:02d}:{activity['minute']:02d}"
             activity_key = activity['activity'].lower().strip()
-            combination = f"{time_key}_{activity_key}"
+            day_key = f"day_{activity.get('day', 0)}"
+            combination = f"{time_key}_{activity_key}_{day_key}"
             
             if combination not in seen_combinations:
                 seen_combinations.add(combination)
                 unique_activities.append(activity)
         
-        # Sort by time
-        unique_activities.sort(key=lambda x: (x['hour'], x['minute']))
+        # Sort by day first, then by time
+        unique_activities.sort(key=lambda x: (x.get('day', 0), x['hour'], x['minute']))
         
         return unique_activities
     

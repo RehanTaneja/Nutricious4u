@@ -3601,6 +3601,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   // Diet notification management
   const [dietNotifications, setDietNotifications] = useState<any[]>([]);
   const [loadingDietNotifications, setLoadingDietNotifications] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -3696,19 +3697,43 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   };
 
   useEffect(() => {
-    loadNotifications();
-    loadDietNotifications();
-    // Request notification permissions only
-    (async () => {
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status !== 'granted') {
-        await Notifications.requestPermissionsAsync();
-        console.log('[Notifications] Requested notification permissions.');
-      } else {
-        console.log('[Notifications] Notification permissions already granted.');
+    const initializeScreen = async () => {
+      setInitialLoading(true);
+      try {
+        // Load both notifications in parallel
+        await Promise.all([
+          loadNotifications(),
+          loadDietNotifications()
+        ]);
+        
+        // Request notification permissions
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+          console.log('[Notifications] Requested notification permissions.');
+        } else {
+          console.log('[Notifications] Notification permissions already granted.');
+        }
+      } catch (error) {
+        console.error('[Notifications] Error initializing screen:', error);
+      } finally {
+        setInitialLoading(false);
       }
-    })();
+    };
+
+    initializeScreen();
   }, []);
+
+  // Refresh diet notifications when screen comes into focus (no extraction, just refresh)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('[Diet Notifications] Screen focused, refreshing diet notifications');
+      // Only refresh existing notifications, don't trigger extraction
+      loadDietNotifications();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const loadNotifications = async () => {
     setLoading(true);
@@ -3988,10 +4013,18 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Set up notification listener to reschedule daily
+  // Set up notification listener to reschedule daily and handle new diets
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data;
+      
+      // Handle new diet notifications - automatically refresh diet notifications
+      if (data?.type === 'new_diet') {
+        console.log('[Diet Notifications] Received new diet notification, refreshing diet notifications');
+        // Refresh diet notifications to show the newly extracted notifications (already extracted on backend)
+        await loadDietNotifications();
+      }
+      
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
         console.log('[Diet Notifications] Received diet reminder, rescheduling for tomorrow');
         
@@ -4351,7 +4384,33 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           <Text style={[styles.screenTitle, { flex: 1, textAlign: 'center', marginLeft: -36 }]}>Notification Settings</Text>
           <View style={{ width: 40 }} />
         </View>
-        {loading ? (
+        
+        {/* Initial Loading Screen */}
+        {initialLoading ? (
+          <View style={{ 
+            flex: 1, 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            paddingVertical: 60
+          }}>
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginBottom: 16 }} />
+            <Text style={{ 
+              color: COLORS.text, 
+              fontSize: 16, 
+              textAlign: 'center',
+              marginBottom: 8
+            }}>
+              Loading notifications...
+            </Text>
+            <Text style={{ 
+              color: COLORS.placeholder, 
+              fontSize: 14, 
+              textAlign: 'center'
+            }}>
+              Please wait while we fetch your latest notifications
+            </Text>
+          </View>
+        ) : loading ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
         ) : (
           <>
