@@ -2249,11 +2249,17 @@ async def select_subscription(request: SelectSubscriptionRequest):
         if current_subscription_active and current_subscription_end_date:
             try:
                 end_date = datetime.fromisoformat(current_subscription_end_date)
-                if datetime.now() <= end_date:
+                current_time = datetime.now()
+                logger.info(f"[SELECT SUBSCRIPTION] Current time: {current_time}, End date: {end_date}, Is active: {current_time <= end_date}")
+                if current_time <= end_date:
                     # Current subscription is still active, don't add to total
                     should_add_to_total = False
-            except:
+                    logger.info(f"[SELECT SUBSCRIPTION] Subscription is still active, will not add to total")
+                else:
+                    logger.info(f"[SELECT SUBSCRIPTION] Subscription has expired, will add to total")
+            except Exception as e:
                 # If date parsing fails, assume we should add to total
+                logger.error(f"[SELECT SUBSCRIPTION] Error parsing date: {e}")
                 should_add_to_total = True
         
         # Calculate subscription dates
