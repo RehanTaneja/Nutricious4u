@@ -354,27 +354,27 @@ class DietNotificationService:
                             if hour == 12:
                                 hour = 0
                     
-                                    # Extract activity text (everything after the time)
-                activity_text = line[time_match.end():].strip()
-                
-                # Clean up the activity text
-                if activity_text:
-                    # Remove leading dashes, colons, or other separators
-                    activity_text = re.sub(r'^[-:\s]+', '', activity_text)
+                    # Extract activity text (everything after the time)
+                    activity_text = line[time_match.end():].strip()
                     
-                    # Stop at the next time pattern to avoid merging activities
-                    # Look for the next time pattern in the same line
-                    next_time_match = re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', activity_text)
-                    if next_time_match:
-                        activity_text = activity_text[:next_time_match.start()].strip()
-                    
-                    # If activity is too short, try to get more context from next line
-                    if len(activity_text.split()) <= 3:
-                        line_index = lines.index(line)
-                        if line_index + 1 < len(lines):
-                            next_line = lines[line_index + 1].strip()
-                            if next_line and not re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', next_line):
-                                activity_text += " " + next_line
+                    # Clean up the activity text
+                    if activity_text:
+                        # Remove leading dashes, colons, or other separators
+                        activity_text = re.sub(r'^[-:\s]+', '', activity_text)
+                        
+                        # Stop at the next time pattern to avoid merging activities
+                        # Look for the next time pattern in the same line
+                        next_time_match = re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', activity_text)
+                        if next_time_match:
+                            activity_text = activity_text[:next_time_match.start()].strip()
+                        
+                        # If activity is too short, try to get more context from next line
+                        if len(activity_text.split()) <= 3:
+                            line_index = lines.index(line)
+                            if line_index + 1 < len(lines):
+                                next_line = lines[line_index + 1].strip()
+                                if next_line and not re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', next_line):
+                                    activity_text += " " + next_line
                         
                         # Create activity object
                         activity = {
@@ -388,10 +388,11 @@ class DietNotificationService:
                         }
                         
                         activities.append(activity)
+                        print(f"  ✅ {hour:02d}:{minute:02d} - {activity_text}")
                         
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Error parsing time in line: {line}, error: {e}")
-                    continue
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Error parsing time in line: {line}, error: {e}")
+                continue
         
         # Remove duplicates and sort by time
         unique_activities = []
