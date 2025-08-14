@@ -2270,6 +2270,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         # Calculate new total amount
         new_total = current_total + (plan_prices[request.planId] if should_add_to_total else 0)
         
+        # Log the calculation for debugging
+        logger.info(f"[SELECT SUBSCRIPTION] User: {request.userId}, Current Total: {current_total}, Plan Price: {plan_prices[request.planId]}, Should Add: {should_add_to_total}, New Total: {new_total}")
+        
         # Update user profile with subscription
         update_data = {
             "subscriptionPlan": request.planId,
@@ -2328,6 +2331,9 @@ async def get_subscription_status(userId: str):
             "isSubscriptionActive": user_data.get("isSubscriptionActive", False)
         }
         
+        # Log the data being returned for debugging
+        logger.info(f"[GET SUBSCRIPTION STATUS] User: {userId}, Total Amount: {subscription_data['totalAmountPaid']}, End Date: {subscription_data['subscriptionEndDate']}")
+        
         # Check if subscription is still active
         if subscription_data["subscriptionEndDate"]:
             end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
@@ -2345,6 +2351,34 @@ async def get_subscription_status(userId: str):
     except Exception as e:
         logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get subscription status")
+
+@api_router.post("/subscription/reset/{userId}")
+async def reset_subscription(userId: str):
+    """Reset subscription data for a user (for testing purposes)"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Reset subscription data
+        reset_data = {
+            "subscriptionPlan": None,
+            "subscriptionStartDate": None,
+            "subscriptionEndDate": None,
+            "currentSubscriptionAmount": 0.0,
+            "totalAmountPaid": 0.0,
+            "isSubscriptionActive": False
+        }
+        
+        firestore_db.collection("user_profiles").document(userId).update(reset_data)
+        
+        return {"success": True, "message": "Subscription data reset successfully"}
+        
+    except Exception as e:
+        logger.error(f"[RESET SUBSCRIPTION] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset subscription")
 
 @api_router.get("/notifications/{userId}")
 async def get_user_notifications(userId: str):

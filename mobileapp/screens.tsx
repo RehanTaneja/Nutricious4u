@@ -8373,16 +8373,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               </View>
             </View>
             
-            {/* Custom Green Black Button */}
-            <View style={styles.customButtonContainer}>
-              <TouchableOpacity
-                style={styles.customGreenBlackButton}
-                onPress={() => navigation.navigate('SubscriptionSelection')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.customGreenBlackButtonText}>Get New Subscription</Text>
-              </TouchableOpacity>
-            </View>
+
           </View>
         ) : (
           <View style={styles.noSubscriptionContainer}>
