@@ -142,7 +142,10 @@ class NotificationScheduler:
             now_ist = now.astimezone(ist)
             
             # Calculate next occurrence of this day and time in IST
+            # Fix: Ensure we're calculating the correct day by using proper day boundary logic
             days_ahead = (day - now_ist.weekday()) % 7
+            
+            # If it's the same day and the time has already passed, go to next week
             if days_ahead == 0 and now_ist.time() >= target_time:
                 days_ahead = 7
             

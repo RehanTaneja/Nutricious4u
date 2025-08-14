@@ -3620,15 +3620,15 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [showDaySelector, setShowDaySelector] = useState(false);
 
-  // Days of the week
+  // Days of the week (matching backend: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6)
   const daysOfWeek = [
-    { id: 0, name: 'Sunday' },
-    { id: 1, name: 'Monday' },
-    { id: 2, name: 'Tuesday' },
-    { id: 3, name: 'Wednesday' },
-    { id: 4, name: 'Thursday' },
-    { id: 5, name: 'Friday' },
-    { id: 6, name: 'Saturday' }
+    { id: 0, name: 'Monday' },
+    { id: 1, name: 'Tuesday' },
+    { id: 2, name: 'Wednesday' },
+    { id: 3, name: 'Thursday' },
+    { id: 4, name: 'Friday' },
+    { id: 5, name: 'Saturday' },
+    { id: 6, name: 'Sunday' }
   ];
 
   // Combine user notifications and diet notifications into a single list
@@ -8948,20 +8948,13 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const handleViewDiet = async () => {
     if (!selectedUser) return;
     try {
-      const userDoc = await firestore.collection('user_profiles').doc(selectedUser.userId).get();
-      if (userDoc.exists) {
-        const data = userDoc.data();
-        if (data?.dietPdfUrl) {
-          const url = getPdfUrlForUser({ ...selectedUser, dietPdfUrl: data.dietPdfUrl });
-          if (url) {
-            setPdfUrl(url);
-            setShowPdfModal(true);
-          } else {
-            alert('Invalid diet PDF URL.');
-          }
-        } else {
-          alert('No diet PDF available for this user.');
-        }
+      // Use the same approach as the user dashboard
+      const url = getPdfUrlForUser(selectedUser);
+      if (url) {
+        setPdfUrl(url);
+        setShowPdfModal(true);
+      } else {
+        alert('No diet PDF available for this user.');
       }
     } catch (e) {
       console.error('Failed to open diet PDF:', e);
@@ -9106,6 +9099,25 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 {uploading ? 'Uploading...' : 'Select PDF'}
               </Text>
             </TouchableOpacity>
+            
+            {/* View Current Diet Button */}
+            {selectedUser?.dietPdfUrl && (
+              <TouchableOpacity
+                style={[
+                  styles.viewDietButton,
+                  { 
+                    width: '100%', 
+                    marginBottom: 12,
+                    minHeight: 48,
+                    justifyContent: 'center',
+                    backgroundColor: COLORS.primaryDark
+                  }
+                ]}
+                onPress={handleViewDiet}
+              >
+                <Text style={styles.viewDietButtonText}>View Current Diet</Text>
+              </TouchableOpacity>
+            )}
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -9398,12 +9410,6 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 domStorageEnabled={true}
                 allowsInlineMediaPlayback={true}
                 mediaPlaybackRequiresUserAction={false}
-                scrollEnabled={false}
-                bounces={false}
-                showsHorizontalScrollIndicator={false}
-                showsVerticalScrollIndicator={false}
-                automaticallyAdjustContentInsets={false}
-                contentInsetAdjustmentBehavior="never"
                 onError={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
                   console.log('WebView error: ', nativeEvent);
@@ -9419,6 +9425,12 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 onLoadStart={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
                   console.log('WebView loading URL: ', nativeEvent.url);
+                }}
+                onMessage={(event) => {
+                  console.log('WebView message: ', event.nativeEvent.data);
+                }}
+                onNavigationStateChange={(navState) => {
+                  console.log('WebView navigation state: ', navState);
                 }}
               />
             ) : (
