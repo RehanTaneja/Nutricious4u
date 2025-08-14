@@ -204,6 +204,13 @@ class SubscriptionQueueResponse(BaseModel):
     queuedPlans: List[QueuedPlan]
     totalDueAmount: float
 
+class SubscriptionStatus(BaseModel):
+    subscriptionPlan: Optional[str] = None
+    subscriptionStartDate: Optional[str] = None
+    subscriptionEndDate: Optional[str] = None
+    totalAmountPaid: float = 0.0
+    isSubscriptionActive: bool = False
+
 # Define app before any usage
 app = FastAPI(title="Fitness Tracker API", version="1.0.0")
 
@@ -1735,9 +1742,6 @@ async def delete_diet_notification(user_id: str, notification_id: str):
 
 
 
-# Include the router in the main app
-app.include_router(api_router)
-
 # Add a health check endpoint at root level
 @app.get("/health")
 async def health_check():
@@ -2473,6 +2477,9 @@ scheduler_thread.start()
 
 notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
 notification_scheduler_thread.start()
+
+# Include the router in the main app (after all endpoints are defined)
+app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
