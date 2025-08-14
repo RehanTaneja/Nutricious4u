@@ -1043,6 +1043,72 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, []);
 
+  // Fetch diet countdown data
+  useEffect(() => {
+    const userId = firebase.auth().currentUser?.uid;
+    if (userId) {
+      const fetchDietCountdown = async () => {
+        try {
+          setDietLoading(true);
+          const dietData = await getUserDiet(userId);
+          console.log('[Dashboard Debug] Diet data fetched:', dietData);
+          console.log('[Dashboard Debug] daysLeft:', dietData.daysLeft, 'hoursLeft:', dietData.hoursLeft);
+          
+          if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
+            // Use the backend-calculated daysLeft and hoursLeft for accurate countdown
+            const daysRemaining = Math.max(0, dietData.daysLeft);
+            const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
+              ? Math.max(0, dietData.hoursLeft) 
+              : 0;
+            
+            setDaysLeft({
+              days: daysRemaining,
+              hours: hoursRemaining
+            });
+            
+            // Check if user has 1 day remaining and notify dietician
+            if (daysRemaining === 1) {
+              try {
+                await fetch(`${API_URL}/diet/check-reminders`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  }
+                });
+                console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
+              } catch (notificationError) {
+                console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
+              }
+            }
+          } else {
+            setDaysLeft(null);
+          }
+          
+          setDietPdfUrl(dietData.dietPdfUrl || null);
+        } catch (error) {
+          console.error('[Dashboard Debug] Error fetching diet countdown:', error);
+          setDietError('Failed to load diet countdown');
+        } finally {
+          setDietLoading(false);
+        }
+      };
+      
+      fetchDietCountdown();
+      
+      // Set up interval to update countdown every minute for real-time experience
+      console.log('[Dashboard Debug] Setting up countdown interval');
+      const interval = setInterval(() => {
+        console.log('[Dashboard Debug] Countdown interval triggered');
+        fetchDietCountdown();
+      }, 60 * 1000); // Update every minute
+      
+      return () => {
+        console.log('[Dashboard Debug] Clearing countdown interval');
+        clearInterval(interval);
+      };
+    }
+  }, []);
+
   const handleOpenDiet = () => {
     if (dietPdfUrl) {
       console.log('Opening diet PDF with URL:', dietPdfUrl);
@@ -8490,6 +8556,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
     useEffect(() => {
+    console.log('[UploadDietScreen] useEffect triggered, refresh value:', refresh);
     let isMounted = true;
     async function fetchData() {
       setLoading(true);
@@ -8532,27 +8599,27 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
         const countdownsObj: { [userId: string]: { days: number; hours: number } } = {};
         await Promise.all(filteredProfiles.map(async (u: any) => {
           try {
-            const userDoc = await firestore.collection('user_profiles').doc(u.userId).get();
-            if (userDoc.exists) {
-              const data = userDoc.data();
-              // Add dietPdfUrl to the user object
-              u.dietPdfUrl = data?.dietPdfUrl || null;
-              if (data?.lastDietUpload) {
-                const lastDt = new Date(data.lastDietUpload);
-                const timeDiff = Date.now() - lastDt.getTime();
-                const totalHours = 7 * 24; // 7 days in hours
-                const remainingHours = Math.max(0, totalHours - Math.floor(timeDiff / (1000 * 60 * 60)));
-                const days = Math.floor(remainingHours / 24);
-                const hours = remainingHours % 24;
-                countdownsObj[u.userId] = { days, hours };
-              } else {
-                countdownsObj[u.userId] = { days: 0, hours: 0 };
-              }
+            // Use the same backend API as the user dashboard for consistent calculation
+            const dietData = await getUserDiet(u.userId);
+            console.log(`[UploadDietScreen] User ${u.userId} diet data:`, dietData);
+            u.dietPdfUrl = dietData.dietPdfUrl || null;
+            
+            if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
+              // Use the backend-calculated daysLeft and hoursLeft for accurate countdown
+              const daysRemaining = Math.max(0, dietData.daysLeft);
+              const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
+                ? Math.max(0, dietData.hoursLeft) 
+                : 0;
+              
+              countdownsObj[u.userId] = {
+                days: daysRemaining,
+                hours: hoursRemaining
+              };
             } else {
-              u.dietPdfUrl = null;
               countdownsObj[u.userId] = { days: 0, hours: 0 };
             }
           } catch (e) {
+            console.error(`[UploadDietScreen] Error fetching diet data for user ${u.userId}:`, e);
             u.dietPdfUrl = null;
             countdownsObj[u.userId] = { days: 0, hours: 0 };
           }
@@ -8663,6 +8730,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       
       // The backend has already updated the Firestore document with the new dietPdfUrl
       // We just need to refresh the user data to get the updated information
+      console.log('[UploadDietScreen] Diet uploaded successfully, triggering refresh');
       setRefresh(r => r + 1);
       
       setSuccessMsg('Diet uploaded successfully!');
@@ -8725,7 +8793,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : 'Unknown User'}
               </Text>
               <Text style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
-                Days Until New Diet: {countdowns[item.userId] ? `${countdowns[item.userId].days}D ${countdowns[item.userId].hours}H` : '-'}
+                Days Until New Diet: {countdowns[item.userId] ? `${countdowns[item.userId].days} days ${countdowns[item.userId].hours} hours` : '-'}
               </Text>
             </View>
               <View style={{ 

@@ -357,9 +357,17 @@ def check_users_with_one_day_remaining():
                 if isinstance(last_upload, str):
                     last_upload = datetime.fromisoformat(last_upload.replace('Z', '+00:00'))
                 
-                # Calculate days remaining
-                days_elapsed = (datetime.now() - last_upload).days
-                days_remaining = 7 - days_elapsed
+                # Calculate days remaining using same logic as main API
+                from datetime import timezone
+                now = datetime.now(timezone.utc)
+                
+                # Ensure last_upload is timezone-aware for comparison
+                if last_upload.tzinfo is None:
+                    last_upload = last_upload.replace(tzinfo=timezone.utc)
+                
+                time_diff = now - last_upload
+                total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
+                days_remaining = total_hours_remaining // 24
                 
                 if days_remaining == 1:
                     one_day_users.append({

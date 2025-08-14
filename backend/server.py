@@ -16,7 +16,7 @@ from services.health_platform import HealthPlatformFactory
 # Import Firebase with error handling
 try:
     from services.firebase_client import db as firestore_db, bucket
-    from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining
+    from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining, get_dietician_notification_token
     FIREBASE_AVAILABLE = True
     print("✅ Firebase client imported successfully")
 except Exception as e:
@@ -1049,13 +1049,16 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         
         # Store the filename in Firestore instead of the signed URL (which expires)
         # The signed URL will be generated when needed by the PDF serving endpoint
+        # Use timezone-aware datetime for consistent calculation
+        from datetime import timezone
         diet_info = {
             "dietPdfUrl": file.filename,  # Store filename, not signed URL
-            "lastDietUpload": datetime.now().isoformat(),
+            "lastDietUpload": datetime.now(timezone.utc).isoformat(),
             "dieticianId": dietician_id
         }
         
         print(f"Updating Firestore with diet info: {diet_info}")
+        print(f"[Upload Debug] lastDietUpload timestamp: {diet_info['lastDietUpload']}")
         try:
             # Use executor for Firestore operations
             loop = asyncio.get_event_loop()
@@ -1147,6 +1150,7 @@ async def get_user_diet(user_id: str):
     pdf_url = data.get("dietPdfUrl")
     last_upload = data.get("lastDietUpload")
     days_left = None
+    hours_left = None
     if last_upload:
         try:
             # Handle timezone-aware datetime strings
@@ -1154,13 +1158,36 @@ async def get_user_diet(user_id: str):
                 # Convert UTC timezone to naive datetime
                 last_upload = last_upload.replace('Z', '+00:00')
             last_dt = datetime.fromisoformat(last_upload)
-            days_left = max(0, 7 - (datetime.utcnow() - last_dt).days)
+            
+            # Use timezone-aware datetime for consistent calculation
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            
+            # Ensure last_dt is timezone-aware for comparison
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            
+            time_diff = now - last_dt
+            
+            # Calculate total hours remaining (7 days = 168 hours)
+            total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
+            days_left = total_hours_remaining // 24
+            hours_left = total_hours_remaining % 24
+            
+            print(f"[Backend Debug] last_upload: {last_upload}")
+            print(f"[Backend Debug] last_dt: {last_dt}")
+            print(f"[Backend Debug] now: {now}")
+            print(f"[Backend Debug] time_diff: {time_diff}")
+            print(f"[Backend Debug] total_hours_remaining: {total_hours_remaining}")
+            print(f"[Backend Debug] days_left: {days_left}, hours_left: {hours_left}")
         except ValueError as e:
             print(f"Error parsing lastDietUpload date: {e}")
             days_left = None
+            hours_left = None
     return {
         "dietPdfUrl": pdf_url, 
         "daysLeft": days_left, 
+        "hoursLeft": hours_left,
         "lastDietUpload": last_upload,
         "hasDiet": pdf_url is not None
     }
@@ -1756,8 +1783,64 @@ async def scan_food_photo(
         except Exception as cleanup_err:
             logger.warning(f"[CLEANUP] Failed to remove temp file: {cleanup_err}")
 
+# --- Scheduled Job for Diet Reminders ---
+async def check_diet_reminders_job():
+    """
+    Scheduled job to check for users with 1 day remaining and notify dietician
+    """
+    try:
+        print("[Diet Reminders] Running scheduled check for users with 1 day remaining...")
+        one_day_users = check_users_with_one_day_remaining()
+        
+        if one_day_users:
+            print(f"[Diet Reminders] Found {len(one_day_users)} users with 1 day remaining")
+            
+            # Get dietician notification token
+            dietician_token = get_dietician_notification_token()
+            if dietician_token:
+                # Send notification to dietician
+                user_names = [user["userName"] for user in one_day_users]
+                message = f"Users with 1 day remaining: {', '.join(user_names)}"
+                
+                send_push_notification(
+                    dietician_token,
+                    "Diet Reminder Alert",
+                    message,
+                    {"type": "diet_reminder", "users": one_day_users}
+                )
+                print(f"[Diet Reminders] Sent notification to dietician about {len(one_day_users)} users")
+            else:
+                print("[Diet Reminders] No dietician notification token found")
+        else:
+            print("[Diet Reminders] No users with 1 day remaining")
+            
+    except Exception as e:
+        print(f"[Diet Reminders] Error in scheduled job: {e}")
+
+# Start scheduled job (check every 6 hours)
+import asyncio
+import threading
+import time
+
+def run_scheduled_jobs():
+    """Run scheduled jobs in a separate thread"""
+    while True:
+        try:
+            # Run the job
+            asyncio.run(check_diet_reminders_job())
+        except Exception as e:
+            print(f"[Scheduled Jobs] Error: {e}")
+        
+        # Wait for 6 hours
+        time.sleep(6 * 60 * 60)
+
+# Start the scheduled job thread
+scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
+scheduler_thread.start()
+
 if __name__ == "__main__":
     import uvicorn
     print("🎉 Server initialization complete!")
     print("🌐 Starting server on http://0.0.0.0:8000")
+    print("⏰ Diet reminder scheduler started (checking every 6 hours)")
     uvicorn.run(app, host="0.0.0.0", port=8000)
