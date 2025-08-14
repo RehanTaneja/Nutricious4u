@@ -2557,21 +2557,24 @@ notification_scheduler_thread = threading.Thread(target=run_notification_schedul
 notification_scheduler_thread.start()
 
 # Include the router in the main app (after all endpoints are defined)
-app.include_router(api_router)
-
 # Add new endpoints for dietician user management
 @api_router.get("/users/{user_id}/details")
 async def get_user_details(user_id: str):
     """Get detailed user information for dietician view"""
     try:
+        logger.info(f"[GET USER DETAILS] Request for user_id: {user_id}")
         check_firebase_availability()
         
         # Get user profile
+        logger.info(f"[GET USER DETAILS] Fetching user profile from Firestore")
         user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        
         if not user_doc.exists:
+            logger.warning(f"[GET USER DETAILS] User {user_id} not found in Firestore")
             raise HTTPException(status_code=404, detail="User not found")
         
         user_data = user_doc.to_dict()
+        logger.info(f"[GET USER DETAILS] User data retrieved: {user_data}")
         
         # Calculate amount due (totalAmountPaid is the amount due, not paid)
         amount_due = user_data.get("totalAmountPaid", 0.0)
@@ -2590,7 +2593,7 @@ async def get_user_details(user_id: str):
         }
         plan_display_name = plan_names.get(subscription_plan, subscription_plan or "No Plan")
         
-        return {
+        response_data = {
             "userId": user_id,
             "firstName": user_data.get("firstName", ""),
             "lastName": user_data.get("lastName", ""),
@@ -2602,8 +2605,14 @@ async def get_user_details(user_id: str):
             "isAppLocked": is_app_locked
         }
         
+        logger.info(f"[GET USER DETAILS] Returning response: {response_data}")
+        return response_data
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        logger.error(f"[GET USER DETAILS] Error: {e}")
+        logger.error(f"[GET USER DETAILS] Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user details")
 
 @api_router.post("/users/{user_id}/mark-paid")
@@ -2672,6 +2681,7 @@ async def unlock_user_app(user_id: str):
         user_doc = firestore_db.collection("user_profiles").document(user_id).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
+       
         
         # Unlock the app
         firestore_db.collection("user_profiles").document(user_id).update({
@@ -2713,6 +2723,44 @@ async def get_user_lock_status(user_id: str):
     except Exception as e:
         logger.error(f"[GET LOCK STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user lock status")
+
+@api_router.get("/users/{user_id}/test")
+async def test_user_exists(user_id: str):
+    """Test endpoint to check if user exists in Firestore"""
+    try:
+        logger.info(f"[TEST USER] Checking if user {user_id} exists")
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            logger.info(f"[TEST USER] User exists with data: {user_data}")
+            return {
+                "exists": True,
+                "userId": user_id,
+                "email": user_data.get("email", "No email"),
+                "firstName": user_data.get("firstName", "No first name"),
+                "lastName": user_data.get("lastName", "No last name")
+            }
+        else:
+            logger.warning(f"[TEST USER] User {user_id} does not exist")
+            return {
+                "exists": False,
+                "userId": user_id,
+                "message": "User not found in Firestore"
+            }
+        
+    except Exception as e:
+        logger.error(f"[TEST USER] Error: {e}")
+        return {
+            "exists": False,
+            "userId": user_id,
+            "error": str(e)
+        }
+
+app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn

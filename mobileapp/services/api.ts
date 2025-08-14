@@ -581,4 +581,9 @@ export const getUserLockStatus = async (userId: string) => {
   return response.data;
 };
 
+export const testUserExists = async (userId: string) => {
+  const response = await api.get(`/users/${userId}/test`);
+  return response.data;
+};
+
 export default api; 

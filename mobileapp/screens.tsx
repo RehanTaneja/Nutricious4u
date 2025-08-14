@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -10173,12 +10173,33 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       setSelectedUserInfo(null);
       setShowUserInfoModal(true);
       
+      console.log('[UploadDietScreen] Fetching details for user:', user.userId);
+      
+      // First test if user exists
+      try {
+        const testResult = await testUserExists(user.userId);
+        console.log('[UploadDietScreen] Test result:', testResult);
+      } catch (testError) {
+        console.error('[UploadDietScreen] Test endpoint error:', testError);
+      }
+      
       // Fetch detailed user information
       const userDetails = await getUserDetails(user.userId);
+      console.log('[UploadDietScreen] User details received:', userDetails);
       setSelectedUserInfo(userDetails);
-    } catch (error) {
-      console.error('Error fetching user details:', error);
-      alert('Failed to load user details');
+    } catch (error: any) {
+      console.error('[UploadDietScreen] Error fetching user details:', error);
+      console.error('[UploadDietScreen] Error response:', error.response?.data);
+      console.error('[UploadDietScreen] Error status:', error.response?.status);
+      
+      let errorMessage = 'Failed to load user details';
+      if (error.response?.status === 404) {
+        errorMessage = 'User not found in database';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      
+      alert(errorMessage);
     } finally {
       setUserInfoLoading(false);
     }
