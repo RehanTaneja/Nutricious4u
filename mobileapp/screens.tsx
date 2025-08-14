@@ -8114,13 +8114,6 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 </View>
                 
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Current Plan Amount:</Text>
-                  <Text style={styles.detailValue}>
-                    ₹{subscription.currentSubscriptionAmount?.toLocaleString() || '0'}
-                  </Text>
-                </View>
-                
-                <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Total Amount Due:</Text>
                   <Text style={[styles.detailValue, styles.totalAmountText]}>
                     ₹{subscription.totalAmountPaid.toLocaleString()}
