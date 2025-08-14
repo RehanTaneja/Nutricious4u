@@ -3610,6 +3610,21 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [editTime, setEditTime] = useState('');
   const [editMessage, setEditMessage] = useState('');
 
+  // Day selection for notifications
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [showDaySelector, setShowDaySelector] = useState(false);
+
+  // Days of the week
+  const daysOfWeek = [
+    { id: 0, name: 'Sunday' },
+    { id: 1, name: 'Monday' },
+    { id: 2, name: 'Tuesday' },
+    { id: 3, name: 'Wednesday' },
+    { id: 4, name: 'Thursday' },
+    { id: 5, name: 'Friday' },
+    { id: 6, name: 'Saturday' }
+  ];
+
   // Combine user notifications and diet notifications into a single list
   const combinedNotifications = [
     ...notifications.map(n => ({ ...n, type: 'user' })),
@@ -3633,6 +3648,31 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     localDate.setMinutes(localDate.getMinutes() + diff);
     return localDate;
   }
+
+  // Helper functions for day selection
+  const toggleDay = (dayId: number) => {
+    setSelectedDays(prev => 
+      prev.includes(dayId) 
+        ? prev.filter(id => id !== dayId)
+        : [...prev, dayId]
+    );
+  };
+
+  const getSelectedDaysText = (days: number[]) => {
+    if (days.length === 0) return 'Select days';
+    if (days.length === 7) return 'Every day';
+    if (days.length === 1) return daysOfWeek.find(d => d.id === days[0])?.name || 'Select days';
+    return `${days.length} days selected`;
+  };
+
+  const getSelectedDaysDisplay = (days: number[]) => {
+    if (days.length === 0) return 'No days selected';
+    if (days.length === 7) return 'Every day';
+    return daysOfWeek
+      .filter(day => days.includes(day.id))
+      .map(day => day.name)
+      .join(', ');
+  };
 
   useEffect(() => {
     loadNotifications();
@@ -3703,6 +3743,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     setCurrentId(null);
     setMessage('');
     setTime(new Date());
+    setSelectedDays([]); // Reset day selection for new notifications
     setShowModal(true);
     setError('');
   };
@@ -3712,6 +3753,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     setCurrentId(notif.id);
     setMessage(notif.message);
     setTime(new Date(notif.time));
+    setSelectedDays(notif.selectedDays || []); // Load existing day selection
     setShowModal(true);
     setError('');
   };
@@ -3788,7 +3830,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
             scheduledNotifications.push({
               ...notification,
               scheduledId: schedulingResult.primaryId,
-              backupIds: schedulingResult.backupIds
+              backupIds: schedulingResult.backupIds,
+              selectedDays: [0, 1, 2, 3, 4, 5, 6] // All days for extracted notifications
             });
             console.log('[Diet Notifications] Scheduled with backup:', notification.message, 'at', notification.time);
           } catch (error) {
@@ -4101,6 +4144,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       console.log('[Notifications] Tried to save blank message.');
       return;
     }
+    if (selectedDays.length === 0) {
+      setError('Please select at least one day');
+      console.log('[Notifications] Tried to save without selecting days.');
+      return;
+    }
     // Use selected hour/minute, but keep today's date (local time)
     const now = new Date();
     const selected = new Date(now);
@@ -4176,9 +4224,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     if (modalMode === 'add') {
       newList = [
         ...notifications,
-        { id: Date.now().toString(), message, time: selected.toISOString(), scheduledId },
+        { id: Date.now().toString(), message, time: selected.toISOString(), scheduledId, selectedDays },
       ];
-      console.log('[Notifications] Added new notification:', { message, time: selected.toISOString(), scheduledId });
+      console.log('[Notifications] Added new notification:', { message, time: selected.toISOString(), scheduledId, selectedDays });
     } else {
       // Cancel old scheduled notification
       const old = notifications.find(n => n.id === currentId);
@@ -4192,7 +4240,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       }
       newList = notifications.map(n =>
         n.id === currentId
-          ? { ...n, message, time: selected.toISOString(), scheduledId }
+          ? { ...n, message, time: selected.toISOString(), scheduledId, selectedDays }
           : n
       );
       console.log('[Notifications] Edited notification:', { id: currentId, message, time: selected.toISOString(), scheduledId });
@@ -4210,6 +4258,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
             {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
           </Text>
         </View>
+        {item.selectedDays && (
+          <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
+            {getSelectedDaysDisplay(item.selectedDays)}
+          </Text>
+        )}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {item.type === 'diet' ? (
@@ -4337,6 +4390,38 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                       if (selectedDate) setTime(selectedDate);
                     }}
                   />
+                )}
+                
+                <Text style={styles.modalLabel}>Days</Text>
+                <TouchableOpacity
+                  style={[styles.modalInput, { justifyContent: 'center', height: 48 }]}
+                  onPress={() => setShowDaySelector(!showDaySelector)}
+                >
+                  <Text style={{ color: COLORS.text, fontSize: 16 }}>
+                    {getSelectedDaysText(selectedDays)}
+                  </Text>
+                </TouchableOpacity>
+                
+                {showDaySelector && (
+                  <View style={styles.daySelectorContainer}>
+                    {daysOfWeek.map((day) => (
+                      <TouchableOpacity
+                        key={day.id}
+                        style={[
+                          styles.dayOption,
+                          selectedDays.includes(day.id) && styles.dayOptionSelected
+                        ]}
+                        onPress={() => toggleDay(day.id)}
+                      >
+                        <Text style={[
+                          styles.dayOptionText,
+                          selectedDays.includes(day.id) && styles.dayOptionTextSelected
+                        ]}>
+                          {day.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 )}
                 {error ? <Text style={{ color: COLORS.error, marginTop: 8 }}>{error}</Text> : null}
                 <View style={styles.modalButtonRow}>
@@ -6045,6 +6130,32 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     marginTop: 8,
     textAlign: 'center',
+  },
+  daySelectorContainer: {
+    marginTop: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.placeholder,
+    padding: 8,
+  },
+  dayOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginVertical: 2,
+    backgroundColor: COLORS.background,
+  },
+  dayOptionSelected: {
+    backgroundColor: COLORS.primary,
+  },
+  dayOptionText: {
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  dayOptionTextSelected: {
+    color: COLORS.white,
+    fontWeight: '600',
   },
   // ...existing code...
   container: { 
