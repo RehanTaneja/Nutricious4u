@@ -83,6 +83,12 @@ class DietNotificationService:
         if not diet_text:
             return []
         
+        # First try the enhanced structured diet format
+        structured_activities = self._extract_structured_diet_activities(diet_text)
+        if structured_activities:
+            return structured_activities
+        
+        # Fall back to the original extraction method
         activities = []
         lines = diet_text.split('\n')
         
@@ -273,6 +279,137 @@ class DietNotificationService:
             final_activities.append(activity)
         
         return final_activities
+
+    def _extract_structured_diet_activities(self, diet_text: str) -> List[Dict]:
+        """
+        Extract timed activities from structured diet format with day headers.
+        This handles formats like:
+        THURSDAY- 14th AUG
+        5:30 AM- 1 glass JEERA water
+        6 AM- 5 almonds, 2 walnuts, 5 black raisins {soaked}
+        """
+        if not diet_text:
+            return []
+        
+        activities = []
+        lines = diet_text.split('\n')
+        current_day = None
+        
+        # Day mapping for structured diets
+        day_mapping = {
+            'monday': 0, 'mon': 0,
+            'tuesday': 1, 'tue': 1,
+            'wednesday': 2, 'wed': 2,
+            'thursday': 3, 'thu': 3,
+            'friday': 4, 'fri': 4,
+            'saturday': 5, 'sat': 5,
+            'sunday': 6, 'sun': 6
+        }
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check if this is a day header
+            day_match = re.search(r'^([A-Z]+)\s*-\s*\d+', line, re.IGNORECASE)
+            if day_match:
+                day_name = day_match.group(1).lower()
+                if day_name in day_mapping:
+                    current_day = day_mapping[day_name]
+                    continue
+            
+            # Look for time patterns in the line
+            time_patterns = [
+                r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?',  # 5:30 AM, 6:00 PM
+                r'(\d{1,2})\s*(AM|PM|am|pm)',  # 6 AM, 8 PM
+            ]
+            
+            time_match = None
+            for pattern in time_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    time_match = match
+                    break
+            
+            if time_match:
+                try:
+                    # Extract time components
+                    if ':' in time_match.group(0):
+                        hour = int(time_match.group(1))
+                        minute = int(time_match.group(2))
+                        period = time_match.group(3) if len(time_match.groups()) > 2 else None
+                    else:
+                        hour = int(time_match.group(1))
+                        minute = 0
+                        period = time_match.group(2) if len(time_match.groups()) > 1 else None
+                    
+                    # Convert to 24-hour format
+                    if period:
+                        period = period.upper()
+                        if period == 'PM':
+                            if hour != 12:
+                                hour += 12
+                        elif period == 'AM':
+                            if hour == 12:
+                                hour = 0
+                    
+                                    # Extract activity text (everything after the time)
+                activity_text = line[time_match.end():].strip()
+                
+                # Clean up the activity text
+                if activity_text:
+                    # Remove leading dashes, colons, or other separators
+                    activity_text = re.sub(r'^[-:\s]+', '', activity_text)
+                    
+                    # Stop at the next time pattern to avoid merging activities
+                    # Look for the next time pattern in the same line
+                    next_time_match = re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', activity_text)
+                    if next_time_match:
+                        activity_text = activity_text[:next_time_match.start()].strip()
+                    
+                    # If activity is too short, try to get more context from next line
+                    if len(activity_text.split()) <= 3:
+                        line_index = lines.index(line)
+                        if line_index + 1 < len(lines):
+                            next_line = lines[line_index + 1].strip()
+                            if next_line and not re.search(r'\d{1,2}[:.]?\d{2}\s*(AM|PM|am|pm)?', next_line):
+                                activity_text += " " + next_line
+                        
+                        # Create activity object
+                        activity = {
+                            'time': {'hour': hour, 'minute': minute, 'type': 'numeric'},
+                            'activity': activity_text,
+                            'original_text': line,
+                            'hour': hour,
+                            'minute': minute,
+                            'day': current_day,  # Include day information
+                            'unique_id': f"{hour:02d}:{minute:02d}_{hash(activity_text.lower().strip()) % 1000000}"
+                        }
+                        
+                        activities.append(activity)
+                        
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"Error parsing time in line: {line}, error: {e}")
+                    continue
+        
+        # Remove duplicates and sort by time
+        unique_activities = []
+        seen_combinations = set()
+        
+        for activity in activities:
+            time_key = f"{activity['hour']:02d}:{activity['minute']:02d}"
+            activity_key = activity['activity'].lower().strip()
+            combination = f"{time_key}_{activity_key}"
+            
+            if combination not in seen_combinations:
+                seen_combinations.add(combination)
+                unique_activities.append(activity)
+        
+        # Sort by time
+        unique_activities.sort(key=lambda x: (x['hour'], x['minute']))
+        
+        return unique_activities
     
     def _extract_time_from_line(self, line: str) -> Optional[Dict]:
         """
@@ -465,6 +602,14 @@ class DietNotificationService:
         unique_id = activity.get('unique_id', f"{activity['hour']:02d}:{activity['minute']:02d}_{hash(activity['activity']) % 1000000}")
         notification_id = f"diet_{activity['hour']}_{activity['minute']}_{hash(unique_id) % 1000000}"
         
+        # Handle day-specific notifications
+        if 'day' in activity and activity['day'] is not None:
+            # If the activity has a specific day, create notifications for that day only
+            selected_days = [activity['day']]
+        else:
+            # Default to all days for extracted notifications
+            selected_days = [0, 1, 2, 3, 4, 5, 6]
+        
         return {
             'id': notification_id,
             'message': activity['activity'],
@@ -474,7 +619,7 @@ class DietNotificationService:
             'scheduledId': None,  # Will be set when scheduled
             'source': 'diet_pdf',
             'original_text': activity['original_text'],
-            'selectedDays': [0, 1, 2, 3, 4, 5, 6],  # Default to all days for extracted notifications
+            'selectedDays': selected_days,  # Use day-specific or all days
             'isActive': True  # Track if notification is active
         }
     
