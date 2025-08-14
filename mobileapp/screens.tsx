@@ -3609,6 +3609,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [editingNotification, setEditingNotification] = useState<any>(null);
   const [editTime, setEditTime] = useState('');
   const [editMessage, setEditMessage] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Day selection for notifications
   const [editSelectedDays, setEditSelectedDays] = useState<number[]>([]);
@@ -3880,9 +3881,18 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           [{ text: 'OK', style: 'default' }]
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Diet Notifications] Error extracting:', error);
-      setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
+      
+      // Check if it's a network error
+      if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+        setErrorMessage('Backend server is not available. Please check your internet connection and try again.');
+      } else if (error?.response?.data?.message) {
+        setErrorMessage(error.response.data.message);
+      } else {
+        setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
+      }
+      
       setShowErrorModal(true);
     } finally {
       setLoadingDietNotifications(false);
@@ -4126,6 +4136,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         return;
       }
 
+      // Set loading state
+      setSavingEdit(true);
+
       // Update the notification on the backend
       const updatedNotification = {
         message: editMessage,
@@ -4154,10 +4167,22 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setSuccessMessage('Notification updated and rescheduled successfully!');
       setShowSuccessModal(true);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Diet Notifications] Error editing:', error);
-      setErrorMessage('Failed to update notification.');
+      
+      // Check if it's a network error
+      if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+        setErrorMessage('Backend server is not available. Please check your internet connection and try again.');
+      } else if (error?.response?.data?.message) {
+        setErrorMessage(error.response.data.message);
+      } else {
+        setErrorMessage('Failed to update notification. Please try again.');
+      }
+      
       setShowErrorModal(true);
+    } finally {
+      // Clear loading state
+      setSavingEdit(false);
     }
   };
 
@@ -4636,7 +4661,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }}>
                   <TouchableOpacity
                     style={[styles.modalButton, { 
-                      backgroundColor: COLORS.placeholder,
+                      backgroundColor: '#DC2626', // Red color for cancel
                       flex: 0.48
                     }]}
                     onPress={() => {
@@ -4647,18 +4672,27 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                       setEditSelectedDays([]);
                       setShowEditDaySelector(false);
                     }}
+                    disabled={savingEdit}
                   >
                     <Text style={styles.modalButtonText}>Cancel</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity
                     style={[styles.modalButton, { 
-                      backgroundColor: COLORS.primary,
+                      backgroundColor: savingEdit ? COLORS.placeholder : COLORS.primary,
                       flex: 0.48
                     }]}
                     onPress={handleSaveEdit}
+                    disabled={savingEdit}
                   >
-                    <Text style={styles.modalButtonText}>Save</Text>
+                    {savingEdit ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <ActivityIndicator size="small" color="white" style={{ marginRight: 8 }} />
+                        <Text style={styles.modalButtonText}>Saving...</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.modalButtonText}>Save</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
