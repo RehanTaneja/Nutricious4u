@@ -2092,21 +2092,6 @@ async def notification_scheduler_job():
     except Exception as e:
         print(f"[Notification Scheduler] Error: {e}")
 
-def run_scheduled_jobs():
-    """Run scheduled jobs in a separate thread"""
-    while True:
-        try:
-            # Run the diet reminders job (every 6 hours)
-            asyncio.run(check_diet_reminders_job())
-            
-            # Run the subscription reminders job (every 6 hours)
-            asyncio.run(check_subscription_reminders_job())
-        except Exception as e:
-            print(f"[Scheduled Jobs] Error: {e}")
-        
-        # Sleep for 6 hours
-        time.sleep(6 * 60 * 60)
-
 # --- Subscription Endpoints ---
 
 @api_router.get("/subscription/plans")
@@ -2454,6 +2439,18 @@ async def process_queued_plans(userId: str):
     except Exception as e:
         logger.error(f"[PROCESS QUEUED PLANS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to process queued plans")
+
+def run_scheduled_jobs():
+    """Run scheduled jobs in a separate thread"""
+    while True:
+        try:
+            # Run the diet reminders job (every 6 hours)
+            asyncio.run(check_diet_reminders_job())
+            
+            # Run the subscription reminders job (every 6 hours)
+            asyncio.run(check_subscription_reminders_job())
+        except Exception as e:
+            print(f"[Scheduled Jobs] Error: {e}")
         
         # Wait for 6 hours
         time.sleep(6 * 60 * 60)
