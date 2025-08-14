@@ -534,6 +534,11 @@ export const getSubscriptionStatus = async (userId: string): Promise<Subscriptio
   return response.data;
 };
 
+export const addSubscriptionAmount = async (userId: string, planId: string): Promise<{ success: boolean; message: string; amountAdded: number; newTotal: number }> => {
+  const response = await api.post(`/subscription/add-amount/${userId}?planId=${planId}`);
+  return response.data;
+};
+
 // --- Notification Management ---
 export const getUserNotifications = async (userId: string): Promise<{ notifications: Notification[] }> => {
   const response = await api.get(`/notifications/${userId}`);

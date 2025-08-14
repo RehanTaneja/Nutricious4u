@@ -2241,26 +2241,6 @@ async def select_subscription(request: SelectSubscriptionRequest):
         if user_email == "dietician@nutricious4u.com" or "dietician" in user_email.lower():
             raise HTTPException(status_code=403, detail="Dieticians cannot subscribe to plans")
         current_total = user_data.get("totalAmountPaid", 0.0)
-        current_subscription_active = user_data.get("isSubscriptionActive", False)
-        current_subscription_end_date = user_data.get("subscriptionEndDate")
-        
-        # Check if current subscription is still active
-        should_add_to_total = True
-        if current_subscription_active and current_subscription_end_date:
-            try:
-                end_date = datetime.fromisoformat(current_subscription_end_date)
-                current_time = datetime.now()
-                logger.info(f"[SELECT SUBSCRIPTION] Current time: {current_time}, End date: {end_date}, Is active: {current_time <= end_date}")
-                if current_time <= end_date:
-                    # Current subscription is still active, don't add to total
-                    should_add_to_total = False
-                    logger.info(f"[SELECT SUBSCRIPTION] Subscription is still active, will not add to total")
-                else:
-                    logger.info(f"[SELECT SUBSCRIPTION] Subscription has expired, will add to total")
-            except Exception as e:
-                # If date parsing fails, assume we should add to total
-                logger.error(f"[SELECT SUBSCRIPTION] Error parsing date: {e}")
-                should_add_to_total = True
         
         # Calculate subscription dates
         from datetime import datetime, timedelta
@@ -2273,24 +2253,12 @@ async def select_subscription(request: SelectSubscriptionRequest):
         elif request.planId == "6months":
             end_date = start_date + timedelta(days=180)
         
-        # Calculate new total amount
-        if should_add_to_total:
-            new_total = current_total + plan_prices[request.planId]
-            logger.info(f"[SELECT SUBSCRIPTION] Adding {plan_prices[request.planId]} to total. New total: {new_total}")
-        else:
-            new_total = current_total
-            logger.info(f"[SELECT SUBSCRIPTION] Replacing active subscription. Total remains: {new_total}")
-        
-        # Log the calculation for debugging
-        logger.info(f"[SELECT SUBSCRIPTION] User: {request.userId}, Current Total: {current_total}, Plan Price: {plan_prices[request.planId]}, Should Add: {should_add_to_total}, New Total: {new_total}")
-        
-        # Update user profile with subscription
+        # Update user profile with subscription (without changing total amount)
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
             "currentSubscriptionAmount": plan_prices[request.planId],
-            "totalAmountPaid": new_total,
             "isSubscriptionActive": True
         }
         
@@ -2390,6 +2358,51 @@ async def reset_subscription(userId: str):
     except Exception as e:
         logger.error(f"[RESET SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset subscription")
+
+@api_router.post("/subscription/add-amount/{userId}")
+async def add_subscription_amount(userId: str, planId: str):
+    """Add subscription amount to total due (only called from popup)"""
+    try:
+        check_firebase_availability()
+        
+        # Get plan details
+        plan_prices = {
+            "1month": 5000.0,
+            "3months": 8000.0,
+            "6months": 20000.0
+        }
+        
+        if planId not in plan_prices:
+            raise HTTPException(status_code=400, detail="Invalid plan ID")
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        # Add the plan amount to total
+        new_total = current_total + plan_prices[planId]
+        
+        # Update only the total amount
+        firestore_db.collection("user_profiles").document(userId).update({
+            "totalAmountPaid": new_total
+        })
+        
+        logger.info(f"[ADD SUBSCRIPTION AMOUNT] User: {userId}, Plan: {planId}, Amount Added: {plan_prices[planId]}, New Total: {new_total}")
+        
+        return {
+            "success": True, 
+            "message": f"Added ₹{plan_prices[planId]:,.0f} to total amount due",
+            "amountAdded": plan_prices[planId],
+            "newTotal": new_total
+        }
+        
+    except Exception as e:
+        logger.error(f"[ADD SUBSCRIPTION AMOUNT] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add subscription amount")
 
 @api_router.get("/notifications/{userId}")
 async def get_user_notifications(userId: str):

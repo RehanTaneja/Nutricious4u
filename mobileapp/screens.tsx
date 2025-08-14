@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -8043,6 +8043,123 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  popupOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  popupTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  popupSubtitle: {
+    fontSize: 14,
+    color: COLORS.placeholder,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  plansScrollView: {
+    maxHeight: 300,
+  },
+  popupPlanItem: {
+    backgroundColor: COLORS.lightGreen,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectedPlanItem: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#f0fff4',
+  },
+  popupPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  popupPlanName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  popupPlanPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  popupPlanDuration: {
+    fontSize: 14,
+    color: COLORS.placeholder,
+    marginBottom: 4,
+  },
+  popupPlanDescription: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  popupPlanSelectedIndicator: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  popupPlanSelectedText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  popupButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  popupCancelButton: {
+    flex: 1,
+    backgroundColor: COLORS.placeholder,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  popupCancelButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  popupConfirmButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  popupConfirmButtonDisabled: {
+    backgroundColor: COLORS.placeholder,
+  },
+  popupConfirmButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export { 
@@ -8208,6 +8325,10 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPlanPopup, setShowPlanPopup] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [addingAmount, setAddingAmount] = useState(false);
 
   useEffect(() => {
     fetchSubscriptionStatus();
@@ -8224,11 +8345,57 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       
       const status = await getSubscriptionStatus(userId);
       setSubscription(status);
+      
+      // Check if user needs to select a plan
+      checkIfPlanSelectionNeeded(status);
     } catch (e) {
       setError('Failed to load subscription status');
       console.error('Error fetching subscription status:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPlans = async () => {
+    try {
+      const subscriptionPlans = await getSubscriptionPlans();
+      setPlans(subscriptionPlans);
+    } catch (e) {
+      console.error('Error fetching plans:', e);
+    }
+  };
+
+  const checkIfPlanSelectionNeeded = (status: SubscriptionStatus) => {
+    // Show popup if user has no plan or their plan has expired
+    if (!status.subscriptionPlan || !status.isSubscriptionActive) {
+      fetchPlans();
+      setShowPlanPopup(true);
+    }
+  };
+
+  const handlePlanSelection = async (planId: string) => {
+    try {
+      setAddingAmount(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      // First, select the subscription
+      await selectSubscription(userId, planId);
+      
+      // Then, add the amount to total due
+      const result = await addSubscriptionAmount(userId, planId);
+      
+      if (result.success) {
+        Alert.alert('Success', result.message);
+        setShowPlanPopup(false);
+        setSelectedPlan(null);
+        // Refresh subscription status
+        fetchSubscriptionStatus();
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to select plan');
+    } finally {
+      setAddingAmount(false);
     }
   };
 
@@ -8387,6 +8554,74 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         )}
         </View>
       </ScrollView>
+
+      {/* Plan Selection Popup */}
+      <Modal
+        visible={showPlanPopup}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPlanPopup(false)}
+      >
+        <View style={styles.popupOverlay}>
+          <View style={styles.popupContainer}>
+            <Text style={styles.popupTitle}>Select a Subscription Plan</Text>
+            <Text style={styles.popupSubtitle}>
+              Choose a plan to continue your fitness journey
+            </Text>
+            
+            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+              {plans.map((plan) => (
+                <TouchableOpacity
+                  key={plan.planId}
+                  style={[
+                    styles.popupPlanItem,
+                    selectedPlan === plan.planId && styles.selectedPlanItem
+                  ]}
+                  onPress={() => setSelectedPlan(plan.planId)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.popupPlanHeader}>
+                    <Text style={styles.popupPlanName}>{plan.name}</Text>
+                    <Text style={styles.popupPlanPrice}>₹{plan.price.toLocaleString()}</Text>
+                  </View>
+                  <Text style={styles.popupPlanDuration}>{plan.duration}</Text>
+                  <Text style={styles.popupPlanDescription}>{plan.description}</Text>
+                  {selectedPlan === plan.planId && (
+                    <View style={styles.popupPlanSelectedIndicator}>
+                      <Text style={styles.popupPlanSelectedText}>✓ Selected</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.popupButtons}>
+              <TouchableOpacity
+                style={styles.popupCancelButton}
+                onPress={() => {
+                  setShowPlanPopup(false);
+                  setSelectedPlan(null);
+                }}
+              >
+                <Text style={styles.popupCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.popupConfirmButton,
+                  !selectedPlan && styles.popupConfirmButtonDisabled
+                ]}
+                onPress={() => selectedPlan && handlePlanSelection(selectedPlan)}
+                disabled={!selectedPlan || addingAmount}
+              >
+                <Text style={styles.popupConfirmButtonText}>
+                  {addingAmount ? 'Processing...' : 'Confirm Selection'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }; 
