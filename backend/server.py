@@ -2274,7 +2274,12 @@ async def select_subscription(request: SelectSubscriptionRequest):
             end_date = start_date + timedelta(days=180)
         
         # Calculate new total amount
-        new_total = current_total + (plan_prices[request.planId] if should_add_to_total else 0)
+        if should_add_to_total:
+            new_total = current_total + plan_prices[request.planId]
+            logger.info(f"[SELECT SUBSCRIPTION] Adding {plan_prices[request.planId]} to total. New total: {new_total}")
+        else:
+            new_total = current_total
+            logger.info(f"[SELECT SUBSCRIPTION] Replacing active subscription. Total remains: {new_total}")
         
         # Log the calculation for debugging
         logger.info(f"[SELECT SUBSCRIPTION] User: {request.userId}, Current Total: {current_total}, Plan Price: {plan_prices[request.planId]}, Should Add: {should_add_to_total}, New Total: {new_total}")
