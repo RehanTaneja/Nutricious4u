@@ -137,21 +137,26 @@ class NotificationScheduler:
             # Parse the notification time
             target_time = datetime.strptime(notification['time'], '%H:%M').time()
             
-            # Calculate next occurrence of this day and time
-            days_ahead = (day - now.weekday()) % 7
-            if days_ahead == 0 and now.time() >= target_time:
+            # Use IST (Indian Standard Time) for day calculations since the diet is in IST
+            ist = pytz.timezone('Asia/Kolkata')
+            now_ist = now.astimezone(ist)
+            
+            # Calculate next occurrence of this day and time in IST
+            days_ahead = (day - now_ist.weekday()) % 7
+            if days_ahead == 0 and now_ist.time() >= target_time:
                 days_ahead = 7
             
-            next_occurrence = now + timedelta(days=days_ahead)
-            next_occurrence = next_occurrence.replace(
+            # Calculate the next occurrence in IST
+            next_occurrence_ist = now_ist + timedelta(days=days_ahead)
+            next_occurrence_ist = next_occurrence_ist.replace(
                 hour=target_time.hour, 
                 minute=target_time.minute, 
                 second=0, 
                 microsecond=0
             )
-            # Ensure timezone awareness
-            if next_occurrence.tzinfo is None:
-                next_occurrence = pytz.UTC.localize(next_occurrence)
+            
+            # Convert back to UTC for storage
+            next_occurrence = next_occurrence_ist.astimezone(pytz.UTC)
             
             # Prepare the scheduled notification document
             scheduled_notification = {
@@ -166,6 +171,11 @@ class NotificationScheduler:
             }
             
             logger.info(f"Prepared notification for user {user_id} on {self.days_of_week[day]} at {notification['time']}")
+            logger.info(f"  Current IST: {now_ist.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {now_ist.weekday()})")
+            logger.info(f"  Target day: {self.days_of_week[day]} (day {day})")
+            logger.info(f"  Days ahead: {days_ahead}")
+            logger.info(f"  Next occurrence IST: {next_occurrence_ist.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {next_occurrence_ist.weekday()})")
+            logger.info(f"  Next occurrence UTC: {next_occurrence.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {next_occurrence.weekday()})")
             return scheduled_notification
             
         except Exception as e:

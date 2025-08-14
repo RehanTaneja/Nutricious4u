@@ -3881,14 +3881,28 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
+      // Prevent multiple rapid presses
+      if (loadingDietNotifications) {
+        console.log('[Diet Notifications] Extraction already in progress, ignoring button press');
+        return;
+      }
+
       setLoadingDietNotifications(true);
 
-      // First, cancel all existing diet notifications on the backend
+      // First, cancel all existing diet notifications (both local and backend)
       try {
+        // Cancel local notifications
+        await cancelAllDietNotifications();
+        console.log('[Diet Notifications] Cancelled existing local notifications');
+        
+        // Cancel backend notifications
         await cancelDietNotifications(userId);
         console.log('[Diet Notifications] Cancelled existing notifications on backend');
+        
+        // Small delay to ensure cancellation is complete
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.error('[Diet Notifications] Error cancelling notifications on backend:', error);
+        console.error('[Diet Notifications] Error cancelling notifications:', error);
       }
 
       const response = await extractDietNotifications(userId);
@@ -4026,26 +4040,13 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       }
       
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
-        console.log('[Diet Notifications] Received diet reminder, rescheduling for tomorrow');
+        console.log('[Diet Notifications] Received diet reminder from backend');
         
-        // Find the notification in our list
+        // Backend handles rescheduling, no need for local rescheduling
+        // Just log that we received the notification
         const dietNotification = dietNotifications.find(n => n.id === data.notificationId);
         if (dietNotification) {
-          try {
-            // Reschedule for tomorrow
-            const newScheduledId = await scheduleDietNotification(dietNotification);
-            
-            // Update the scheduledId in our state
-            setDietNotifications(prev => prev.map(n => 
-              n.id === data.notificationId 
-                ? { ...n, scheduledId: newScheduledId }
-                : n
-            ));
-            
-            console.log('[Diet Notifications] Rescheduled for tomorrow:', dietNotification.message);
-          } catch (error) {
-            console.error('[Diet Notifications] Error rescheduling for tomorrow:', error);
-          }
+          console.log('[Diet Notifications] Received backend notification:', dietNotification.message);
         }
       }
       
@@ -4074,20 +4075,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
         console.log('[Diet Notifications] User interacted with diet reminder');
         
-        // Reschedule for tomorrow when user interacts with notification
+        // Backend handles rescheduling, no need for local rescheduling
         const dietNotification = dietNotifications.find(n => n.id === data.notificationId);
         if (dietNotification) {
-          try {
-            const newScheduledId = await scheduleDietNotification(dietNotification);
-            setDietNotifications(prev => prev.map(n => 
-              n.id === data.notificationId 
-                ? { ...n, scheduledId: newScheduledId }
-                : n
-            ));
-            console.log('[Diet Notifications] Rescheduled after user interaction:', dietNotification.message);
-          } catch (error) {
-            console.error('[Diet Notifications] Error rescheduling after interaction:', error);
-          }
+          console.log('[Diet Notifications] User interacted with backend notification:', dietNotification.message);
         }
       }
       
@@ -4420,8 +4411,15 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                 Extract timed activities from your diet PDF
               </Text>
               <TouchableOpacity 
-                style={[styles.addNotificationButton, { backgroundColor: COLORS.primary }]} 
+                style={[
+                  styles.addNotificationButton, 
+                  { 
+                    backgroundColor: loadingDietNotifications ? COLORS.placeholder : COLORS.primary,
+                    opacity: loadingDietNotifications ? 0.7 : 1
+                  }
+                ]} 
                 onPress={handleExtractDietNotifications}
+                disabled={loadingDietNotifications}
               >
                 <Text style={styles.addNotificationButtonText}>
                   {loadingDietNotifications ? 'Extracting...' : 'Extract from Diet PDF'}

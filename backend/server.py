@@ -1334,6 +1334,15 @@ async def extract_diet_notifications(user_id: str):
         if not diet_pdf_url:
             raise HTTPException(status_code=404, detail="No diet PDF found for this user")
         
+        # First, cancel all existing scheduled notifications for this user
+        try:
+            scheduler = get_notification_scheduler(firestore_db)
+            cancelled_count = await scheduler.cancel_user_notifications(user_id)
+            logger.info(f"Cancelled {cancelled_count} existing notifications for user {user_id}")
+        except Exception as cancel_error:
+            logger.error(f"Error cancelling existing notifications for user {user_id}: {cancel_error}")
+            # Continue with extraction even if cancellation fails
+        
         # Extract notifications from diet PDF
         notifications = diet_notification_service.extract_and_create_notifications(
             user_id, diet_pdf_url, firestore_db
@@ -1355,8 +1364,8 @@ async def extract_diet_notifications(user_id: str):
         
         # Schedule the notifications on the backend
         try:
-            await schedule_diet_notifications(user_id)
-            logger.info(f"Successfully scheduled {len(notifications)} notifications for user {user_id}")
+            scheduled_count = await scheduler.schedule_user_notifications(user_id)
+            logger.info(f"Successfully scheduled {scheduled_count} notifications for user {user_id}")
         except Exception as e:
             logger.error(f"Failed to schedule notifications for user {user_id}: {e}")
         
