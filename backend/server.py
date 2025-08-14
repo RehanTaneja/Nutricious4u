@@ -2096,6 +2096,12 @@ async def notification_scheduler_job():
     except Exception as e:
         print(f"[Notification Scheduler] Error: {e}")
 
+# --- Test Endpoint ---
+@api_router.get("/test-subscription")
+async def test_subscription():
+    """Test endpoint to verify subscription endpoints are being registered"""
+    return {"message": "Subscription endpoints are working!"}
+
 # --- Subscription Endpoints ---
 
 @api_router.get("/subscription/plans")
