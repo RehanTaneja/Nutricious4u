@@ -7718,6 +7718,8 @@ const styles = StyleSheet.create({
   },
   subscriptionContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   subscriptionCard: {
     backgroundColor: COLORS.white,
@@ -7776,6 +7778,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'right',
     flex: 1,
+  },
+  totalAmountText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.primary,
   },
   renewalContainer: {
     backgroundColor: COLORS.lightGreen,
@@ -8070,7 +8077,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.subscriptionContainer}>
             <View style={styles.subscriptionCard}>
               <View style={styles.subscriptionHeader}>
-                <Text style={styles.subscriptionTitle}>Current Plan</Text>
+                <Text style={styles.subscriptionTitle}>Total Amount Due</Text>
                 <View style={[
                   styles.statusBadge,
                   subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge
@@ -8104,8 +8111,15 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 </View>
                 
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Total Amount Paid:</Text>
+                  <Text style={styles.detailLabel}>Current Plan Amount:</Text>
                   <Text style={styles.detailValue}>
+                    ₹{subscription.currentSubscriptionAmount?.toLocaleString() || '0'}
+                  </Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Total Amount Due:</Text>
+                  <Text style={[styles.detailValue, styles.totalAmountText]}>
                     ₹{subscription.totalAmountPaid.toLocaleString()}
                   </Text>
                 </View>

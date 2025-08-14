@@ -2144,6 +2144,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
+            "currentSubscriptionAmount": plan_prices[request.planId],
             "totalAmountPaid": current_total + plan_prices[request.planId],
             "isSubscriptionActive": True
         }
@@ -2184,6 +2185,7 @@ async def get_subscription_status(userId: str):
             "subscriptionPlan": user_data.get("subscriptionPlan"),
             "subscriptionStartDate": user_data.get("subscriptionStartDate"),
             "subscriptionEndDate": user_data.get("subscriptionEndDate"),
+            "currentSubscriptionAmount": user_data.get("currentSubscriptionAmount", 0.0),
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
             "isSubscriptionActive": user_data.get("isSubscriptionActive", False)
         }

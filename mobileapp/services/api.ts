@@ -176,6 +176,7 @@ export interface SubscriptionStatus {
   subscriptionPlan?: string;
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
+  currentSubscriptionAmount: number;
   totalAmountPaid: number;
   isSubscriptionActive: boolean;
 }
