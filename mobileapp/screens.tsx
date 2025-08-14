@@ -47,7 +47,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, queuePlan, removeQueuedPlan, getQueuedPlans, processQueuedPlans, SubscriptionPlan, SubscriptionStatus, QueuedPlan } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, SubscriptionPlan, SubscriptionStatus } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -7813,93 +7813,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 24,
   },
-  // Plan queuing styles
-  modeToggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.lightGreen,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  modeToggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modeToggleButtonActive: {
-    backgroundColor: COLORS.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  modeToggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.placeholder,
-  },
-  modeToggleTextActive: {
-    color: COLORS.primary,
-  },
-  queuedPlansContainer: {
-    backgroundColor: COLORS.lightGreen,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  queuedPlansTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  queuedPlansSubtitle: {
-    fontSize: 16,
-    color: COLORS.primary,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  queuedPlanCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  queuedPlanInfo: {
-    flex: 1,
-  },
-  queuedPlanName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  queuedPlanPrice: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  removeQueuedPlanButton: {
-    backgroundColor: COLORS.error,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  removeQueuedPlanButtonText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  processQueueButton: {
-    backgroundColor: COLORS.primary,
-    marginTop: 12,
-  },
+
   mySubscriptionsButton: {
     width: '100%',
     height: 100,
@@ -7951,13 +7865,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queuedPlans, setQueuedPlans] = useState<QueuedPlan[]>([]);
-  const [totalDueAmount, setTotalDueAmount] = useState(0);
-  const [showQueueMode, setShowQueueMode] = useState(false);
-
   useEffect(() => {
     fetchPlans();
-    fetchQueuedPlans();
   }, []);
 
   const fetchPlans = async () => {
@@ -7978,19 +7887,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  const fetchQueuedPlans = async () => {
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
-      
-      const { queuedPlans: plans, totalDueAmount: due } = await getQueuedPlans(userId);
-      setQueuedPlans(plans);
-      setTotalDueAmount(due);
-    } catch (e: any) {
-      console.error('Error fetching queued plans:', e);
-      // Don't show error for queued plans as it's not critical
-    }
-  };
+
 
   const handleSelectPlan = async () => {
     if (!selectedPlan) return;
@@ -8034,116 +7931,9 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  const handleQueuePlan = async () => {
-    if (!selectedPlan) return;
-    
-    const userId = auth.currentUser?.uid;
-    if (!userId) {
-      setError('User not authenticated');
-      return;
-    }
 
-    try {
-      setSubscribing(true);
-      setError(null);
-      
-      const response = await queuePlan(userId, selectedPlan);
-      
-      if (response.success) {
-        setQueuedPlans(response.queuedPlans);
-        setTotalDueAmount(response.totalDueAmount);
-        setSelectedPlan(null);
-        Alert.alert(
-          'Plan Added to Queue',
-          response.message,
-          [
-            {
-              text: 'OK',
-              style: 'default'
-            }
-          ]
-        );
-      } else {
-        setError(response.message || 'Failed to queue plan');
-      }
-    } catch (e) {
-      setError('Failed to queue plan');
-      console.error('Error queuing plan:', e);
-    } finally {
-      setSubscribing(false);
-    }
-  };
 
-  const handleRemoveQueuedPlan = async (planIndex: number) => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return;
 
-    try {
-      const response = await removeQueuedPlan(userId, planIndex);
-      
-      if (response.success) {
-        setQueuedPlans(response.queuedPlans);
-        setTotalDueAmount(response.totalDueAmount);
-        Alert.alert(
-          'Plan Removed from Queue',
-          response.message,
-          [
-            {
-              text: 'OK',
-              style: 'default'
-            }
-          ]
-        );
-      } else {
-        setError(response.message || 'Failed to remove plan');
-      }
-    } catch (e) {
-      setError('Failed to remove plan');
-      console.error('Error removing queued plan:', e);
-    }
-  };
-
-  const handleProcessQueue = async () => {
-    if (queuedPlans.length === 0) return;
-    
-    const userId = auth.currentUser?.uid;
-    if (!userId) {
-      setError('User not authenticated');
-      return;
-    }
-
-    try {
-      setSubscribing(true);
-      setError(null);
-      
-      const response = await processQueuedPlans(userId);
-      
-      if (response.success) {
-        Alert.alert(
-          'Subscription Successful! 🎉',
-          response.message,
-          [
-            {
-              text: 'View My Subscriptions',
-              onPress: () => navigation.navigate('MySubscriptions'),
-              style: 'default'
-            },
-            {
-              text: 'Continue',
-              style: 'cancel'
-            }
-          ]
-        );
-      } else {
-        setError(response.message || 'Failed to process plans');
-      }
-    } catch (e) {
-      setError('Failed to process plans');
-      console.error('Error processing queued plans:', e);
-    } finally {
-      setSubscribing(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -8159,67 +7949,9 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         <Text style={styles.screenTitle}>Choose Your Plan</Text>
         <Text style={styles.screenSubtitle}>Select a subscription plan to continue using the app</Text>
         
-        {/* Mode Toggle */}
-        <View style={styles.modeToggleContainer}>
-          <TouchableOpacity
-            style={[
-              styles.modeToggleButton,
-              !showQueueMode && styles.modeToggleButtonActive
-            ]}
-            onPress={() => setShowQueueMode(false)}
-          >
-            <Text style={[
-              styles.modeToggleText,
-              !showQueueMode && styles.modeToggleTextActive
-            ]}>Subscribe Now</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.modeToggleButton,
-              showQueueMode && styles.modeToggleButtonActive
-            ]}
-            onPress={() => setShowQueueMode(true)}
-          >
-            <Text style={[
-              styles.modeToggleText,
-              showQueueMode && styles.modeToggleTextActive
-            ]}>Queue Plans</Text>
-          </TouchableOpacity>
-        </View>
-        
         {error && (
           <View style={styles.subscriptionErrorContainer}>
             <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Queued Plans Section */}
-        {showQueueMode && queuedPlans.length > 0 && (
-          <View style={styles.queuedPlansContainer}>
-            <Text style={styles.queuedPlansTitle}>Queued Plans ({queuedPlans.length}/3)</Text>
-            <Text style={styles.queuedPlansSubtitle}>Total Due: ₹{totalDueAmount.toLocaleString()}</Text>
-            
-            {queuedPlans.map((plan, index) => (
-              <View key={index} style={styles.queuedPlanCard}>
-                <View style={styles.queuedPlanInfo}>
-                  <Text style={styles.queuedPlanName}>{plan.name}</Text>
-                  <Text style={styles.queuedPlanPrice}>₹{plan.price.toLocaleString()}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.removeQueuedPlanButton}
-                  onPress={() => handleRemoveQueuedPlan(index)}
-                >
-                  <Text style={styles.removeQueuedPlanButtonText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            
-            <StyledButton
-              title="Process All Plans"
-              onPress={handleProcessQueue}
-              disabled={subscribing}
-              style={styles.processQueueButton}
-            />
           </View>
         )}
 
@@ -8251,21 +7983,12 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         </ScrollView>
 
         <View style={styles.subscriptionButtonContainer}>
-          {showQueueMode ? (
-            <StyledButton
-              title={subscribing ? "Adding to Queue..." : "Add to Queue"}
-              onPress={handleQueuePlan}
-              disabled={!selectedPlan || subscribing || queuedPlans.length >= 3}
-              style={styles.subscriptionButton}
-            />
-          ) : (
-            <StyledButton
-              title={subscribing ? "Subscribing..." : "Subscribe Now"}
-              onPress={handleSelectPlan}
-              disabled={!selectedPlan || subscribing}
-              style={styles.subscriptionButton}
-            />
-          )}
+          <StyledButton
+            title={subscribing ? "Subscribing..." : "Subscribe Now"}
+            onPress={handleSelectPlan}
+            disabled={!selectedPlan || subscribing}
+            style={styles.subscriptionButton}
+          />
         </View>
       </View>
     </SafeAreaView>

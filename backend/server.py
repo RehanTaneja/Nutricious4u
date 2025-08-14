@@ -125,9 +125,6 @@ class UserProfile(BaseModel):
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = 0.0
     isSubscriptionActive: Optional[bool] = False
-    # Plan queuing fields
-    queuedPlans: Optional[List[dict]] = []  # List of queued plans
-    totalDueAmount: Optional[float] = 0.0  # Total amount due for queued plans
 
 class UpdateUserProfile(BaseModel):
     firstName: Optional[str] = None
@@ -153,9 +150,6 @@ class UpdateUserProfile(BaseModel):
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = None
     isSubscriptionActive: Optional[bool] = None
-    # Plan queuing fields
-    queuedPlans: Optional[List[dict]] = None
-    totalDueAmount: Optional[float] = None
 
 class ChatMessageRequest(BaseModel):
     userId: str
@@ -182,27 +176,7 @@ class SubscriptionResponse(BaseModel):
     message: str
     subscription: Optional[dict] = None
 
-class QueuedPlan(BaseModel):
-    planId: str
-    name: str
-    duration: str
-    price: float
-    description: str
-    addedAt: str
 
-class QueuePlanRequest(BaseModel):
-    userId: str
-    planId: str
-
-class RemoveQueuedPlanRequest(BaseModel):
-    userId: str
-    planIndex: int
-
-class SubscriptionQueueResponse(BaseModel):
-    success: bool
-    message: str
-    queuedPlans: List[QueuedPlan]
-    totalDueAmount: float
 
 class SubscriptionStatus(BaseModel):
     subscriptionPlan: Optional[str] = None
@@ -2096,12 +2070,6 @@ async def notification_scheduler_job():
     except Exception as e:
         print(f"[Notification Scheduler] Error: {e}")
 
-# --- Test Endpoint ---
-@api_router.get("/test-subscription")
-async def test_subscription():
-    """Test endpoint to verify subscription endpoints are being registered"""
-    return {"message": "Subscription endpoints are working!"}
-
 # --- Subscription Endpoints ---
 
 @api_router.get("/subscription/plans")
@@ -2238,217 +2206,7 @@ async def get_subscription_status(userId: str):
         logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get subscription status")
 
-@api_router.post("/subscription/queue")
-async def queue_plan(request: QueuePlanRequest):
-    """Add a plan to user's queue (max 3 plans)"""
-    try:
-        check_firebase_availability()
-        
-        # Get plan details
-        plan_prices = {
-            "1month": 5000.0,
-            "3months": 8000.0,
-            "6months": 20000.0
-        }
-        
-        plan_names = {
-            "1month": "1 Month Plan",
-            "3months": "3 Months Plan", 
-            "6months": "6 Months Plan"
-        }
-        
-        plan_durations = {
-            "1month": "1 month",
-            "3months": "3 months",
-            "6months": "6 months"
-        }
-        
-        plan_descriptions = {
-            "1month": "Perfect for getting started with your fitness journey",
-            "3months": "Great value for consistent progress tracking",
-            "6months": "Best value for long-term fitness goals"
-        }
-        
-        if request.planId not in plan_prices:
-            raise HTTPException(status_code=400, detail="Invalid plan ID")
-        
-        # Get user profile
-        user_doc = firestore_db.collection("users").document(request.userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        queued_plans = user_data.get("queuedPlans", [])
-        
-        # Check if queue is full (max 3 plans)
-        if len(queued_plans) >= 3:
-            raise HTTPException(status_code=400, detail="Queue is full. Maximum 3 plans allowed.")
-        
-        # Check if plan is already in queue
-        for plan in queued_plans:
-            if plan.get("planId") == request.planId:
-                raise HTTPException(status_code=400, detail="Plan is already in queue")
-        
-        # Add plan to queue
-        new_plan = {
-            "planId": request.planId,
-            "name": plan_names[request.planId],
-            "duration": plan_durations[request.planId],
-            "price": plan_prices[request.planId],
-            "description": plan_descriptions[request.planId],
-            "addedAt": datetime.now().isoformat()
-        }
-        
-        queued_plans.append(new_plan)
-        total_due = sum(plan["price"] for plan in queued_plans)
-        
-        # Update user profile
-        firestore_db.collection("users").document(request.userId).update({
-            "queuedPlans": queued_plans,
-            "totalDueAmount": total_due
-        })
-        
-        return SubscriptionQueueResponse(
-            success=True,
-            message=f"Plan added to queue. Total due: ₹{total_due:,.0f}",
-            queuedPlans=queued_plans,
-            totalDueAmount=total_due
-        )
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[QUEUE PLAN] Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to queue plan")
 
-@api_router.delete("/subscription/queue")
-async def remove_queued_plan(request: RemoveQueuedPlanRequest):
-    """Remove a plan from user's queue"""
-    try:
-        check_firebase_availability()
-        
-        # Get user profile
-        user_doc = firestore_db.collection("users").document(request.userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        queued_plans = user_data.get("queuedPlans", [])
-        
-        # Check if index is valid
-        if request.planIndex < 0 or request.planIndex >= len(queued_plans):
-            raise HTTPException(status_code=400, detail="Invalid plan index")
-        
-        # Remove plan from queue
-        removed_plan = queued_plans.pop(request.planIndex)
-        total_due = sum(plan["price"] for plan in queued_plans)
-        
-        # Update user profile
-        firestore_db.collection("users").document(request.userId).update({
-            "queuedPlans": queued_plans,
-            "totalDueAmount": total_due
-        })
-        
-        return SubscriptionQueueResponse(
-            success=True,
-            message=f"Plan removed from queue. Total due: ₹{total_due:,.0f}",
-            queuedPlans=queued_plans,
-            totalDueAmount=total_due
-        )
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[REMOVE QUEUED PLAN] Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to remove queued plan")
-
-@api_router.get("/subscription/queue/{userId}")
-async def get_queued_plans(userId: str):
-    """Get user's queued plans"""
-    try:
-        check_firebase_availability()
-        
-        user_doc = firestore_db.collection("users").document(userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        queued_plans = user_data.get("queuedPlans", [])
-        total_due = user_data.get("totalDueAmount", 0.0)
-        
-        return {
-            "queuedPlans": queued_plans,
-            "totalDueAmount": total_due
-        }
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[GET QUEUED PLANS] Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get queued plans")
-
-@api_router.post("/subscription/process-queue/{userId}")
-async def process_queued_plans(userId: str):
-    """Process all queued plans and activate them"""
-    try:
-        check_firebase_availability()
-        
-        user_doc = firestore_db.collection("users").document(userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        queued_plans = user_data.get("queuedPlans", [])
-        
-        if not queued_plans:
-            raise HTTPException(status_code=400, detail="No plans in queue")
-        
-        # Calculate total duration and amount
-        total_amount = sum(plan["price"] for plan in queued_plans)
-        total_days = 0
-        
-        for plan in queued_plans:
-            if plan["planId"] == "1month":
-                total_days += 30
-            elif plan["planId"] == "3months":
-                total_days += 90
-            elif plan["planId"] == "6months":
-                total_days += 180
-        
-        # Set subscription dates
-        start_date = datetime.now()
-        end_date = start_date + timedelta(days=total_days)
-        
-        # Update user profile
-        current_total = user_data.get("totalAmountPaid", 0.0)
-        
-        firestore_db.collection("users").document(userId).update({
-            "subscriptionPlan": f"{len(queued_plans)}_plans_combined",
-            "subscriptionStartDate": start_date.isoformat(),
-            "subscriptionEndDate": end_date.isoformat(),
-            "totalAmountPaid": current_total + total_amount,
-            "isSubscriptionActive": True,
-            "queuedPlans": [],  # Clear queue
-            "totalDueAmount": 0.0  # Clear due amount
-        })
-        
-        return SubscriptionResponse(
-            success=True,
-            message=f"Successfully processed {len(queued_plans)} plans. Subscription active until {end_date.strftime('%B %d, %Y')}",
-            subscription={
-                "planId": f"{len(queued_plans)}_plans_combined",
-                "startDate": start_date.isoformat(),
-                "endDate": end_date.isoformat(),
-                "amountPaid": total_amount,
-                "totalAmountPaid": current_total + total_amount
-            }
-        )
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[PROCESS QUEUED PLANS] Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process queued plans")
 
 def run_scheduled_jobs():
     """Run scheduled jobs in a separate thread"""

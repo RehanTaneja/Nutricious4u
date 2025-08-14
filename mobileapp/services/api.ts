@@ -180,21 +180,9 @@ export interface SubscriptionStatus {
   isSubscriptionActive: boolean;
 }
 
-export interface QueuedPlan {
-  planId: string;
-  name: string;
-  duration: string;
-  price: number;
-  description: string;
-  addedAt: string;
-}
 
-export interface SubscriptionQueueResponse {
-  success: boolean;
-  message: string;
-  queuedPlans: QueuedPlan[];
-  totalDueAmount: number;
-}
+
+
 
 export interface SubscriptionResponse {
   success: boolean;
@@ -535,25 +523,6 @@ export const getSubscriptionStatus = async (userId: string): Promise<Subscriptio
   return response.data;
 };
 
-// --- Plan Queuing Functions ---
-export const queuePlan = async (userId: string, planId: string): Promise<SubscriptionQueueResponse> => {
-  const response = await api.post('/subscription/queue', { userId, planId });
-  return response.data;
-};
 
-export const removeQueuedPlan = async (userId: string, planIndex: number): Promise<SubscriptionQueueResponse> => {
-  const response = await api.delete('/subscription/queue', { data: { userId, planIndex } });
-  return response.data;
-};
-
-export const getQueuedPlans = async (userId: string): Promise<{ queuedPlans: QueuedPlan[], totalDueAmount: number }> => {
-  const response = await api.get(`/subscription/queue/${userId}`);
-  return response.data;
-};
-
-export const processQueuedPlans = async (userId: string): Promise<SubscriptionResponse> => {
-  const response = await api.post(`/subscription/process-queue/${userId}`);
-  return response.data;
-};
 
 export default api; 
