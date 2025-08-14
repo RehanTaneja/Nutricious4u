@@ -7720,6 +7720,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 20,
   },
   subscriptionCard: {
     backgroundColor: COLORS.white,
@@ -8077,7 +8078,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.subscriptionContainer}>
             <View style={styles.subscriptionCard}>
               <View style={styles.subscriptionHeader}>
-                <Text style={styles.subscriptionTitle}>Total Amount Due</Text>
+                <Text style={styles.subscriptionTitle}>Current Plan</Text>
                 <View style={[
                   styles.statusBadge,
                   subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge
