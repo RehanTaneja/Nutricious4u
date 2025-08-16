@@ -2314,7 +2314,10 @@ async def select_subscription(request: SelectSubscriptionRequest):
         elif request.planId == "6months":
             end_date = start_date + timedelta(days=180)
         
-        # Update user profile with subscription (without changing total amount)
+        # Check if user already has an active subscription
+        has_active_subscription = user_data.get("isSubscriptionActive", False)
+        
+        # Update user profile with subscription
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
@@ -2329,7 +2332,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
         await send_new_subscription_notification(request.userId, user_data, request.planId)
         
         message = f"Successfully subscribed to {request.planId} plan"
-        if not should_add_to_total:
+        if has_active_subscription:
             message += " (replaced existing active subscription)"
         
         return SubscriptionResponse(
@@ -2340,7 +2343,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
                 "amountPaid": plan_prices[request.planId],
-                "totalAmountPaid": new_total
+                "totalAmountPaid": current_total
             }
         )
         

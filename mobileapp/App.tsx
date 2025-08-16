@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -49,7 +49,7 @@ const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 // The new Tab Navigator with only Dashboard and Settings
-const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
+const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUser: boolean }) => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       headerShown: false, // The Stack Navigator will handle the header
@@ -92,6 +92,7 @@ const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
 );
 
 function AppContent() {
+  const navigationRef = useRef<any>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
@@ -108,7 +109,7 @@ function AppContent() {
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
-  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser } = useSubscription();
+  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser, onUpgradeModalCancel } = useSubscription();
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state
@@ -392,6 +393,7 @@ function AppContent() {
                       // Check if user is on free plan or has active subscription
                       if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
                         console.log('[Subscription Check] User is on free plan or has no active subscription');
+                        console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(false);
                         setIsFreeUser(true);
                         
@@ -399,6 +401,7 @@ function AppContent() {
                         // Only show popup if they explicitly need premium features
                       } else {
                         console.log('[Subscription Check] User has active paid subscription');
+                        console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(true);
                         setIsFreeUser(false);
                       }
@@ -543,7 +546,7 @@ function AppContent() {
 
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator>
           {!user ? (
             <Stack.Screen
@@ -562,7 +565,7 @@ function AppContent() {
             <>
               <Stack.Screen
                 name="Main"
-                children={() => <MainTabs isDietician={isDietician} />}
+                children={() => <MainTabs isDietician={isDietician} isFreeUser={isFreeUser} />}
                 options={{ headerShown: false }}
               />
               <Stack.Screen name="DieticianMessage" component={DieticianMessageScreen} options={{ headerShown: false }} />
@@ -653,31 +656,23 @@ function AppContent() {
       >
         <View style={styles.upgradeModalOverlay}>
           <View style={styles.upgradeModalContainer}>
-            <Text style={styles.upgradeModalTitle}>Upgrade Your Subscription</Text>
+            <Text style={styles.upgradeModalTitle}>Upgrade to a Paid Plan</Text>
             <Text style={styles.upgradeModalSubtitle}>
-              This feature is only available for premium users
+              Get custom diet plans, AI chatbot assistance and custom notifications for your diet
             </Text>
-            
-            <View style={styles.upgradeModalFeatures}>
-              <Text style={styles.upgradeModalFeaturesTitle}>Premium Features Include:</Text>
-              <View style={styles.upgradeModalFeatureItem}>
-                <Text style={styles.upgradeModalFeatureText}>• AI Chatbot Access</Text>
-              </View>
-              <View style={styles.upgradeModalFeatureItem}>
-                <Text style={styles.upgradeModalFeatureText}>• My Diet Plan Access</Text>
-              </View>
-              <View style={styles.upgradeModalFeatureItem}>
-                <Text style={styles.upgradeModalFeatureText}>• Custom Notification Settings</Text>
-              </View>
-              <View style={styles.upgradeModalFeatureItem}>
-                <Text style={styles.upgradeModalFeatureText}>• Priority Support</Text>
-              </View>
-            </View>
             
             <View style={styles.upgradeModalButtons}>
               <TouchableOpacity
                 style={styles.upgradeModalCancelButton}
-                onPress={() => setShowUpgradeModal(false)}
+                onPress={() => {
+                  setShowUpgradeModal(false);
+                  // Use callback if provided, otherwise navigate to Main
+                  if (onUpgradeModalCancel) {
+                    onUpgradeModalCancel();
+                  } else if (navigationRef.current) {
+                    navigationRef.current.navigate('Main');
+                  }
+                }}
               >
                 <Text style={styles.upgradeModalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -686,10 +681,13 @@ function AppContent() {
                 style={styles.upgradeModalUpgradeButton}
                 onPress={() => {
                   setShowUpgradeModal(false);
-                  // Navigate to MySubscriptions - this will be handled by the navigation context
+                  // Navigate to my subscriptions
+                  if (navigationRef.current) {
+                    navigationRef.current.navigate('MySubscriptions');
+                  }
                 }}
               >
-                <Text style={styles.upgradeModalUpgradeButtonText}>Upgrade Now</Text>
+                <Text style={styles.upgradeModalUpgradeButtonText}>My Subscriptions</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1039,23 +1037,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#A1A1AA',
     textAlign: 'center',
-    marginBottom: 20,
-  },
-  upgradeModalFeatures: {
     marginBottom: 24,
-  },
-  upgradeModalFeaturesTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#27272A',
-    marginBottom: 12,
-  },
-  upgradeModalFeatureItem: {
-    marginBottom: 8,
-  },
-  upgradeModalFeatureText: {
-    fontSize: 14,
-    color: '#4B5563',
   },
   upgradeModalButtons: {
     flexDirection: 'row',

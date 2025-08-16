@@ -28,7 +28,7 @@ import {
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
@@ -1136,7 +1136,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   }, []);
 
   const handleOpenDiet = () => {
+    console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
     if (isFreeUser) {
+      console.log('[DashboardScreen] Showing upgrade modal for free user');
       setShowUpgradeModal(true);
       return;
     }
@@ -3286,20 +3288,33 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
-export const ChatbotScreen = () => {
+export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
   const [messages, setMessages] = useState([
     { id: '1', text: 'Hello! How can I help you today?', sender: 'bot' }
   ]);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const { isFreeUser, setShowUpgradeModal } = useSubscription();
+  const { isFreeUser, setShowUpgradeModal, setUpgradeModalCancelCallback } = useSubscription();
 
-  // Show upgrade modal for free users
+  // Set up navigation callback for modal cancellation
   useEffect(() => {
     if (isFreeUser) {
-      setShowUpgradeModal(true);
+      setUpgradeModalCancelCallback(() => {
+        navigation.navigate('Main');
+      });
     }
-  }, [isFreeUser, setShowUpgradeModal]);
+  }, [isFreeUser, setUpgradeModalCancelCallback, navigation]);
+
+  // Show upgrade modal for free users every time screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[ChatbotScreen] Screen focused, isFreeUser:', isFreeUser);
+      if (isFreeUser) {
+        console.log('[ChatbotScreen] Showing upgrade modal for free user');
+        setShowUpgradeModal(true);
+      }
+    }, [isFreeUser, setShowUpgradeModal])
+  );
 
   const handleSend = () => {
     if (inputText.trim().length > 0) {
@@ -3669,14 +3684,27 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
-  const { isFreeUser, setShowUpgradeModal } = useSubscription();
+  const { isFreeUser, setShowUpgradeModal, setUpgradeModalCancelCallback } = useSubscription();
 
-  // Show upgrade modal for free users
+  // Set up navigation callback for modal cancellation
   useEffect(() => {
     if (isFreeUser) {
-      setShowUpgradeModal(true);
+      setUpgradeModalCancelCallback(() => {
+        navigation.navigate('Main');
+      });
     }
-  }, [isFreeUser, setShowUpgradeModal]);
+  }, [isFreeUser, setUpgradeModalCancelCallback, navigation]);
+
+  // Show upgrade modal for free users every time screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[NotificationSettingsScreen] Screen focused, isFreeUser:', isFreeUser);
+      if (isFreeUser) {
+        console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
+        setShowUpgradeModal(true);
+      }
+    }, [isFreeUser, setShowUpgradeModal])
+  );
 
 
 
@@ -6450,6 +6478,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   screenTitle: {
     fontSize: 34,
     fontWeight: 'bold',
@@ -8643,27 +8676,29 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  const { isFreeUser } = useSubscription();
+  
   const availablePlans = [
     {
       planId: '1month',
       name: '1 Month Plan',
       duration: '1 month',
       price: 5000,
-      description: 'Perfect for getting started with your fitness journey'
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect for getting started with your fitness journey'
     },
     {
       planId: '3months',
       name: '3 Months Plan',
       duration: '3 months',
       price: 8000,
-      description: 'Great value for consistent progress tracking'
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Great value for consistent progress tracking'
     },
     {
       planId: '6months',
       name: '6 Months Plan',
       duration: '6 months',
       price: 20000,
-      description: 'Best value for long-term fitness goals'
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Best value for long-term fitness goals'
     }
   ];
 
@@ -8679,7 +8714,16 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
     <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.settingsContainer}>
-          <Text style={styles.screenTitle}>My Subscriptions</Text>
+          <View style={styles.screenHeader}>
+            <TouchableOpacity
+              style={[styles.backButton, { marginRight: 12 }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft color={COLORS.primary} size={24} />
+            </TouchableOpacity>
+            <Text style={styles.screenTitle}>My Subscriptions</Text>
+          </View>
         
         {error && (
           <View style={styles.subscriptionErrorContainer}>
@@ -8710,19 +8754,23 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                   </Text>
                 </View>
                 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Start Date:</Text>
-                  <Text style={styles.detailValue}>
-                    {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
-                  </Text>
-                </View>
+                {!subscription.isFreeUser && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Start Date:</Text>
+                    <Text style={styles.detailValue}>
+                      {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
+                    </Text>
+                  </View>
+                )}
                 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>End Date:</Text>
-                  <Text style={styles.detailValue}>
-                    {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
-                  </Text>
-                </View>
+                {!subscription.isFreeUser && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>End Date:</Text>
+                    <Text style={styles.detailValue}>
+                      {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
+                    </Text>
+                  </View>
+                )}
                 
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Total Amount Due:</Text>
