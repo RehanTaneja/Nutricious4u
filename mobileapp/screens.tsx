@@ -8104,7 +8104,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: COLORS.placeholder,
+    backgroundColor: COLORS.white,
   },
   subscriptionHeaderTitle: {
     fontSize: 18,
@@ -8494,7 +8494,13 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
             style={styles.subscriptionButton}
           />
           <TouchableOpacity
-            style={styles.cancelButton}
+            style={[styles.cancelButton, { 
+              height: 56, 
+              marginTop: 12, 
+              borderRadius: 28,
+              justifyContent: 'center',
+              alignItems: 'center'
+            }]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
           >
@@ -8539,6 +8545,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [addingAmount, setAddingAmount] = useState(false);
+  const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
+  const [showCancelSuccessModal, setShowCancelSuccessModal] = useState(false);
+  const [cancelSuccessMessage, setCancelSuccessMessage] = useState('');
   const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
@@ -8608,42 +8617,27 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleCancelSubscription = async () => {
+    setShowCancelSubscriptionModal(true);
+  };
+
+  const confirmCancelSubscription = async () => {
     try {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      Alert.alert(
-        'Cancel Subscription',
-        'Are you sure you want to cancel your subscription? You will be moved to the free plan.',
-        [
-          {
-            text: 'No, Keep It',
-            style: 'cancel'
-          },
-          {
-            text: 'Yes, Cancel',
-            style: 'destructive',
-                            onPress: async () => {
-                  try {
-                    const result = await cancelSubscription(userId);
-                    if (result.success) {
-                      Alert.alert('Success', result.message);
-                      // Refresh subscription status
-                      fetchSubscriptionStatus();
-                      // Refresh the subscription context
-                      refreshSubscriptionStatus();
-                      // Navigate back to main screen to refresh app context
-                      navigation.navigate('Main');
-                    } else {
-                      Alert.alert('Error', result.message || 'Failed to cancel subscription');
-                    }
-                  } catch (e: any) {
-                    Alert.alert('Error', e.message || 'Failed to cancel subscription');
-                  }
-                }
-          }
-        ]
-      );
+      const result = await cancelSubscription(userId);
+      if (result.success) {
+        setShowCancelSubscriptionModal(false);
+        // Show custom green success popup
+        setCancelSuccessMessage(result.message);
+        setShowCancelSuccessModal(true);
+        // Refresh subscription status
+        fetchSubscriptionStatus();
+        // Refresh the subscription context
+        refreshSubscriptionStatus();
+      } else {
+        Alert.alert('Error', result.message || 'Failed to cancel subscription');
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to cancel subscription');
     }
@@ -8906,6 +8900,61 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Green Cancel Subscription Modal */}
+      <Modal
+        visible={showCancelSubscriptionModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCancelSubscriptionModal(false)}
+      >
+        <View style={styles.successPopupOverlay}>
+          <View style={[styles.successPopup, { backgroundColor: '#34D399', padding: 32, margin: 30 }]}>
+            <Text style={styles.successTitle}>Cancel Subscription</Text>
+            <Text style={styles.successMessage}>
+              Are you sure you want to cancel your subscription? You will be moved to the free plan.
+            </Text>
+            <View style={[styles.modalButtonRow, { marginTop: 24 }]}>
+              <TouchableOpacity
+                style={[styles.successButton, { backgroundColor: '#EF4444', marginRight: 12, flex: 1 }]}
+                onPress={() => setShowCancelSubscriptionModal(false)}
+              >
+                <Text style={[styles.successButtonText, { color: COLORS.white }]}>No, Keep It</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.successButton, { backgroundColor: COLORS.white, marginLeft: 12, flex: 1 }]}
+                onPress={confirmCancelSubscription}
+              >
+                <Text style={[styles.successButtonText, { color: '#34D399' }]}>Yes, Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Green Cancel Success Modal */}
+      <Modal
+        visible={showCancelSuccessModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCancelSuccessModal(false)}
+      >
+        <View style={styles.successPopupOverlay}>
+          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+            <Text style={styles.successTitle}>Subscription Cancelled! ✅</Text>
+            <Text style={styles.successMessage}>{cancelSuccessMessage}</Text>
+            <TouchableOpacity
+              style={[styles.successButton, { backgroundColor: COLORS.white }]}
+              onPress={() => {
+                setShowCancelSuccessModal(false);
+                navigation.navigate('Main');
+              }}
+            >
+              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Continue</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

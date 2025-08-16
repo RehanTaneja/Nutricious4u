@@ -2033,8 +2033,15 @@ async def check_subscription_reminders_job():
                 
                 # Check if subscription has expired
                 elif time_until_expiry <= timedelta(0):
-                    # Send expiry notification to both user and dietician
-                    await send_subscription_expiry_notifications(user_id, user_data)
+                    # Check if auto-renewal is enabled and handle accordingly
+                    auto_renewal_enabled = user_data.get("autoRenewalEnabled", True)  # Default to True
+                    
+                    if auto_renewal_enabled:
+                        # Auto-renew the subscription
+                        await auto_renew_subscription(user_id, user_data)
+                    else:
+                        # Send expiry notification to both user and dietician
+                        await send_subscription_expiry_notifications(user_id, user_data)
                     
             except Exception as e:
                 logger.error(f"[SUBSCRIPTION REMINDER] Error processing user {user_doc.id}: {e}")
@@ -2073,6 +2080,116 @@ async def send_subscription_reminder_notification(user_id: str, user_data: dict)
             
     except Exception as e:
         logger.error(f"[SUBSCRIPTION REMINDER NOTIFICATION] Error: {e}")
+
+async def auto_renew_subscription(user_id: str, user_data: dict):
+    """Automatically renew a user's subscription when it expires"""
+    try:
+        user_name = user_data.get("name", "User")
+        current_plan = user_data.get("subscriptionPlan")
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        if not current_plan:
+            logger.error(f"[AUTO RENEWAL] No current plan found for user {user_id}")
+            return
+        
+        # Get plan details
+        plan_prices = {
+            "1month": 5000.0,
+            "3months": 8000.0,
+            "6months": 20000.0
+        }
+        
+        if current_plan not in plan_prices:
+            logger.error(f"[AUTO RENEWAL] Invalid plan {current_plan} for user {user_id}")
+            return
+        
+        # Calculate new subscription dates
+        from datetime import datetime, timedelta
+        
+        start_date = datetime.now()
+        if current_plan == "1month":
+            end_date = start_date + timedelta(days=30)
+        elif current_plan == "3months":
+            end_date = start_date + timedelta(days=90)
+        elif current_plan == "6months":
+            end_date = start_date + timedelta(days=180)
+        
+        # Calculate new total amount
+        new_total = current_total + plan_prices[current_plan]
+        
+        # Update user profile with renewed subscription
+        update_data = {
+            "subscriptionStartDate": start_date.isoformat(),
+            "subscriptionEndDate": end_date.isoformat(),
+            "currentSubscriptionAmount": plan_prices[current_plan],
+            "totalAmountPaid": new_total,
+            "isSubscriptionActive": True
+        }
+        
+        firestore_db.collection("user_profiles").document(user_id).update(update_data)
+        
+        # Send renewal notifications to both user and dietician
+        await send_subscription_renewal_notifications(user_id, user_data, current_plan, plan_prices[current_plan])
+        
+        logger.info(f"[AUTO RENEWAL] Successfully renewed {current_plan} subscription for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"[AUTO RENEWAL] Error renewing subscription for user {user_id}: {e}")
+
+async def send_subscription_renewal_notifications(user_id: str, user_data: dict, plan_id: str, amount: float):
+    """Send renewal notifications to both user and dietician"""
+    try:
+        user_name = user_data.get("name", "User")
+        plan_name = get_plan_name(plan_id)
+        
+        # Send notification to user
+        user_notification = {
+            "userId": user_id,
+            "title": "Subscription Auto-Renewed",
+            "body": f"Hi {user_name}, your {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}",
+            "type": "subscription_renewed",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(user_notification)
+        
+        # Send push notification to user if FCM token exists
+        user_fcm_token = user_data.get("fcmToken")
+        if user_fcm_token:
+            await send_push_notification(
+                user_fcm_token,
+                "Subscription Auto-Renewed",
+                f"Hi {user_name}, your {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}"
+            )
+        
+        # Send notification to dietician
+        dietician_notification = {
+            "userId": "dietician",  # Special ID for dietician
+            "title": "User Subscription Auto-Renewed",
+            "body": f"User {user_name} ({user_id}) {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}",
+            "type": "user_subscription_renewed",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(dietician_notification)
+        
+        # Get dietician FCM token and send push notification
+        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
+        for dietician in dietician_doc:
+            dietician_data = dietician.to_dict()
+            dietician_fcm_token = dietician_data.get("fcmToken")
+            if dietician_fcm_token:
+                await send_push_notification(
+                    dietician_fcm_token,
+                    "User Subscription Auto-Renewed",
+                    f"User {user_name} ({user_id}) {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}"
+                )
+            break
+            
+    except Exception as e:
+        logger.error(f"[SUBSCRIPTION RENEWAL NOTIFICATIONS] Error: {e}")
 
 async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
     """Send expiry notifications to both user and dietician"""
@@ -2376,7 +2493,8 @@ async def get_subscription_status(userId: str):
             "currentSubscriptionAmount": user_data.get("currentSubscriptionAmount", 0.0),
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
             "isSubscriptionActive": user_data.get("isSubscriptionActive", False),
-            "isFreeUser": not user_data.get("isSubscriptionActive", False)
+            "isFreeUser": not user_data.get("isSubscriptionActive", False),
+            "autoRenewalEnabled": user_data.get("autoRenewalEnabled", True)  # Default to True
         }
         
         # Log the data being returned for debugging
@@ -2434,6 +2552,30 @@ async def cancel_subscription(userId: str):
     except Exception as e:
         logger.error(f"[CANCEL SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+@api_router.post("/subscription/toggle-auto-renewal/{userId}")
+async def toggle_auto_renewal(userId: str, enabled: bool = True):
+    """Toggle auto-renewal setting for a user"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update auto-renewal setting
+        firestore_db.collection("user_profiles").document(userId).update({
+            "autoRenewalEnabled": enabled
+        })
+        
+        status = "enabled" if enabled else "disabled"
+        return {"success": True, "message": f"Auto-renewal {status} successfully"}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[TOGGLE AUTO RENEWAL] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle auto-renewal")
 
 @api_router.post("/subscription/reset/{userId}")
 async def reset_subscription(userId: str):

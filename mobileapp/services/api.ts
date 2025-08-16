@@ -188,6 +188,7 @@ export interface SubscriptionStatus {
   totalAmountPaid: number;
   isSubscriptionActive: boolean;
   isFreeUser?: boolean; // Indicates if user is on free plan
+  autoRenewalEnabled?: boolean; // Indicates if auto-renewal is enabled
 }
 
 export interface Notification {
@@ -545,6 +546,11 @@ export const getSubscriptionStatus = async (userId: string): Promise<Subscriptio
 
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
   const response = await api.post(`/subscription/cancel/${userId}`);
+  return response.data;
+};
+
+export const toggleAutoRenewal = async (userId: string, enabled: boolean): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post(`/subscription/toggle-auto-renewal/${userId}?enabled=${enabled}`);
   return response.data;
 };
 
