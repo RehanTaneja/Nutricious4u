@@ -7,8 +7,6 @@ interface SubscriptionContextType {
   isFreeUser: boolean;
   setIsFreeUser: (isFree: boolean) => void;
   refreshSubscriptionStatus: () => void;
-  onUpgradeModalCancel?: () => void;
-  setUpgradeModalCancelCallback: (callback: () => void) => void;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -24,7 +22,6 @@ export const useSubscription = () => {
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isFreeUser, setIsFreeUser] = useState(true); // Default to free user
-  const [onUpgradeModalCancel, setOnUpgradeModalCancel] = useState<(() => void) | undefined>(undefined);
 
   const refreshSubscriptionStatus = async () => {
     try {
@@ -40,10 +37,6 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const setUpgradeModalCancelCallback = (callback: () => void) => {
-    setOnUpgradeModalCancel(() => callback);
-  };
-
   return (
     <SubscriptionContext.Provider value={{
       showUpgradeModal,
@@ -51,8 +44,6 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       isFreeUser,
       setIsFreeUser,
       refreshSubscriptionStatus,
-      onUpgradeModalCancel,
-      setUpgradeModalCancelCallback,
     }}>
       {children}
     </SubscriptionContext.Provider>

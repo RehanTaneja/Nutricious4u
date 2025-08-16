@@ -28,7 +28,7 @@ import {
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
@@ -3288,22 +3288,13 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
-export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
+export const ChatbotScreen = () => {
   const [messages, setMessages] = useState([
     { id: '1', text: 'Hello! How can I help you today?', sender: 'bot' }
   ]);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Show upgrade modal for free users
-  useEffect(() => {
-    console.log('[ChatbotScreen] isFreeUser:', isFreeUser);
-    if (isFreeUser) {
-      console.log('[ChatbotScreen] Showing upgrade modal for free user');
-      setShowUpgradeModal(true);
-    }
-  }, [isFreeUser, setShowUpgradeModal]);
 
   const handleSend = () => {
     if (inputText.trim().length > 0) {
@@ -3675,14 +3666,20 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [error, setError] = useState('');
   const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Show upgrade modal for free users
-  useEffect(() => {
-    console.log('[NotificationSettingsScreen] isFreeUser:', isFreeUser);
-    if (isFreeUser) {
-      console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
-      setShowUpgradeModal(true);
-    }
-  }, [isFreeUser, setShowUpgradeModal]);
+  // Show upgrade modal for free users every time screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[NotificationSettingsScreen] Screen focused, isFreeUser:', isFreeUser);
+      if (isFreeUser) {
+        console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
+        setShowUpgradeModal(true);
+        // Redirect to Dashboard after a short delay to prevent access
+        setTimeout(() => {
+          navigation.navigate('Main');
+        }, 100);
+      }
+    }, [isFreeUser, setShowUpgradeModal, navigation])
+  );
 
 
 
@@ -7804,6 +7801,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
+
   subscriptionButton: {
     backgroundColor: COLORS.primary,
     height: 56,
@@ -8362,6 +8360,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const { isFreeUser } = useSubscription();
 
   // Only allow free users to access this screen
@@ -8378,7 +8378,9 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
     try {
       setLoading(true);
       const subscriptionPlans = await getSubscriptionPlans();
-      setPlans(subscriptionPlans);
+      // Filter out the free plan - only show paid plans
+      const paidPlans = subscriptionPlans.filter(plan => !plan.isFree);
+      setPlans(paidPlans);
     } catch (e: any) {
       console.error('Error fetching plans:', e);
       // Show a more user-friendly error message
@@ -8410,21 +8412,9 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       const response = await selectSubscription(userId, selectedPlan);
       
       if (response.success) {
-        Alert.alert(
-          'Subscription Successful! 🎉',
-          response.message,
-          [
-            {
-              text: 'View My Subscriptions',
-              onPress: () => navigation.navigate('MySubscriptions'),
-              style: 'default'
-            },
-            {
-              text: 'Continue',
-              style: 'cancel'
-            }
-          ]
-        );
+        // Show custom green success popup
+        setShowSuccessPopup(true);
+        setSuccessMessage(response.message);
       } else {
         setError(response.message || 'Failed to subscribe');
       }
@@ -8503,8 +8493,39 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
             disabled={!selectedPlan || subscribing}
             style={styles.subscriptionButton}
           />
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Custom Green Success Popup */}
+      <Modal
+        visible={showSuccessPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowSuccessPopup(false)}
+      >
+        <View style={styles.successPopupOverlay}>
+          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+            <Text style={styles.successTitle}>Subscription Successful! 🎉</Text>
+            <Text style={styles.successMessage}>{successMessage}</Text>
+            <TouchableOpacity
+              style={[styles.successButton, { backgroundColor: COLORS.white }]}
+              onPress={() => {
+                setShowSuccessPopup(false);
+                navigation.navigate('MySubscriptions');
+              }}
+            >
+              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -8569,11 +8590,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      // First, select the subscription
-      await selectSubscription(userId, planId);
-      
-      // Then, add the amount to total due
-      const result = await addSubscriptionAmount(userId, planId);
+      // Select the subscription (this now also updates the total amount)
+      const result = await selectSubscription(userId, planId);
       
       if (result.success) {
         Alert.alert('Success', result.message);
@@ -8695,7 +8713,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.screenHeader}>
             <TouchableOpacity
               style={[styles.backButton, { marginRight: 12 }]}
-              onPress={() => navigation.goBack()}
+              onPress={() => navigation.navigate('Main', { screen: 'Settings' })}
               activeOpacity={0.7}
             >
               <ArrowLeft color={COLORS.primary} size={24} />

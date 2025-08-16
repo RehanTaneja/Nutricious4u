@@ -17,7 +17,7 @@ import { getUserProfile, UserProfile } from './services/api';
 import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
 import { format, isToday, isYesterday } from 'date-fns';
-import { useSubscription } from './contexts/SubscriptionContext';
+
 
 
 interface Message {
@@ -29,7 +29,7 @@ interface Message {
   heading?: string;
 }
 
-export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
+export const ChatbotScreen = () => {
   const [messages, setMessages] = useState([
     { id: '1', text: 'Hello! I am NutriBot, your personal nutrition assistant. I can provide diet and nutrition advice based on your profile. Please note: I am not a substitute for professional medical advice. Always consult a healthcare provider for medical decisions.', sender: 'bot', timestamp: Date.now() }
   ]);
@@ -38,16 +38,7 @@ export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [inputHeight, setInputHeight] = useState(40);
-  const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Show upgrade modal for free users
-  useEffect(() => {
-    console.log('[ChatbotScreen] isFreeUser:', isFreeUser);
-    if (isFreeUser) {
-      console.log('[ChatbotScreen] Showing upgrade modal for free user');
-      setShowUpgradeModal(true);
-    }
-  }, [isFreeUser, setShowUpgradeModal]);
 
   useEffect(() => {
     const fetchProfile = async () => {

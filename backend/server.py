@@ -2317,12 +2317,16 @@ async def select_subscription(request: SelectSubscriptionRequest):
         # Check if user already has an active subscription
         has_active_subscription = user_data.get("isSubscriptionActive", False)
         
+        # Calculate new total amount (add current plan price to existing total)
+        new_total = current_total + plan_prices[request.planId]
+        
         # Update user profile with subscription
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
             "currentSubscriptionAmount": plan_prices[request.planId],
+            "totalAmountPaid": new_total,
             "isSubscriptionActive": True
         }
         
@@ -2343,7 +2347,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
                 "amountPaid": plan_prices[request.planId],
-                "totalAmountPaid": current_total
+                "totalAmountPaid": new_total
             }
         )
         

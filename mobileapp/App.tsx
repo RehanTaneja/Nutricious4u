@@ -41,7 +41,7 @@ import {
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, addSubscriptionAmount, SubscriptionPlan, getUserLockStatus, API_URL } from './services/api';
+import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL } from './services/api';
 
 type User = firebase.User;
 
@@ -86,7 +86,7 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
     ) : (
       <Tab.Screen name="Dietician" component={DieticianScreen} />
     )}
-    {!isDietician && <Tab.Screen name="Chatbot" component={ChatbotScreen} />}
+    {!isDietician && !isFreeUser && <Tab.Screen name="Chatbot" component={ChatbotScreen} />}
     <Tab.Screen name="Settings" component={SettingsScreen} />
   </Tab.Navigator>
 );
@@ -109,7 +109,7 @@ function AppContent() {
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
-  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser, onUpgradeModalCancel } = useSubscription();
+  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser } = useSubscription();
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state
@@ -172,11 +172,8 @@ function AppContent() {
     try {
       setProcessingSubscription(true);
       
-      // First, select the subscription
-      await selectSubscription(user.uid, planId);
-      
-      // Then, add the amount to total due
-      const result = await addSubscriptionAmount(user.uid, planId);
+      // Select the subscription (this now also updates the total amount)
+      const result = await selectSubscription(user.uid, planId);
       
       if (result.success) {
         setShowSubscriptionPopup(false);
@@ -664,15 +661,7 @@ function AppContent() {
             <View style={styles.upgradeModalButtons}>
               <TouchableOpacity
                 style={styles.upgradeModalCancelButton}
-                onPress={() => {
-                  setShowUpgradeModal(false);
-                  // Use callback if provided, otherwise navigate to Main
-                  if (onUpgradeModalCancel) {
-                    onUpgradeModalCancel();
-                  } else if (navigationRef.current) {
-                    navigationRef.current.navigate('Main');
-                  }
-                }}
+                onPress={() => setShowUpgradeModal(false)}
               >
                 <Text style={styles.upgradeModalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
