@@ -201,6 +201,7 @@ def upload_diet_pdf(user_id: str, file_data: bytes, filename: str) -> str:
 def list_non_dietician_users():
     """
     Returns a list of user profiles where isDietician is not True.
+    Only includes users with paid plans (not free plan).
     """
     if db is None:
         raise HTTPException(status_code=500, detail="Firebase is not initialized. Please check server configuration.")
@@ -238,12 +239,21 @@ def list_non_dietician_users():
                     user_data.get("firstName").strip() != ""
                 )
                 
-                if not is_placeholder and not is_test_user and has_proper_name:
+                # Only include users with paid plans (not free plan)
+                subscription_plan = user_data.get("subscriptionPlan")
+                has_paid_plan = (
+                    subscription_plan and 
+                    subscription_plan != "free" and 
+                    subscription_plan != "Not set" and 
+                    subscription_plan != ""
+                )
+                
+                if not is_placeholder and not is_test_user and has_proper_name and has_paid_plan:
                     # Add the document ID as userId
                     user_data["userId"] = user.id
                     non_dietician_users.append(user_data)
         
-        print(f"Found {len(non_dietician_users)} non-dietician users")
+        print(f"Found {len(non_dietician_users)} non-dietician users with paid plans")
         return non_dietician_users
     except Exception as e:
         print(f"Failed to list users: {e}")

@@ -48,7 +48,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -10324,6 +10324,18 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     async function fetchData() {
       setLoading(true);
       try {
+        // 0. Refresh free plans first (when dietician opens upload diet page)
+        try {
+          const refreshResult = await refreshFreePlans();
+          console.log('[UploadDietScreen] Refresh free plans result:', refreshResult);
+          if (refreshResult.updated_count > 0) {
+            console.log(`[UploadDietScreen] Updated ${refreshResult.updated_count} users to free plan`);
+          }
+        } catch (refreshError) {
+          console.error('[UploadDietScreen] Error refreshing free plans:', refreshError);
+          // Continue with fetching users even if refresh fails
+        }
+        
         // 1. Fetch users from backend API only
         const usersFromAPI = await listNonDieticianUsers();
         console.log('[UploadDietScreen] Users from API:', usersFromAPI);

@@ -626,6 +626,16 @@ async def create_user_profile(profile: UserProfile):
         else:
             profile_dict["isDietician"] = False
         
+        # Default new users to free plan
+        if not profile_dict.get("isDietician"):
+            profile_dict["subscriptionPlan"] = "free"
+            profile_dict["isSubscriptionActive"] = False
+            profile_dict["subscriptionStartDate"] = None
+            profile_dict["subscriptionEndDate"] = None
+            profile_dict["currentSubscriptionAmount"] = 0.0
+            profile_dict["totalAmountPaid"] = 0.0
+            profile_dict["autoRenewalEnabled"] = True
+        
         await loop.run_in_executor(executor, lambda: doc_ref.set(profile_dict))
         logger.info(f"Created profile for user {user_id} with isDietician={profile_dict.get('isDietician')}")
         return profile_dict
@@ -1367,8 +1377,60 @@ async def get_user_diet_pdf(user_id: str):
 async def get_non_dietician_users():
     """
     Returns a list of user profiles where isDietician is not True.
+    Only shows users with paid plans (not free plan).
     """
     return list_non_dietician_users()
+
+@api_router.post("/users/refresh-free-plans")
+async def refresh_free_plans():
+    """
+    Refresh all users with "Not set" or missing subscription plans to free plan.
+    This is called when the dietician opens the upload diet page.
+    """
+    try:
+        check_firebase_availability()
+        
+        users_ref = firestore_db.collection("user_profiles")
+        all_users = users_ref.stream()
+        
+        updated_count = 0
+        
+        for user in all_users:
+            user_data = user.to_dict()
+            user_id = user.id
+            
+            # Skip dietician users
+            if user_data.get("isDietician"):
+                continue
+            
+            # Check if user has no subscription plan or "Not set" plan
+            subscription_plan = user_data.get("subscriptionPlan")
+            if not subscription_plan or subscription_plan == "Not set" or subscription_plan == "":
+                # Update user to free plan
+                update_data = {
+                    "subscriptionPlan": "free",
+                    "isSubscriptionActive": False,
+                    "subscriptionStartDate": None,
+                    "subscriptionEndDate": None,
+                    "currentSubscriptionAmount": 0.0,
+                    "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
+                    "autoRenewalEnabled": True
+                }
+                
+                firestore_db.collection("user_profiles").document(user_id).update(update_data)
+                updated_count += 1
+                logger.info(f"Updated user {user_id} to free plan")
+        
+        logger.info(f"Refreshed {updated_count} users to free plan")
+        return {
+            "success": True,
+            "message": f"Successfully updated {updated_count} users to free plan",
+            "updated_count": updated_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error refreshing free plans: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to refresh free plans: {e}")
 
 # --- Diet Notification Endpoints ---
 @api_router.post("/users/{user_id}/diet/notifications/extract")

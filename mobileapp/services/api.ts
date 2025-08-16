@@ -528,6 +528,12 @@ export const listNonDieticianUsers = async () => {
   return response.data;
 };
 
+// --- Refresh Free Plans (for Dietician) ---
+export const refreshFreePlans = async (): Promise<{ success: boolean; message: string; updated_count: number }> => {
+  const response = await api.post('/users/refresh-free-plans');
+  return response.data;
+};
+
 // --- Subscription Management ---
 export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
   const response = await api.get('/subscription/plans');
