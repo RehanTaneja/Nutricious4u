@@ -18,7 +18,7 @@ import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useSubscription } from './contexts/SubscriptionContext';
-import { useFocusEffect } from '@react-navigation/native';
+
 
 interface Message {
   id: string;
@@ -38,27 +38,16 @@ export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [inputHeight, setInputHeight] = useState(40);
-  const { isFreeUser, setShowUpgradeModal, setUpgradeModalCancelCallback } = useSubscription();
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Set up navigation callback for modal cancellation
+  // Show upgrade modal for free users
   useEffect(() => {
+    console.log('[ChatbotScreen] isFreeUser:', isFreeUser);
     if (isFreeUser) {
-      setUpgradeModalCancelCallback(() => {
-        navigation.navigate('Main');
-      });
+      console.log('[ChatbotScreen] Showing upgrade modal for free user');
+      setShowUpgradeModal(true);
     }
-  }, [isFreeUser, setUpgradeModalCancelCallback, navigation]);
-
-  // Show upgrade modal for free users every time screen is focused
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('[ChatbotScreen] Screen focused, isFreeUser:', isFreeUser);
-      if (isFreeUser) {
-        console.log('[ChatbotScreen] Showing upgrade modal for free user');
-        setShowUpgradeModal(true);
-      }
-    }, [isFreeUser, setShowUpgradeModal])
-  );
+  }, [isFreeUser, setShowUpgradeModal]);
 
   useEffect(() => {
     const fetchProfile = async () => {

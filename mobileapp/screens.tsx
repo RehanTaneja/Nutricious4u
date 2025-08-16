@@ -28,7 +28,7 @@ import {
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
-import { useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
@@ -3294,27 +3294,16 @@ export const ChatbotScreen = ({ navigation }: { navigation: any }) => {
   ]);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const { isFreeUser, setShowUpgradeModal, setUpgradeModalCancelCallback } = useSubscription();
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Set up navigation callback for modal cancellation
+  // Show upgrade modal for free users
   useEffect(() => {
+    console.log('[ChatbotScreen] isFreeUser:', isFreeUser);
     if (isFreeUser) {
-      setUpgradeModalCancelCallback(() => {
-        navigation.navigate('Main');
-      });
+      console.log('[ChatbotScreen] Showing upgrade modal for free user');
+      setShowUpgradeModal(true);
     }
-  }, [isFreeUser, setUpgradeModalCancelCallback, navigation]);
-
-  // Show upgrade modal for free users every time screen is focused
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('[ChatbotScreen] Screen focused, isFreeUser:', isFreeUser);
-      if (isFreeUser) {
-        console.log('[ChatbotScreen] Showing upgrade modal for free user');
-        setShowUpgradeModal(true);
-      }
-    }, [isFreeUser, setShowUpgradeModal])
-  );
+  }, [isFreeUser, setShowUpgradeModal]);
 
   const handleSend = () => {
     if (inputText.trim().length > 0) {
@@ -3684,27 +3673,16 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
-  const { isFreeUser, setShowUpgradeModal, setUpgradeModalCancelCallback } = useSubscription();
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
 
-  // Set up navigation callback for modal cancellation
+  // Show upgrade modal for free users
   useEffect(() => {
+    console.log('[NotificationSettingsScreen] isFreeUser:', isFreeUser);
     if (isFreeUser) {
-      setUpgradeModalCancelCallback(() => {
-        navigation.navigate('Main');
-      });
+      console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
+      setShowUpgradeModal(true);
     }
-  }, [isFreeUser, setUpgradeModalCancelCallback, navigation]);
-
-  // Show upgrade modal for free users every time screen is focused
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('[NotificationSettingsScreen] Screen focused, isFreeUser:', isFreeUser);
-      if (isFreeUser) {
-        console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
-        setShowUpgradeModal(true);
-      }
-    }, [isFreeUser, setShowUpgradeModal])
-  );
+  }, [isFreeUser, setShowUpgradeModal]);
 
 
 
