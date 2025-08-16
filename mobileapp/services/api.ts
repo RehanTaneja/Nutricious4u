@@ -534,6 +534,12 @@ export const refreshFreePlans = async (): Promise<{ success: boolean; message: s
   return response.data;
 };
 
+// --- Get All User Profiles (for Messages Screen) ---
+export const getAllUserProfiles = async () => {
+  const response = await api.get('/users/all-profiles');
+  return response.data;
+};
+
 // --- Subscription Management ---
 export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
   const response = await api.get('/subscription/plans');

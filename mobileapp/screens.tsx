@@ -48,7 +48,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -5979,9 +5979,9 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
     async function fetchData() {
       setLoading(true);
       try {
-        // 1. Fetch users from backend API only
-        const usersFromAPI = await listNonDieticianUsers();
-        console.log('[DieticianMessagesListScreen] Users from API:', usersFromAPI);
+        // 1. Fetch all user profiles from backend API (including dieticians)
+        const usersFromAPI = await getAllUserProfiles();
+        console.log('[DieticianMessagesListScreen] All users from API:', usersFromAPI);
         
         let filteredProfiles: any[] = [];
         if (!usersFromAPI || usersFromAPI.length === 0) {
@@ -5989,7 +5989,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
         } else {
           console.log('[DieticianMessagesListScreen] API returned users:', usersFromAPI.length);
           filteredProfiles = usersFromAPI.filter((u: any) => {
-            const isValid = u && u.userId && u.email && u.email !== 'nutricious4u@gmail.com';
+            const isValid = u && u.userId && u.email;
             if (!isValid) {
               console.log('[DieticianMessagesListScreen] Skipping invalid user:', u);
               return false;
@@ -6014,7 +6014,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
         }
         // Set users immediately after filtering (like Upload Diet screen)
         console.log('[DieticianMessagesListScreen] Found users:', filteredProfiles.length);
-        console.log('[DieticianMessagesListScreen] Users:', filteredProfiles.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
+        console.log('[DieticianMessagesListScreen] Users:', filteredProfiles.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName, isDietician: u.isDietician })));
         
         if (isMounted) {
           setUserList(filteredProfiles);

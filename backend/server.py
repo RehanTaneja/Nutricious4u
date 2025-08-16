@@ -1432,6 +1432,57 @@ async def refresh_free_plans():
         logger.error(f"Error refreshing free plans: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to refresh free plans: {e}")
 
+@api_router.get("/users/all-profiles")
+async def get_all_user_profiles():
+    """
+    Returns a list of all user profiles (including dieticians) for the messages screen.
+    This endpoint is used by the dietician messages screen to show all users.
+    """
+    try:
+        check_firebase_availability()
+        
+        users_ref = firestore_db.collection("user_profiles")
+        all_users = users_ref.stream()
+        
+        user_profiles = []
+        
+        for user in all_users:
+            user_data = user.to_dict()
+            user_id = user.id
+            
+            # Skip placeholder users and test users
+            is_placeholder = (
+                user_data.get("firstName", "User") == "User" and
+                user_data.get("lastName", "") == "" and
+                (not user_data.get("email") or user_data.get("email", "").endswith("@example.com"))
+            )
+            
+            is_test_user = (
+                user_data.get("firstName", "").lower() == "test" or
+                user_data.get("email", "").startswith("test@") or
+                user_data.get("userId", "").startswith("test_") or
+                "test" in user_data.get("userId", "").lower()
+            )
+            
+            has_proper_name = (
+                user_data.get("firstName") and 
+                user_data.get("firstName") != "User" and
+                user_data.get("firstName") != "Test" and
+                user_data.get("firstName").strip() != ""
+            )
+            
+            if not is_placeholder and not is_test_user and has_proper_name:
+                # Add the document ID as userId
+                user_data["userId"] = user_id
+                user_profiles.append(user_data)
+        
+        logger.info(f"Retrieved {len(user_profiles)} user profiles for messages screen")
+        return user_profiles
+        
+    except Exception as e:
+        logger.error(f"Error getting all user profiles: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user profiles")
+
 # --- Diet Notification Endpoints ---
 @api_router.post("/users/{user_id}/diet/notifications/extract")
 async def extract_diet_notifications(user_id: str):
