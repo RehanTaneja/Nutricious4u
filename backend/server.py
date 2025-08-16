@@ -2369,7 +2369,7 @@ async def get_subscription_status(userId: str):
             "currentSubscriptionAmount": user_data.get("currentSubscriptionAmount", 0.0),
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
             "isSubscriptionActive": user_data.get("isSubscriptionActive", False),
-            "isFreeUser": not user_data.get("isSubscriptionActive", False) or not user_data.get("subscriptionPlan")
+            "isFreeUser": not user_data.get("isSubscriptionActive", False)
         }
         
         # Log the data being returned for debugging
@@ -2409,9 +2409,13 @@ async def cancel_subscription(userId: str):
         if not user_data.get("isSubscriptionActive", False):
             raise HTTPException(status_code=400, detail="No active subscription to cancel")
         
-        # Cancel subscription by setting it to inactive
+        # Cancel subscription by setting it to inactive and clearing plan
         cancel_data = {
-            "isSubscriptionActive": False
+            "isSubscriptionActive": False,
+            "subscriptionPlan": None,
+            "subscriptionStartDate": None,
+            "subscriptionEndDate": None,
+            "currentSubscriptionAmount": 0.0
         }
         
         firestore_db.collection("user_profiles").document(userId).update(cancel_data)

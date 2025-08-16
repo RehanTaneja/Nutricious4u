@@ -7839,6 +7839,9 @@ const styles = StyleSheet.create({
   inactiveBadge: {
     backgroundColor: COLORS.error,
   },
+  freeBadge: {
+    backgroundColor: '#34D399',
+  },
   statusText: {
     color: COLORS.white,
     fontSize: 12,
@@ -8504,6 +8507,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [addingAmount, setAddingAmount] = useState(false);
+  const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
     fetchSubscriptionStatus();
@@ -8590,20 +8594,24 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           {
             text: 'Yes, Cancel',
             style: 'destructive',
-            onPress: async () => {
-              try {
-                const result = await cancelSubscription(userId);
-                if (result.success) {
-                  Alert.alert('Success', result.message);
-                  // Refresh subscription status
-                  fetchSubscriptionStatus();
-                } else {
-                  Alert.alert('Error', result.message || 'Failed to cancel subscription');
+                            onPress: async () => {
+                  try {
+                    const result = await cancelSubscription(userId);
+                    if (result.success) {
+                      Alert.alert('Success', result.message);
+                      // Refresh subscription status
+                      fetchSubscriptionStatus();
+                      // Refresh the subscription context
+                      refreshSubscriptionStatus();
+                      // Navigate back to main screen to refresh app context
+                      navigation.navigate('Main');
+                    } else {
+                      Alert.alert('Error', result.message || 'Failed to cancel subscription');
+                    }
+                  } catch (e: any) {
+                    Alert.alert('Error', e.message || 'Failed to cancel subscription');
+                  }
                 }
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Failed to cancel subscription');
-              }
-            }
           }
         ]
       );
@@ -8686,10 +8694,10 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={styles.subscriptionTitle}>Current Plan</Text>
                 <View style={[
                   styles.statusBadge,
-                  subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge
+                  subscription.isFreeUser ? styles.freeBadge : (subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge)
                 ]}>
                   <Text style={styles.statusText}>
-                    {subscription.isSubscriptionActive ? 'Active' : 'Inactive'}
+                    {subscription.isFreeUser ? 'Free Plan' : (subscription.isSubscriptionActive ? 'Active' : 'Inactive')}
                   </Text>
                 </View>
               </View>
