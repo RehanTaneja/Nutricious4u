@@ -102,27 +102,26 @@ export interface LogSummaryResponse {
 }
 
 export interface UserProfile {
-  userId: string;
+  id: string;
+  userId?: string; // For backward compatibility
   firstName: string;
   lastName: string;
   age: number;
   gender: string;
+  currentWeight: number;
+  goalWeight: number;
+  height: number;
+  dietaryPreference: string;
+  favouriteCuisine: string;
+  allergies: string;
+  medicalConditions: string;
+  targetCalories: number;
+  targetProtein: number;
+  targetFat: number;
+  activityLevel: string;
+  stepGoal: number;
+  caloriesBurnedGoal: number;
   email: string;
-  currentWeight?: number;
-  goalWeight?: number;
-  height?: number;
-  dietaryPreference?: string; // veg, non-veg, vegan
-  favouriteCuisine?: string;
-  allergies?: string;
-  medicalConditions?: string;
-  streakCount?: number;
-  lastFoodLogDate?: string;
-  targetCalories?: number;
-  targetProtein?: number;
-  targetFat?: number;
-  activityLevel?: string;
-  stepGoal?: number;
-  caloriesBurnedGoal?: number;
   dietPdfUrl?: string; // URL to the user's diet PDF
   lastDietUpload?: string; // Timestamp of last diet upload
   dieticianId?: string; // ID of the dietician who uploaded the diet
@@ -135,6 +134,13 @@ export interface UserProfile {
   // Plan queuing fields
   queuedPlans?: QueuedPlan[];
   totalDueAmount?: number;
+}
+
+export interface QueuedPlan {
+  planId: string;
+  startDate: string;
+  endDate: string;
+  amount: number;
 }
 
 export interface UpdateUserProfile {
@@ -170,6 +176,8 @@ export interface SubscriptionPlan {
   duration: string;
   price: number;
   description: string;
+  features?: string[]; // List of features included in this plan
+  isFree?: boolean; // Indicates if this is the free plan
 }
 
 export interface SubscriptionStatus {
@@ -179,6 +187,7 @@ export interface SubscriptionStatus {
   currentSubscriptionAmount: number;
   totalAmountPaid: number;
   isSubscriptionActive: boolean;
+  isFreeUser?: boolean; // Indicates if user is on free plan
 }
 
 export interface Notification {
@@ -531,6 +540,11 @@ export const selectSubscription = async (userId: string, planId: string): Promis
 
 export const getSubscriptionStatus = async (userId: string): Promise<SubscriptionStatus> => {
   const response = await api.get(`/subscription/status/${userId}`);
+  return response.data;
+};
+
+export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post(`/subscription/cancel/${userId}`);
   return response.data;
 };
 

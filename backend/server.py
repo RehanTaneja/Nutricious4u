@@ -2204,25 +2204,69 @@ async def get_subscription_plans():
     try:
         plans = [
             {
+                "planId": "free",
+                "name": "Free Plan",
+                "duration": "Forever",
+                "price": 0.0,
+                "description": "Basic features to get you started",
+                "features": [
+                    "Basic food logging",
+                    "Basic workout tracking",
+                    "Step counting",
+                    "Basic progress tracking"
+                ],
+                "isFree": True
+            },
+            {
                 "planId": "1month",
                 "name": "1 Month Plan",
                 "duration": "1 month",
                 "price": 5000.0,
-                "description": "Perfect for getting started with your fitness journey"
+                "description": "Access to premium features for 1 month",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning"
+                ],
+                "isFree": False
             },
             {
                 "planId": "3months", 
                 "name": "3 Months Plan",
                 "duration": "3 months",
                 "price": 8000.0,
-                "description": "Great value for consistent progress tracking"
+                "description": "Access to premium features for 3 months",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning",
+                    "Progress reports"
+                ],
+                "isFree": False
             },
             {
                 "planId": "6months",
                 "name": "6 Months Plan", 
                 "duration": "6 months",
                 "price": 20000.0,
-                "description": "Best value for long-term fitness goals"
+                "description": "Access to premium features for 6 months",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning",
+                    "Progress reports",
+                    "Nutritional counseling"
+                ],
+                "isFree": False
             }
         ]
         return {"plans": plans}
@@ -2324,7 +2368,8 @@ async def get_subscription_status(userId: str):
             "subscriptionEndDate": user_data.get("subscriptionEndDate"),
             "currentSubscriptionAmount": user_data.get("currentSubscriptionAmount", 0.0),
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
-            "isSubscriptionActive": user_data.get("isSubscriptionActive", False)
+            "isSubscriptionActive": user_data.get("isSubscriptionActive", False),
+            "isFreeUser": not user_data.get("isSubscriptionActive", False) or not user_data.get("subscriptionPlan")
         }
         
         # Log the data being returned for debugging
@@ -2347,6 +2392,37 @@ async def get_subscription_status(userId: str):
     except Exception as e:
         logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get subscription status")
+
+@api_router.post("/subscription/cancel/{userId}")
+async def cancel_subscription(userId: str):
+    """Cancel a user's subscription and revert to free plan"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        # Check if user has an active subscription to cancel
+        if not user_data.get("isSubscriptionActive", False):
+            raise HTTPException(status_code=400, detail="No active subscription to cancel")
+        
+        # Cancel subscription by setting it to inactive
+        cancel_data = {
+            "isSubscriptionActive": False
+        }
+        
+        firestore_db.collection("user_profiles").document(userId).update(cancel_data)
+        
+        return {"success": True, "message": "Subscription cancelled successfully. You are now on the free plan."}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[CANCEL SUBSCRIPTION] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
 
 @api_router.post("/subscription/reset/{userId}")
 async def reset_subscription(userId: str):

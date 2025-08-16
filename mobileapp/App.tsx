@@ -6,6 +6,7 @@ import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-
 import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
+import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
 import { getUserProfile, createUserProfile } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
@@ -90,7 +91,7 @@ const MainTabs = ({ isDietician }: { isDietician: boolean }) => (
   </Tab.Navigator>
 );
 
-export default function App() {
+function AppContent() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
@@ -107,6 +108,7 @@ export default function App() {
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
+  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser } = useSubscription();
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state
@@ -302,12 +304,26 @@ export default function App() {
                   try {
                     // Create dietician profile through backend (don't check if exists first)
                     await createUserProfile({
-                      userId: firebaseUser.uid,
+                      id: firebaseUser.uid,
+                      userId: firebaseUser.uid, // For backward compatibility
                       firstName: 'Ekta',
                       lastName: 'Taneja',
                       age: 30,
                       gender: 'female',
-                      email: firebaseUser.email || 'nutricious4u@gmail.com'
+                      email: firebaseUser.email || 'nutricious4u@gmail.com',
+                      currentWeight: 70,
+                      goalWeight: 70,
+                      height: 170,
+                      dietaryPreference: 'vegetarian',
+                      favouriteCuisine: '',
+                      allergies: '',
+                      medicalConditions: '',
+                      targetCalories: 2000,
+                      targetProtein: 150,
+                      targetFat: 65,
+                      activityLevel: 'moderate',
+                      stepGoal: 10000,
+                      caloriesBurnedGoal: 500
                     });
                     setForceReload(x => x + 1); // force re-render
                   } catch (error) {
@@ -373,22 +389,18 @@ export default function App() {
                       const { getSubscriptionStatus } = await import('./services/api');
                       const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
                       
-                      // If user has no active subscription, show popup
-                      if (!subscriptionStatus.isSubscriptionActive) {
-                        console.log('[Subscription Check] User has no active subscription, showing popup');
+                      // Check if user is on free plan or has active subscription
+                      if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
+                        console.log('[Subscription Check] User is on free plan or has no active subscription');
                         setHasActiveSubscription(false);
+                        setIsFreeUser(true);
                         
-                        // Fetch plans and show popup
-                        try {
-                          const plans = await getSubscriptionPlans();
-                          setSubscriptionPlans(plans);
-                          setShowSubscriptionPopup(true);
-                        } catch (error) {
-                          console.error('Error fetching subscription plans:', error);
-                        }
+                        // Don't show popup for free users - they can use basic features
+                        // Only show popup if they explicitly need premium features
                       } else {
-                        console.log('[Subscription Check] User has active subscription');
+                        console.log('[Subscription Check] User has active paid subscription');
                         setHasActiveSubscription(true);
+                        setIsFreeUser(false);
                       }
                       
                       // Check and reset daily data
@@ -398,12 +410,14 @@ export default function App() {
                       await checkAppLockStatus();
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
-                      // If we can't check subscription, assume they need one
+                      // If we can't check subscription, assume they are free users
                       setHasActiveSubscription(false);
+                      setIsFreeUser(true);
                     }
                   } else if (!isDieticianAccount && !profile) {
-                    // New user without profile - they'll need subscription after quiz
+                    // New user without profile - default to free plan
                     setHasActiveSubscription(false);
+                    setIsFreeUser(true);
                   }
                 }
               } catch (e) {
@@ -544,12 +558,6 @@ export default function App() {
               initialParams={{ userId: user.uid }}
               options={{ headerShown: false }}
             />
-          ) : hasCompletedQuiz && !isDietician && hasActiveSubscription === false ? (
-            <Stack.Screen
-              name="SubscriptionSelection"
-              component={SubscriptionSelectionScreen}
-              options={{ headerShown: false }}
-            />
           ) : (
             <>
               <Stack.Screen
@@ -630,6 +638,58 @@ export default function App() {
                 }}
               >
                 <Text style={styles.lockModalContactButtonText}>Contact Dietician</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Upgrade Subscription Modal */}
+      <Modal
+        visible={showUpgradeModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowUpgradeModal(false)}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContainer}>
+            <Text style={styles.upgradeModalTitle}>Upgrade Your Subscription</Text>
+            <Text style={styles.upgradeModalSubtitle}>
+              This feature is only available for premium users
+            </Text>
+            
+            <View style={styles.upgradeModalFeatures}>
+              <Text style={styles.upgradeModalFeaturesTitle}>Premium Features Include:</Text>
+              <View style={styles.upgradeModalFeatureItem}>
+                <Text style={styles.upgradeModalFeatureText}>• AI Chatbot Access</Text>
+              </View>
+              <View style={styles.upgradeModalFeatureItem}>
+                <Text style={styles.upgradeModalFeatureText}>• My Diet Plan Access</Text>
+              </View>
+              <View style={styles.upgradeModalFeatureItem}>
+                <Text style={styles.upgradeModalFeatureText}>• Custom Notification Settings</Text>
+              </View>
+              <View style={styles.upgradeModalFeatureItem}>
+                <Text style={styles.upgradeModalFeatureText}>• Priority Support</Text>
+              </View>
+            </View>
+            
+            <View style={styles.upgradeModalButtons}>
+              <TouchableOpacity
+                style={styles.upgradeModalCancelButton}
+                onPress={() => setShowUpgradeModal(false)}
+              >
+                <Text style={styles.upgradeModalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.upgradeModalUpgradeButton}
+                onPress={() => {
+                  setShowUpgradeModal(false);
+                  // Navigate to MySubscriptions - this will be handled by the navigation context
+                }}
+              >
+                <Text style={styles.upgradeModalUpgradeButtonText}>Upgrade Now</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -949,4 +1009,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // Upgrade Modal Styles
+  upgradeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  upgradeModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  upgradeModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#27272A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  upgradeModalSubtitle: {
+    fontSize: 14,
+    color: '#A1A1AA',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  upgradeModalFeatures: {
+    marginBottom: 24,
+  },
+  upgradeModalFeaturesTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#27272A',
+    marginBottom: 12,
+  },
+  upgradeModalFeatureItem: {
+    marginBottom: 8,
+  },
+  upgradeModalFeatureText: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  upgradeModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  upgradeModalCancelButton: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    flex: 0.48,
+    alignItems: 'center',
+  },
+  upgradeModalCancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  upgradeModalUpgradeButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    flex: 0.48,
+    alignItems: 'center',
+  },
+  upgradeModalUpgradeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
+
+export default function App() {
+  return (
+    <SubscriptionProvider>
+      <AppContent />
+    </SubscriptionProvider>
+  );
+}

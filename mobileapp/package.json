@@ -43,7 +43,7 @@
     "expo-sensors": "~14.1.4",
     "expo-status-bar": "~2.2.3",
     "firebase": "^9.6.11",
-    "lucide-react-native": "^0.522.0",
+    "lucide-react-native": "^0.531.0",
     "react": "19.0.0",
     "react-native": "0.79.5",
     "react-native-blob-util": "^0.22.2",

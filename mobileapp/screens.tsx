@@ -33,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
 import { AppContext } from './contexts/AppContext';
+import { useSubscription } from './contexts/SubscriptionContext';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { EmailAuthProvider } from 'firebase/auth';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
@@ -47,7 +48,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -611,12 +612,24 @@ const LoginSignupScreen = () => {
       if (user) {
         // Create user profile
         await createUserProfile({
-          userId: user.uid,
+          id: user.uid,
+          userId: user.uid, // For backward compatibility
           firstName,
           lastName,
           age: parseInt(age),
           gender,
           email,
+          currentWeight: 70,
+          goalWeight: 70,
+          height: 170,
+          dietaryPreference: 'vegetarian',
+          favouriteCuisine: '',
+          allergies: '',
+          medicalConditions: '',
+          targetCalories: 2000,
+          targetProtein: 150,
+          targetFat: 65,
+          activityLevel: 'moderate',
           stepGoal: 10000,
           caloriesBurnedGoal: 500
         });
@@ -661,12 +674,24 @@ const LoginSignupScreen = () => {
           if (user) {
             // Create user profile for dietician
             await createUserProfile({
-              userId: user.uid,
+              id: user.uid,
+              userId: user.uid, // For backward compatibility
               firstName: 'Ekta',
               lastName: 'Taneja',
               age: 45,
               gender: 'female',
               email,
+              currentWeight: 70,
+              goalWeight: 70,
+              height: 170,
+              dietaryPreference: 'vegetarian',
+              favouriteCuisine: '',
+              allergies: '',
+              medicalConditions: '',
+              targetCalories: 2000,
+              targetProtein: 150,
+              targetFat: 65,
+              activityLevel: 'moderate',
               stepGoal: 10000,
               caloriesBurnedGoal: 500
             });
@@ -993,6 +1018,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const userId = auth.currentUser?.uid;
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const refresh = route?.params?.refresh;
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
   const [showFoodModal, setShowFoodModal] = useState(false);
   const [showWorkoutModal, setShowWorkoutModal] = useState(false);
   const [foodName, setFoodName] = useState('');
@@ -1110,6 +1136,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   }, []);
 
   const handleOpenDiet = () => {
+    if (isFreeUser) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    
     if (dietPdfUrl) {
       console.log('Opening diet PDF with URL:', dietPdfUrl);
       const pdfUrl = getPdfUrl();
@@ -3035,9 +3066,14 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
 
   const handleSave = async () => {
     if (!editProfile) return;
+    const userId = editProfile.userId || editProfile.id;
+    if (!userId) {
+      setError('User ID not found');
+      return;
+    }
     setLoading(true);
     try {
-      await updateUserProfile(editProfile.userId, {
+      await updateUserProfile(userId, {
         ...editProfile,
         targetCalories: targets.calories,
         targetProtein: targets.protein,
@@ -3256,6 +3292,14 @@ export const ChatbotScreen = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
+
+  // Show upgrade modal for free users
+  useEffect(() => {
+    if (isFreeUser) {
+      setShowUpgradeModal(true);
+    }
+  }, [isFreeUser, setShowUpgradeModal]);
 
   const handleSend = () => {
     if (inputText.trim().length > 0) {
@@ -3625,6 +3669,14 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
+  const { isFreeUser, setShowUpgradeModal } = useSubscription();
+
+  // Show upgrade modal for free users
+  useEffect(() => {
+    if (isFreeUser) {
+      setShowUpgradeModal(true);
+    }
+  }, [isFreeUser, setShowUpgradeModal]);
 
 
 
@@ -7715,6 +7767,15 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 20,
   },
+  planFeatures: {
+    marginTop: 8,
+  },
+  planFeatureText: {
+    fontSize: 12,
+    color: COLORS.placeholder,
+    lineHeight: 16,
+    marginBottom: 2,
+  },
   planSelectedIndicator: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
@@ -8287,6 +8348,14 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { isFreeUser } = useSubscription();
+
+  // Only allow free users to access this screen
+  useEffect(() => {
+    if (!isFreeUser) {
+      navigation.navigate('Main');
+    }
+  }, [isFreeUser, navigation]);
   useEffect(() => {
     fetchPlans();
   }, []);
@@ -8369,7 +8438,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
     <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
       <View style={styles.settingsContainer}>
         <Text style={styles.screenTitle}>Choose Your Plan</Text>
-        <Text style={styles.screenSubtitle}>Select a subscription plan to continue using the app</Text>
+        <Text style={styles.screenSubtitle}>Select a subscription plan to unlock premium features</Text>
         
         {error && (
           <View style={styles.subscriptionErrorContainer}>
@@ -8391,10 +8460,19 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
             >
               <View style={styles.planHeader}>
                 <Text style={styles.planName}>{plan.name}</Text>
-                <Text style={styles.planPrice}>₹{plan.price.toLocaleString()}</Text>
+                <Text style={styles.planPrice}>
+                  {plan.isFree ? 'Free' : `₹${plan.price.toLocaleString()}`}
+                </Text>
               </View>
               <Text style={styles.planDuration}>{plan.duration}</Text>
               <Text style={styles.planDescription}>{plan.description}</Text>
+              {plan.features && plan.features.length > 0 && (
+                <View style={styles.planFeatures}>
+                  {plan.features.map((feature, index) => (
+                    <Text key={index} style={styles.planFeatureText}>• {feature}</Text>
+                  ))}
+                </View>
+              )}
               {selectedPlan === plan.planId && (
                 <View style={styles.planSelectedIndicator}>
                   <Text style={styles.planSelectedIndicatorText}>✓ Selected</Text>
@@ -8463,8 +8541,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const checkIfPlanSelectionNeeded = (status: SubscriptionStatus) => {
-    // Show popup if user has no plan or their plan has expired
-    if (!status.subscriptionPlan || !status.isSubscriptionActive) {
+    // Only show popup if user is not on free plan and has no active subscription
+    if (!status.isFreeUser && (!status.subscriptionPlan || !status.isSubscriptionActive)) {
       fetchPlans();
       setShowPlanPopup(true);
     }
@@ -8493,6 +8571,44 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       Alert.alert('Error', e.message || 'Failed to select plan');
     } finally {
       setAddingAmount(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      Alert.alert(
+        'Cancel Subscription',
+        'Are you sure you want to cancel your subscription? You will be moved to the free plan.',
+        [
+          {
+            text: 'No, Keep It',
+            style: 'cancel'
+          },
+          {
+            text: 'Yes, Cancel',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const result = await cancelSubscription(userId);
+                if (result.success) {
+                  Alert.alert('Success', result.message);
+                  // Refresh subscription status
+                  fetchSubscriptionStatus();
+                } else {
+                  Alert.alert('Error', result.message || 'Failed to cancel subscription');
+                }
+              } catch (e: any) {
+                Alert.alert('Error', e.message || 'Failed to cancel subscription');
+              }
+            }
+          }
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to cancel subscription');
     }
   };
 
@@ -8582,7 +8698,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Plan:</Text>
                   <Text style={styles.detailValue}>
-                    {subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan'}
+                    {subscription.isFreeUser ? 'Free Plan' : (subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan')}
                   </Text>
                 </View>
                 
@@ -8609,13 +8725,35 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               </View>
             </View>
             
-            {!subscription.isSubscriptionActive && (
+            {!subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
                 <Text style={styles.renewalText}>Your subscription has expired</Text>
                 <StyledButton
                   title="Renew Subscription"
                   onPress={() => navigation.navigate('SubscriptionSelection')}
                   style={styles.renewalButton}
+                />
+              </View>
+            )}
+            
+            {subscription.isFreeUser && (
+              <View style={styles.renewalContainer}>
+                <Text style={styles.renewalText}>You are currently on the free plan</Text>
+                <StyledButton
+                  title="Upgrade to Premium"
+                  onPress={() => navigation.navigate('SubscriptionSelection')}
+                  style={styles.renewalButton}
+                />
+              </View>
+            )}
+            
+            {subscription.isSubscriptionActive && !subscription.isFreeUser && (
+              <View style={styles.renewalContainer}>
+                <Text style={styles.renewalText}>Your subscription is active</Text>
+                <StyledButton
+                  title="Cancel Subscription"
+                  onPress={() => handleCancelSubscription()}
+                  style={[styles.renewalButton, { backgroundColor: '#ff4444' }]}
                 />
               </View>
             )}
@@ -10030,7 +10168,8 @@ const createMissingUserProfile = async (userId: string, userData: any) => {
   try {
     console.log('[UploadDietScreen] Attempting to create missing user profile for:', userId);
     await createUserProfile({
-      userId: userId,
+      id: userId,
+      userId: userId, // For backward compatibility
       firstName: userData.firstName || 'User',
       lastName: userData.lastName || '',
       age: userData.age || 25,
@@ -10039,7 +10178,16 @@ const createMissingUserProfile = async (userId: string, userData: any) => {
       currentWeight: userData.currentWeight || 70,
       height: userData.height || 170,
       activityLevel: userData.activityLevel || 'moderate',
-      goalWeight: userData.goalWeight || 70
+      goalWeight: userData.goalWeight || 70,
+      dietaryPreference: userData.dietaryPreference || 'vegetarian',
+      favouriteCuisine: userData.favouriteCuisine || '',
+      allergies: userData.allergies || '',
+      medicalConditions: userData.medicalConditions || '',
+      targetCalories: userData.targetCalories || 2000,
+      targetProtein: userData.targetProtein || 150,
+      targetFat: userData.targetFat || 65,
+      stepGoal: userData.stepGoal || 10000,
+      caloriesBurnedGoal: userData.caloriesBurnedGoal || 500
     });
     console.log('[UploadDietScreen] Successfully created user profile for:', userId);
     return true;
