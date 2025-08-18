@@ -1162,12 +1162,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             // Check if user has 1 day remaining and notify dietician
             if (daysRemaining === 1) {
               try {
-                await fetch(`${API_URL}/diet/check-reminders`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  }
-                });
+                // Use enhanced API wrapper instead of direct fetch
+                const enhancedApi = await import('./services/api');
+                await enhancedApi.default.post('/diet/check-reminders', {});
                 console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
               } catch (notificationError) {
                 console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
@@ -2378,13 +2375,12 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
     setSearchResults([]);
     try {
       // Use the backend endpoint for food search
-      const response = await fetch(`${API_URL}/food/search?query=${encodeURIComponent(searchQuery)}`);
-      if (!response.ok) throw new Error('Failed to fetch food data.');
-      const data = await response.json();
-      setSearchResults(data.foods);
+      const { searchFood } = await import('./services/api');
+      const foods = await searchFood(searchQuery);
+      setSearchResults(foods);
       // Set default serving size to 100 for all results
       const defaultSizes: { [id: string]: string } = {};
-      data.foods.forEach((item: FoodItem) => { defaultSizes[item.id] = '100'; });
+      foods.forEach((item: FoodItem) => { defaultSizes[item.id] = '100'; });
       setServingSizes(defaultSizes);
     } catch (e) {
       setError('Failed to fetch food data. Please try again.');
@@ -5777,24 +5773,16 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   // Send push notification via backend (for cross-device messaging)
   const sendPushNotification = async (recipientUserId: string, message: string, senderName: string = '') => {
     try {
-      const response = await fetch(`${API_URL}/notifications/send-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recipientUserId,
-          message,
-          senderName,
-          senderUserId: auth.currentUser?.uid
-        })
+      // Use enhanced API wrapper instead of direct fetch
+      const enhancedApi = await import('./services/api');
+      await enhancedApi.default.post('/notifications/send-message', {
+        recipientUserId,
+        message,
+        senderName,
+        senderUserId: auth.currentUser?.uid
       });
       
-      if (response.ok) {
-        console.log('[Message Notifications] Push notification sent successfully');
-      } else {
-        console.error('[Message Notifications] Failed to send push notification:', response.status);
-      }
+      console.log('[Message Notifications] Push notification sent successfully');
     } catch (error) {
       console.error('[Message Notifications] Error sending push notification:', error);
     }

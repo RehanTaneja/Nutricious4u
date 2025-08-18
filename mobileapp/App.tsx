@@ -129,12 +129,8 @@ function AppContent() {
         console.log('[Daily Reset] New day detected, resetting daily data');
         
         // Reset daily data by calling the backend
-        await fetch(`${API_URL}/user/${user.uid}/reset-daily`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
+        const enhancedApi = await import('./services/api');
+        await enhancedApi.default.post(`/user/${user.uid}/reset-daily`, {});
         
         // Store the new date
         await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
