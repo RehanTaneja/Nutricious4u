@@ -36,6 +36,66 @@ logger.log('[API] Final API_URL:', API_URL);
 // Request deduplication to prevent simultaneous identical requests
 const pendingRequests = new Map<string, Promise<any>>();
 
+// Request queue to prevent concurrent requests on iOS
+class RequestQueue {
+  private queue: Array<() => Promise<any>> = [];
+  private processing = false;
+  private maxConcurrent = Platform.OS === 'ios' ? 2 : 5; // Limit concurrent requests on iOS
+  private activeRequests = 0;
+
+  async add<T>(requestFn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          this.activeRequests++;
+          const result = await requestFn();
+          resolve(result);
+          return result;
+        } catch (error) {
+          reject(error);
+          throw error;
+        } finally {
+          this.activeRequests--;
+          this.processNext();
+        }
+      });
+      
+      this.processNext();
+    });
+  }
+
+  private async processNext() {
+    if (this.processing || this.queue.length === 0 || this.activeRequests >= this.maxConcurrent) {
+      return;
+    }
+
+    this.processing = true;
+    
+    while (this.queue.length > 0 && this.activeRequests < this.maxConcurrent) {
+      const requestFn = this.queue.shift();
+      if (requestFn) {
+        // Add small delay between requests on iOS to prevent connection issues
+        if (Platform.OS === 'ios' && this.activeRequests > 0) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        requestFn();
+      }
+    }
+    
+    this.processing = false;
+  }
+
+  getQueueLength(): number {
+    return this.queue.length;
+  }
+
+  getActiveRequests(): number {
+    return this.activeRequests;
+  }
+}
+
+const requestQueue = new RequestQueue();
+
 // iOS-specific axios configuration with connection pooling
 const axiosConfig = {
   baseURL: API_URL,
@@ -43,26 +103,18 @@ const axiosConfig = {
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
+    'Accept': 'application/json',
+    'Connection': 'keep-alive',
+    'Keep-Alive': 'timeout=75, max=1000',
   },
   // iOS-specific settings
   ...(Platform.OS === 'ios' && {
-    // Add iOS-specific headers
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0',
-      'Accept': 'application/json',
-      'Connection': 'keep-alive',
-      'Keep-Alive': 'timeout=75, max=1000',
-    },
     // Prevent connection reuse issues on iOS
     maxRedirects: 0,
     validateStatus: (status: number) => status < 500, // Don't throw on 4xx errors
     // Add connection pooling settings
     httpAgent: undefined, // Let axios handle connection pooling
     httpsAgent: undefined,
-    // Add retry configuration
-    retry: 1,
-    retryDelay: 1000,
   })
 };
 
@@ -212,7 +264,7 @@ api.interceptors.request.use(
   }
 );
 
-// Enhanced API wrapper with request deduplication and circuit breaker
+// Enhanced API wrapper with request deduplication, circuit breaker, and queuing
 const enhancedApi = {
   get: async (url: string, config?: any) => {
     const requestKey = `GET:${url}`;
@@ -223,8 +275,10 @@ const enhancedApi = {
       return pendingRequests.get(requestKey);
     }
     
-    // Create new request
-    const requestPromise = circuitBreaker.execute(() => api.get(url, config));
+    // Create new request with queuing
+    const requestPromise = requestQueue.add(() => 
+      circuitBreaker.execute(() => api.get(url, config))
+    );
     pendingRequests.set(requestKey, requestPromise);
     
     try {
@@ -237,19 +291,27 @@ const enhancedApi = {
   },
   
   post: async (url: string, data?: any, config?: any) => {
-    return circuitBreaker.execute(() => api.post(url, data, config));
+    return requestQueue.add(() => 
+      circuitBreaker.execute(() => api.post(url, data, config))
+    );
   },
   
   patch: async (url: string, data?: any, config?: any) => {
-    return circuitBreaker.execute(() => api.patch(url, data, config));
+    return requestQueue.add(() => 
+      circuitBreaker.execute(() => api.patch(url, data, config))
+    );
   },
   
   delete: async (url: string, config?: any) => {
-    return circuitBreaker.execute(() => api.delete(url, config));
+    return requestQueue.add(() => 
+      circuitBreaker.execute(() => api.delete(url, config))
+    );
   },
   
   put: async (url: string, data?: any, config?: any) => {
-    return circuitBreaker.execute(() => api.put(url, data, config));
+    return requestQueue.add(() => 
+      circuitBreaker.execute(() => api.put(url, data, config))
+    );
   }
 };
 
@@ -791,6 +853,15 @@ export const getUserLockStatus = async (userId: string) => {
 export const testUserExists = async (userId: string) => {
   const response = await enhancedApi.get(`/users/${userId}/test`);
   return response.data;
+};
+
+// Debug function to get queue status
+export const getQueueStatus = () => {
+  return {
+    queueLength: requestQueue.getQueueLength(),
+    activeRequests: requestQueue.getActiveRequests(),
+    platform: Platform.OS
+  };
 };
 
 export default enhancedApi; 

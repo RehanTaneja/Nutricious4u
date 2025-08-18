@@ -128,9 +128,16 @@ function AppContent() {
       if (storedDate !== today) {
         console.log('[Daily Reset] New day detected, resetting daily data');
         
-        // Reset daily data by calling the backend
+        // Reset daily data by calling the backend with timeout
         const enhancedApi = await import('./services/api');
-        await enhancedApi.default.post(`/user/${user.uid}/reset-daily`, {});
+        const resetPromise = enhancedApi.default.post(`/user/${user.uid}/reset-daily`, {});
+        
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Daily reset timeout')), 10000)
+        );
+        
+        await Promise.race([resetPromise, timeoutPromise]);
         
         // Store the new date
         await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
@@ -141,6 +148,7 @@ function AppContent() {
       }
     } catch (error) {
       console.error('[Daily Reset] Error resetting daily data:', error);
+      // Don't throw error to prevent login sequence failure
     }
   };
 
@@ -149,7 +157,13 @@ function AppContent() {
     if (!user?.uid || isDietician) return; // Don't check for dieticians
     
     try {
-      const lockStatus = await getUserLockStatus(user.uid);
+      // Add timeout to prevent hanging
+      const lockPromise = getUserLockStatus(user.uid);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('App lock check timeout')), 8000)
+      );
+      
+      const lockStatus = await Promise.race([lockPromise, timeoutPromise]);
       setIsAppLocked(lockStatus.isAppLocked);
       setAmountDue(lockStatus.amountDue);
       
@@ -159,6 +173,7 @@ function AppContent() {
       }
     } catch (error) {
       console.error('[App Lock] Error checking lock status:', error);
+      // Don't throw error to prevent login sequence failure
     }
   };
 
@@ -380,10 +395,15 @@ function AppContent() {
                   // Check subscription status for non-dietician users - SEQUENTIAL to prevent 499 errors
                   if (!isDieticianAccount && profile) {
                     try {
-                      // Add delay between API calls to prevent connection conflicts
-                      await new Promise(resolve => setTimeout(resolve, 500));
+                      // Add longer delay between API calls to prevent connection conflicts
+                      await new Promise(resolve => setTimeout(resolve, 1000));
                       
-                      const { getSubscriptionStatus } = await import('./services/api');
+                      const { getSubscriptionStatus, getQueueStatus } = await import('./services/api');
+                      
+                      // Log queue status before making requests
+                      const queueStatus = getQueueStatus();
+                      console.log('[Queue Status] Before subscription check:', queueStatus);
+                      
                       const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
                       
                       // Check if user is on free plan or has active subscription
@@ -399,17 +419,29 @@ function AppContent() {
                         setIsFreeUser(false);
                       }
                       
-                      // Add delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 300));
+                      // Add longer delay before next API call
+                      await new Promise(resolve => setTimeout(resolve, 800));
                       
-                      // Check and reset daily data
-                      await checkAndResetDailyData();
+                      // Check and reset daily data (with error handling)
+                      try {
+                        await checkAndResetDailyData();
+                      } catch (dailyResetError) {
+                        console.log('[Daily Reset] Error during login sequence, continuing:', dailyResetError);
+                      }
                       
-                      // Add delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 300));
+                      // Add longer delay before next API call
+                      await new Promise(resolve => setTimeout(resolve, 800));
                       
-                      // Check app lock status
-                      await checkAppLockStatus();
+                      // Check app lock status (with error handling)
+                      try {
+                        await checkAppLockStatus();
+                      } catch (lockError) {
+                        console.log('[App Lock] Error during login sequence, continuing:', lockError);
+                      }
+                      
+                      // Log final queue status
+                      const finalQueueStatus = getQueueStatus();
+                      console.log('[Queue Status] After login sequence:', finalQueueStatus);
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
                       // If we can't check subscription, assume they are free users
