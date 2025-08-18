@@ -36,16 +36,13 @@ logger.log('[API] Final API_URL:', API_URL);
 // iOS-specific axios configuration
 const axiosConfig = {
   baseURL: API_URL,
-  timeout: Platform.OS === 'ios' ? 45000 : 30000, // Longer timeout for iOS
+  timeout: Platform.OS === 'ios' ? 25000 : 30000, // Reduced timeout for iOS to prevent connection issues
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
   },
   // iOS-specific settings
   ...(Platform.OS === 'ios' && {
-    // Enable keep-alive for iOS
-    httpAgent: undefined,
-    httpsAgent: undefined,
     // Add iOS-specific headers
     headers: {
       'Content-Type': 'application/json',
@@ -60,18 +57,18 @@ const api = axios.create(axiosConfig);
 
 // Retry configuration for failed requests
 const retryConfig = {
-  retries: 3,
-  retryDelay: 1000,
+  retries: 2, // Reduced retries to prevent connection issues
+  retryDelay: 2000, // Increased delay to reduce server load
   retryCondition: (error: any) => {
-    // Retry on network errors, 5xx errors, and specific iOS connection issues
+    // Only retry on actual network errors, not on client-side issues
     return (
       error.message === 'Network Error' ||
       error.code === 'ECONNABORTED' ||
       error.code === 'ECONNREFUSED' ||
       error.code === 'ENOTFOUND' ||
       error.code === 'ETIMEDOUT' ||
-      (error.response && error.response.status >= 500) ||
-      (error.response && error.response.status === 499) // Client closed connection
+      (error.response && error.response.status >= 500 && error.response.status !== 503) // Don't retry on 503 (service unavailable)
+      // Removed 499 from retry condition to prevent retry loops
     );
   }
 };
@@ -106,8 +103,7 @@ api.interceptors.response.use(
     // Handle specific iOS connection issues
     if (Platform.OS === 'ios' && (
       error.message === 'Network Error' || 
-      error.code === 'ECONNABORTED' ||
-      error.response?.status === 499
+      error.code === 'ECONNABORTED'
     )) {
       logger.error('[API] iOS connection issue detected:', error.message || error.code);
       
@@ -116,6 +112,18 @@ api.interceptors.response.use(
         ...error,
         message: 'Connection issue detected. Please check your internet connection and try again.',
         isIOSConnectionError: true
+      });
+    }
+    
+    // Handle 499 errors specifically (client closed connection)
+    if (error.response?.status === 499) {
+      logger.error('[API] Client closed connection (499):', error.config?.url);
+      
+      // Don't retry on 499, just return the error
+      return Promise.reject({
+        ...error,
+        message: 'Request was cancelled. Please try again.',
+        isClientClosedError: true
       });
     }
     
