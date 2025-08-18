@@ -25,6 +25,9 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const refreshSubscriptionStatus = async () => {
     try {
+      // Add delay to prevent conflict with login sequence
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const { getSubscriptionStatus } = await import('../services/api');
       const user = auth.currentUser;
       if (user) {

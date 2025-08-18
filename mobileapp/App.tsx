@@ -501,13 +501,18 @@ function AppContent() {
         checkAppLockStatus();
       };
 
-      // Check immediately
-      checkLockOnFocus();
+      // Add delay to prevent conflict with login sequence
+      const initialCheck = setTimeout(() => {
+        checkLockOnFocus();
+      }, 2000); // 2 second delay to avoid conflict with login sequence
 
       // Set up interval to check periodically (every 30 seconds)
       const interval = setInterval(checkLockOnFocus, 30000);
 
-      return () => clearInterval(interval);
+      return () => {
+        clearTimeout(initialCheck);
+        clearInterval(interval);
+      };
     }
   }, [user?.uid, isDietician]);
 
