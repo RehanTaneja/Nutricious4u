@@ -777,20 +777,42 @@ async def get_user_profile(user_id: str):
         logger.error("[PROFILE_FETCH] Firebase is not available, returning service unavailable")
         raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
     
-    loop = asyncio.get_event_loop()
-    
     try:
-        # Add timeout handling for iOS
-        import asyncio
-        try:
-            # Set a timeout for the entire operation
-            profile_task = asyncio.create_task(_get_user_profile_internal(user_id, loop))
-            result = await asyncio.wait_for(profile_task, timeout=15.0)  # 15 second timeout
-            return result
-        except asyncio.TimeoutError:
-            logger.error(f"[PROFILE_FETCH] Timeout getting profile for user {user_id}")
-            raise HTTPException(status_code=408, detail="Request timeout. Please try again.")
-            
+        # Simplified version without timeout handling first
+        logger.info(f"[PROFILE_FETCH] Querying Firestore for user_id: {user_id}")
+        
+        # Create document reference
+        doc_ref = firestore_db.collection("user_profiles").document(user_id)
+        
+        # Execute the query
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            logger.warning(f"[PROFILE_FETCH] No profile found for user_id: {user_id}")
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        # Convert to dictionary
+        profile = doc.to_dict()
+        
+        if profile is None:
+            logger.warning(f"[PROFILE_FETCH] Profile is None for user_id: {user_id}")
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        logger.info(f"[PROFILE_FETCH] Profile found for user_id: {user_id}, firstName: {profile.get('firstName', 'N/A')}")
+        
+        # Filter out placeholder profiles
+        is_placeholder = (
+            profile.get("firstName", "User") == "User" and
+            profile.get("lastName", "") == "" and
+            (not profile.get("email") or profile.get("email", "").endswith("@example.com"))
+        )
+        if is_placeholder:
+            logger.warning(f"[PROFILE_FETCH] Filtered out placeholder profile for user {user_id}: {profile}")
+            raise HTTPException(status_code=404, detail="User profile not found (placeholder)")
+        
+        logger.info(f"[PROFILE_FETCH] Successfully returning profile for user_id: {user_id}")
+        return profile
+        
     except HTTPException:
         raise
     except Exception as e:
