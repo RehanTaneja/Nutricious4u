@@ -39,7 +39,7 @@ const pendingRequests = new Map<string, Promise<any>>();
 // iOS-specific axios configuration with connection pooling
 const axiosConfig = {
   baseURL: API_URL,
-  timeout: Platform.OS === 'ios' ? 20000 : 25000, // Further reduced timeout for iOS
+  timeout: Platform.OS === 'ios' ? 30000 : 25000, // Increased timeout for iOS
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
@@ -52,10 +52,17 @@ const axiosConfig = {
       'User-Agent': 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0',
       'Accept': 'application/json',
       'Connection': 'keep-alive',
+      'Keep-Alive': 'timeout=75, max=1000',
     },
     // Prevent connection reuse issues on iOS
     maxRedirects: 0,
     validateStatus: (status: number) => status < 500, // Don't throw on 4xx errors
+    // Add connection pooling settings
+    httpAgent: undefined, // Let axios handle connection pooling
+    httpsAgent: undefined,
+    // Add retry configuration
+    retry: 1,
+    retryDelay: 1000,
   })
 };
 

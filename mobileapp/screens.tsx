@@ -10599,13 +10599,25 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const getPdfUrlForUser = (user: any) => {
     if (!user?.dietPdfUrl) return null;
     
+    console.log('[getPdfUrlForUser] Processing dietPdfUrl:', user.dietPdfUrl);
+    
     // If it's a Firebase Storage signed URL, use it directly
     if (user.dietPdfUrl.startsWith('https://storage.googleapis.com/')) {
+      console.log('[getPdfUrlForUser] Using Firebase Storage URL directly');
       return user.dietPdfUrl;
     }
     
-    // For any other format, use the backend endpoint
-    return `${API_URL}/users/${user.userId}/diet/pdf`;
+    // If it's a firestore:// URL, use the backend endpoint
+    if (user.dietPdfUrl.startsWith('firestore://')) {
+      const url = `${API_URL}/users/${user.userId}/diet/pdf`;
+      console.log('[getPdfUrlForUser] Using backend endpoint for firestore URL:', url);
+      return url;
+    }
+    
+    // If it's just a filename or any other format, use the backend endpoint
+    const url = `${API_URL}/users/${user.userId}/diet/pdf`;
+    console.log('[getPdfUrlForUser] Using backend endpoint for filename:', url);
+    return url;
   };
 
   // Helper function to create a simplified PDF viewer HTML for iOS compatibility
@@ -10615,12 +10627,15 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+          <meta name="apple-mobile-web-app-capable" content="yes">
+          <meta name="apple-mobile-web-app-status-bar-style" content="default">
           <style>
             body { 
               margin: 0; 
               padding: 0; 
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               background-color: #f5f5f5;
+              overflow: hidden;
             }
             .pdf-container {
               width: 100%;
@@ -10634,12 +10649,14 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               border-bottom: 1px solid #e0e0e0;
               text-align: center;
               font-weight: bold;
+              font-size: 16px;
             }
             .pdf-viewer {
               flex: 1;
               width: 100%;
               height: 100%;
               border: none;
+              background: #fff;
             }
             .pdf-fallback {
               display: flex;
@@ -10648,26 +10665,53 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               height: 100vh;
               flex-direction: column;
               background: #fff;
+              padding: 20px;
+              text-align: center;
+            }
+            .pdf-fallback p {
+              margin-bottom: 20px;
+              font-size: 16px;
+              color: #666;
             }
             .pdf-fallback a {
               color: #007AFF;
               text-decoration: none;
               font-size: 16px;
-              margin-top: 10px;
+              padding: 12px 24px;
+              background: #f0f0f0;
+              border-radius: 8px;
+              border: 1px solid #ddd;
+            }
+            .loading {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              font-size: 16px;
+              color: #666;
             }
           </style>
         </head>
         <body>
           <div class="pdf-container">
             <div class="pdf-header">Diet PDF Viewer</div>
+            <div id="loading" class="loading">Loading PDF...</div>
             <iframe 
+              id="pdf-viewer"
               class="pdf-viewer" 
               src="${pdfUrl}" 
               type="application/pdf"
+              onload="hideLoading()"
               onerror="showFallback()"
+              style="display: none;"
             ></iframe>
           </div>
           <script>
+            function hideLoading() {
+              document.getElementById('loading').style.display = 'none';
+              document.getElementById('pdf-viewer').style.display = 'block';
+            }
+            
             function showFallback() {
               document.body.innerHTML = \`
                 <div class="pdf-fallback">
@@ -10677,13 +10721,13 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               \`;
             }
             
-            // Check if PDF loads successfully
+            // Check if PDF loads successfully within 5 seconds
             setTimeout(() => {
-              const iframe = document.querySelector('.pdf-viewer');
-              if (iframe && iframe.contentDocument && iframe.contentDocument.body.innerHTML === '') {
+              const iframe = document.getElementById('pdf-viewer');
+              if (iframe && iframe.style.display === 'none') {
                 showFallback();
               }
-            }, 3000);
+            }, 5000);
           </script>
         </body>
       </html>
@@ -10693,17 +10737,23 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   const handleViewDiet = async () => {
     if (!selectedUser) return;
     try {
+      console.log('[UploadDietScreen] handleViewDiet called for user:', selectedUser.userId);
+      console.log('[UploadDietScreen] selectedUser.dietPdfUrl:', selectedUser.dietPdfUrl);
+      
       // Use the same approach as the user dashboard
       const url = getPdfUrlForUser(selectedUser);
+      console.log('[UploadDietScreen] Generated PDF URL:', url);
+      
       if (url) {
         setPdfUrl(url);
         setShowPdfModal(true);
       } else {
-        alert('No diet PDF available for this user.');
+        console.log('[UploadDietScreen] No PDF URL available');
+        Alert.alert('No Diet PDF', 'No diet PDF available for this user.');
       }
     } catch (e) {
-      console.error('Failed to open diet PDF:', e);
-      alert('Failed to open diet PDF.');
+      console.error('[UploadDietScreen] Failed to open diet PDF:', e);
+      Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
     }
   };
 
@@ -11031,37 +11081,54 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               <WebView
                 source={{ html: createPdfViewerHtml(pdfUrl) }}
                 style={{ flex: 1, width: '100%' }}
-                startInLoadingState
+                startInLoadingState={true}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
                 allowsInlineMediaPlayback={true}
                 mediaPlaybackRequiresUserAction={false}
+                allowsBackForwardNavigationGestures={false}
+                allowsLinkPreview={false}
+                cacheEnabled={true}
+                cacheMode="LOAD_DEFAULT"
                 onError={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
-                  console.log('WebView error: ', nativeEvent);
+                  console.log('[WebView] Error: ', nativeEvent);
+                  Alert.alert('PDF Error', 'Failed to load PDF. Please try again.');
                 }}
                 onHttpError={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
-                  console.log('WebView HTTP error: ', nativeEvent);
+                  console.log('[WebView] HTTP Error: ', nativeEvent);
+                  if (nativeEvent.statusCode === 404) {
+                    Alert.alert('PDF Not Found', 'The diet PDF could not be found. Please ask the dietician to upload a new diet.');
+                  } else {
+                    Alert.alert('PDF Error', 'Failed to load PDF. Please try again.');
+                  }
                 }}
                 onLoadEnd={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
-                  console.log('WebView loaded: ', nativeEvent);
+                  console.log('[WebView] Loaded: ', nativeEvent);
                 }}
                 onLoadStart={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
-                  console.log('WebView loading URL: ', nativeEvent.url);
+                  console.log('[WebView] Loading URL: ', nativeEvent.url);
                 }}
                 onMessage={(event) => {
-                  console.log('WebView message: ', event.nativeEvent.data);
+                  console.log('[WebView] Message: ', event.nativeEvent.data);
                 }}
                 onNavigationStateChange={(navState) => {
-                  console.log('WebView navigation state: ', navState);
+                  console.log('[WebView] Navigation state: ', navState);
                 }}
+                renderLoading={() => (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={{ marginTop: 10, color: COLORS.text }}>Loading PDF...</Text>
+                  </View>
+                )}
               />
             ) : (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <Text>Loading PDF...</Text>
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ marginTop: 10, color: COLORS.text }}>Preparing PDF...</Text>
               </View>
             )}
           </View>

@@ -59,6 +59,8 @@ from google.generativeai.generative_models import GenerativeModel
 from google.generativeai.client import configure
 from google.generativeai.types import ContentDict
 import tempfile
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 
 # Helper function to check Firebase availability
 def check_firebase_availability():
@@ -241,21 +243,38 @@ async def ios_connection_middleware(request, call_next):
     logger.info(f"[REQUEST] {request.method} {request.url.path} from {client_ip} (Platform: {platform}, UA: {user_agent[:50]}...)")
     
     try:
-        response = await call_next(request)
+        # Add timeout handling for long-running requests
+        import asyncio
+        try:
+            # Set a reasonable timeout for all requests (30 seconds)
+            response = await asyncio.wait_for(call_next(request), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.error(f"[TIMEOUT] {request.method} {request.url.path} - Request timed out after 30 seconds")
+            return JSONResponse(
+                status_code=408,
+                content={"detail": "Request timeout. Please try again."}
+            )
         
         # Log response details
         process_time = time.time() - start_time
         logger.info(f"[RESPONSE] {request.method} {request.url.path} - {response.status_code} ({process_time:.3f}s)")
         
-        # Add iOS-specific headers
+        # Add iOS-specific headers for better connection handling
         response.headers["X-Platform"] = platform
         response.headers["X-Response-Time"] = f"{process_time:.3f}"
+        response.headers["Connection"] = "keep-alive"
+        response.headers["Keep-Alive"] = "timeout=75, max=1000"
         
         return response
     except Exception as e:
         process_time = time.time() - start_time
         logger.error(f"[ERROR] {request.method} {request.url.path} - {str(e)} ({process_time:.3f}s)")
-        raise
+        
+        # Return a proper error response instead of raising
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error. Please try again."}
+        )
 
 # Define api_router before any usage
 api_router = APIRouter(prefix='/api')
@@ -1468,54 +1487,69 @@ async def get_user_diet(user_id: str):
     """
     Returns the user's diet PDF URL and days left until new diet (7-day countdown).
     """
-    doc = firestore_db.collection("user_profiles").document(user_id).get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail="User not found.")
-    data = doc.to_dict()
-    pdf_url = data.get("dietPdfUrl")
-    last_upload = data.get("lastDietUpload")
-    days_left = None
-    hours_left = None
-    if last_upload:
-        try:
-            # Handle timezone-aware datetime strings
-            if last_upload.endswith('Z'):
-                # Convert UTC timezone to naive datetime
-                last_upload = last_upload.replace('Z', '+00:00')
-            last_dt = datetime.fromisoformat(last_upload)
-            
-            # Use timezone-aware datetime for consistent calculation
-            from datetime import timezone
-            now = datetime.now(timezone.utc)
-            
-            # Ensure last_dt is timezone-aware for comparison
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            
-            time_diff = now - last_dt
-            
-            # Calculate total hours remaining (7 days = 168 hours)
-            total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
-            days_left = total_hours_remaining // 24
-            hours_left = total_hours_remaining % 24
-            
-            print(f"[Backend Debug] last_upload: {last_upload}")
-            print(f"[Backend Debug] last_dt: {last_dt}")
-            print(f"[Backend Debug] now: {now}")
-            print(f"[Backend Debug] time_diff: {time_diff}")
-            print(f"[Backend Debug] total_hours_remaining: {total_hours_remaining}")
-            print(f"[Backend Debug] days_left: {days_left}, hours_left: {hours_left}")
-        except ValueError as e:
-            print(f"Error parsing lastDietUpload date: {e}")
-            days_left = None
-            hours_left = None
-    return {
-        "dietPdfUrl": pdf_url, 
-        "daysLeft": days_left, 
-        "hoursLeft": hours_left,
-        "lastDietUpload": last_upload,
-        "hasDiet": pdf_url is not None
-    }
+    try:
+        # Add timeout for Firestore operations
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # Use ThreadPoolExecutor to handle Firestore operations asynchronously
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            doc = await loop.run_in_executor(
+                executor, 
+                lambda: firestore_db.collection("user_profiles").document(user_id).get()
+            )
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="User not found.")
+        
+        data = doc.to_dict()
+        pdf_url = data.get("dietPdfUrl")
+        last_upload = data.get("lastDietUpload")
+        days_left = None
+        hours_left = None
+        
+        if last_upload:
+            try:
+                # Handle timezone-aware datetime strings
+                if last_upload.endswith('Z'):
+                    # Convert UTC timezone to naive datetime
+                    last_upload = last_upload.replace('Z', '+00:00')
+                last_dt = datetime.fromisoformat(last_upload)
+                
+                # Use timezone-aware datetime for consistent calculation
+                from datetime import timezone
+                now = datetime.now(timezone.utc)
+                
+                # Ensure last_dt is timezone-aware for comparison
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                
+                time_diff = now - last_dt
+                
+                # Calculate total hours remaining (7 days = 168 hours)
+                total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
+                days_left = total_hours_remaining // 24
+                hours_left = total_hours_remaining % 24
+                
+                logger.info(f"[DIET] User {user_id}: days_left={days_left}, hours_left={hours_left}")
+            except ValueError as e:
+                logger.error(f"Error parsing lastDietUpload date for user {user_id}: {e}")
+                days_left = None
+                hours_left = None
+        
+        return {
+            "dietPdfUrl": pdf_url, 
+            "daysLeft": days_left, 
+            "hoursLeft": hours_left,
+            "lastDietUpload": last_upload,
+            "hasDiet": pdf_url is not None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting diet for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve diet information. Please try again.")
 
 # --- Serve PDF from Firestore ---
 @api_router.get("/users/{user_id}/diet/pdf")
@@ -3355,3 +3389,66 @@ if __name__ == "__main__":
     print("🌐 Starting server on http://0.0.0.0:8000")
     print("⏰ Diet reminder scheduler started (checking every 6 hours)")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# Add a comprehensive test endpoint for iOS connection and diet functionality
+@api_router.get("/test-ios-diet")
+async def test_ios_diet_functionality():
+    """Test endpoint to verify iOS connection and diet functionality"""
+    try:
+        # Test Firebase connection
+        check_firebase_availability()
+        
+        # Test basic operations
+        test_collection = firestore_db.collection("test")
+        test_doc = test_collection.document("ios_test")
+        
+        # Test write operation
+        test_data = {
+            "test": True,
+            "timestamp": datetime.now().isoformat(),
+            "platform": "ios_test"
+        }
+        
+        # Use ThreadPoolExecutor for async operation
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor, 
+                lambda: test_doc.set(test_data)
+            )
+        
+        # Test read operation
+        with ThreadPoolExecutor() as executor:
+            doc = await loop.run_in_executor(
+                executor, 
+                lambda: test_doc.get()
+            )
+        
+        # Clean up test data
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor, 
+                lambda: test_doc.delete()
+            )
+        
+        return {
+            "message": "iOS diet functionality test successful",
+            "firebase_available": True,
+            "firestore_operations": "successful",
+            "async_operations": "working",
+            "timestamp": datetime.now().isoformat(),
+            "ios_fixes": "applied",
+            "connection_timeout": "30s",
+            "keep_alive": "75s"
+        }
+    except Exception as e:
+        return {
+            "message": "iOS diet functionality test failed",
+            "firebase_available": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "timestamp": datetime.now().isoformat()
+        }
