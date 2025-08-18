@@ -245,6 +245,17 @@ async def ios_connection_middleware(request, call_next):
 # Define api_router before any usage
 api_router = APIRouter(prefix='/api')
 
+# Add a simple test endpoint to verify deployment
+@api_router.get("/test-deployment")
+async def test_deployment():
+    """Test endpoint to verify backend deployment"""
+    return {
+        "message": "Backend deployment test successful",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.1",
+        "ios_fixes": "applied"
+    }
+
 # Create a thread pool executor
 executor = ThreadPoolExecutor(max_workers=10)
 
