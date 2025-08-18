@@ -1199,7 +1199,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, []);
 
-  const handleOpenDiet = () => {
+  const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
     if (isFreeUser) {
       console.log('[DashboardScreen] Showing upgrade modal for free user');
@@ -1208,10 +1208,28 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
     
     if (dietPdfUrl) {
-      console.log('Opening diet PDF with URL:', dietPdfUrl);
-      const pdfUrl = getPdfUrl();
-      console.log('Final PDF URL for WebView:', pdfUrl);
-      setShowDietPdf(true);
+      try {
+        console.log('Opening diet PDF with URL:', dietPdfUrl);
+        const pdfUrl = getPdfUrl();
+        console.log('Final PDF URL for browser:', pdfUrl);
+        
+        if (pdfUrl) {
+          // Open PDF in browser instead of in-app viewer
+          const canOpen = await Linking.canOpenURL(pdfUrl);
+          if (canOpen) {
+            await Linking.openURL(pdfUrl);
+            console.log('PDF opened in browser successfully');
+          } else {
+            console.log('Cannot open URL:', pdfUrl);
+            Alert.alert('Error', 'Cannot open PDF. Please try again.');
+          }
+        } else {
+          Alert.alert('Error', 'No PDF URL available.');
+        }
+      } catch (e) {
+        console.error('Failed to open diet PDF:', e);
+        Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
+      }
     }
   };
 
@@ -10740,13 +10758,20 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       console.log('[UploadDietScreen] handleViewDiet called for user:', selectedUser.userId);
       console.log('[UploadDietScreen] selectedUser.dietPdfUrl:', selectedUser.dietPdfUrl);
       
-      // Use the same approach as the user dashboard
+      // Get the PDF URL
       const url = getPdfUrlForUser(selectedUser);
       console.log('[UploadDietScreen] Generated PDF URL:', url);
       
       if (url) {
-        setPdfUrl(url);
-        setShowPdfModal(true);
+        // Open PDF in browser instead of in-app viewer
+        const canOpen = await Linking.canOpenURL(url);
+        if (canOpen) {
+          await Linking.openURL(url);
+          console.log('[UploadDietScreen] PDF opened in browser successfully');
+        } else {
+          console.log('[UploadDietScreen] Cannot open URL:', url);
+          Alert.alert('Error', 'Cannot open PDF. Please try again.');
+        }
       } else {
         console.log('[UploadDietScreen] No PDF URL available');
         Alert.alert('No Diet PDF', 'No diet PDF available for this user.');
