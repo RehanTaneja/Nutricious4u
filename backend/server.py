@@ -19,6 +19,21 @@ try:
     from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining, get_dietician_notification_token
     FIREBASE_AVAILABLE = True
     print("✅ Firebase client imported successfully")
+    
+    # Test Firebase connection
+    if firestore_db is not None:
+        try:
+            # Try a simple operation to test the connection
+            test_collection = firestore_db.collection("test")
+            print("✅ Firebase connection test successful")
+        except Exception as test_error:
+            print(f"⚠️  Firebase connection test failed: {test_error}")
+            FIREBASE_AVAILABLE = False
+            firestore_db = None
+    else:
+        print("⚠️  Firebase database is None")
+        FIREBASE_AVAILABLE = False
+        
 except Exception as e:
     print(f"⚠️  Firebase client import failed: {e}")
     firestore_db = None
@@ -756,7 +771,12 @@ async def create_user_profile(profile: UserProfile):
 async def get_user_profile(user_id: str):
     """Get a user's profile."""
     logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
-    check_firebase_availability()
+    
+    # Check if Firebase is available
+    if not FIREBASE_AVAILABLE or firestore_db is None:
+        logger.error("[PROFILE_FETCH] Firebase is not available, returning service unavailable")
+        raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
+    
     loop = asyncio.get_event_loop()
     
     try:
