@@ -3856,11 +3856,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const initializeScreen = async () => {
       setInitialLoading(true);
       try {
-        // Load both notifications in parallel
-        await Promise.all([
-          loadNotifications(),
-          loadDietNotifications()
-        ]);
+        // Load notifications sequentially to prevent 499 errors
+        await loadNotifications();
+        // Add delay between API calls to prevent connection conflicts
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await loadDietNotifications();
         
         // Request notification permissions
         const { status } = await Notifications.getPermissionsAsync();
@@ -5505,23 +5505,30 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
     const user = auth.currentUser;
     if (!user) return;
     
-    // Check both collections for dietician status
-    Promise.all([
-      firestore.collection('users').doc(user.uid).get(),
-      firestore.collection('user_profiles').doc(user.uid).get()
-    ]).then(([userDoc, profileDoc]) => {
-      const userData = userDoc.data();
-      const profileData = profileDoc.data();
-      
-      // Check for dietician status in both collections
-      const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
-      setIsDietician(isDieticianAccount);
-    }).catch(error => {
-      console.error('[Messages] Error checking dietician status:', error);
-      // Fallback: check email
-      const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
-      setIsDietician(isDieticianAccount);
-    });
+    // Check both collections for dietician status - SEQUENTIAL to prevent 499 errors
+    const checkDieticianStatus = async () => {
+      try {
+        const userDoc = await firestore.collection('users').doc(user.uid).get();
+        const userData = userDoc.data();
+        
+        // Add delay between Firestore calls to prevent connection conflicts
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const profileDoc = await firestore.collection('user_profiles').doc(user.uid).get();
+        const profileData = profileDoc.data();
+        
+        // Check for dietician status in both collections
+        const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
+        setIsDietician(isDieticianAccount);
+      } catch (error) {
+        console.error('[Messages] Error checking dietician status:', error);
+        // Fallback: check email
+        const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
+        setIsDietician(isDieticianAccount);
+      }
+    };
+    
+    checkDieticianStatus();
   }, []);
   if (isDietician) {
     // Dietician version: show Messages page (not profile)
@@ -5594,46 +5601,54 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     console.log('[DieticianMessageScreen] Checking dietician status for user:', user.uid, user.email);
     console.log('[DieticianMessageScreen] Route params:', route?.params);
     
-    // Check both collections for dietician status
-    Promise.all([
-      firestore.collection('users').doc(user.uid).get(),
-      firestore.collection('user_profiles').doc(user.uid).get()
-    ]).then(([userDoc, profileDoc]) => {
-      const userData = userDoc.data();
-      const profileData = profileDoc.data();
-      
-      console.log('[DieticianMessageScreen] User data:', userData);
-      console.log('[DieticianMessageScreen] Profile data:', profileData);
-      
-      // Check for dietician status in both collections
-      const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
-      console.log('[DieticianMessageScreen] Is dietician account:', isDieticianAccount);
-      
-      setIsDietician(isDieticianAccount);
-      
-      if (isDieticianAccount) {
-        // Dietician must have a userId param to chat with a user
-        if (route?.params?.userId) {
-          console.log('[DieticianMessageScreen] Dietician chatting with user:', route.params.userId);
-          setUserId(route.params.userId);
+    // Check both collections for dietician status - SEQUENTIAL to prevent 499 errors
+    const checkDieticianStatus = async () => {
+      try {
+        const userDoc = await firestore.collection('users').doc(user.uid).get();
+        const userData = userDoc.data();
+        
+        console.log('[DieticianMessageScreen] User data:', userData);
+        
+        // Add delay between Firestore calls to prevent connection conflicts
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const profileDoc = await firestore.collection('user_profiles').doc(user.uid).get();
+        const profileData = profileDoc.data();
+        
+        console.log('[DieticianMessageScreen] Profile data:', profileData);
+        
+        // Check for dietician status in both collections
+        const isDieticianAccount = !!userData?.isDietician || !!profileData?.isDietician || user?.email === 'nutricious4u@gmail.com';
+        console.log('[DieticianMessageScreen] Is dietician account:', isDieticianAccount);
+        
+        setIsDietician(isDieticianAccount);
+        
+        if (isDieticianAccount) {
+          // Dietician must have a userId param to chat with a user
+          if (route?.params?.userId) {
+            console.log('[DieticianMessageScreen] Dietician chatting with user:', route.params.userId);
+            setUserId(route.params.userId);
+          } else {
+            console.log('[DieticianMessageScreen] Dietician with no userId param');
+            setUserId(null);
+          }
         } else {
-          console.log('[DieticianMessageScreen] Dietician with no userId param');
-          setUserId(null);
+          console.log('[DieticianMessageScreen] Regular user, using own userId:', user.uid);
+          setUserId(user.uid || null);
         }
-      } else {
-        console.log('[DieticianMessageScreen] Regular user, using own userId:', user.uid);
-        setUserId(user.uid || null);
+        setInitializing(false);
+      } catch (error) {
+        console.error('[DieticianMessageScreen] Error checking dietician status:', error);
+        // Fallback: check email
+        const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
+        console.log('[DieticianMessageScreen] Fallback - is dietician account:', isDieticianAccount);
+        setIsDietician(isDieticianAccount);
+        setUserId(isDieticianAccount ? (route?.params?.userId || null) : (user.uid || null));
+        setInitializing(false);
       }
-      setInitializing(false);
-    }).catch(error => {
-      console.error('[DieticianMessageScreen] Error checking dietician status:', error);
-      // Fallback: check email
-      const isDieticianAccount = user?.email === 'nutricious4u@gmail.com';
-      console.log('[DieticianMessageScreen] Fallback - is dietician account:', isDieticianAccount);
-      setIsDietician(isDieticianAccount);
-      setUserId(isDieticianAccount ? (route?.params?.userId || null) : (user.uid || null));
-      setInitializing(false);
-    });
+    };
+    
+    checkDieticianStatus();
   }, [route?.params?.userId]);
 
   // Fetch user list for dieticians to get user profiles
@@ -10441,9 +10456,11 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
           console.log('[UploadDietScreen] After filtering:', filteredProfiles.length, 'users');
         }
         
-        // 2. Fetch diet countdowns and PDF URLs for each user
+        // 2. Fetch diet countdowns and PDF URLs for each user - SEQUENTIAL to prevent 499 errors
         const countdownsObj: { [userId: string]: { days: number; hours: number } } = {};
-        await Promise.all(filteredProfiles.map(async (u: any) => {
+        
+        // Process users sequentially instead of simultaneously to prevent connection conflicts
+        for (const u of filteredProfiles) {
           try {
             // Use the same backend API as the user dashboard for consistent calculation
             const dietData = await getUserDiet(u.userId);
@@ -10464,12 +10481,15 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             } else {
               countdownsObj[u.userId] = { days: 0, hours: 0 };
             }
+            
+            // Add small delay between API calls to prevent connection conflicts
+            await new Promise(resolve => setTimeout(resolve, 200));
           } catch (e) {
             console.error(`[UploadDietScreen] Error fetching diet data for user ${u.userId}:`, e);
             u.dietPdfUrl = null;
             countdownsObj[u.userId] = { days: 0, hours: 0 };
           }
-        }));
+        }
         
         console.log('[UploadDietScreen] Found users:', filteredProfiles.length);
         console.log('[UploadDietScreen] Users:', filteredProfiles.map(u => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName })));
