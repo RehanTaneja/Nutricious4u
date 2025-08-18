@@ -1341,12 +1341,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setLoading(true);
     setError('');
     try {
-      const [foodData, workoutData] = await Promise.all([
-        getLogSummary(userId),
-        getWorkoutLogSummary(userId)
-      ]);
+      // SEQUENTIAL API calls to prevent 499 errors - don't use Promise.all
+      const foodData = await getLogSummary(userId);
       setSummary(foodData);
+      
+      // Add delay between API calls to prevent connection conflicts
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const workoutData = await getWorkoutLogSummary(userId);
       setWorkoutSummary(workoutData);
+      
       // Set burnedToday from workout summary for today
       const today = new Date().toISOString().slice(0, 10);
       const todayWorkout = workoutData.history.find((d) => d.day === today);

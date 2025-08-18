@@ -33,10 +33,13 @@ if (__DEV__) {
 export const API_URL = `${protocol}://${apiHost}${port}/api`;
 logger.log('[API] Final API_URL:', API_URL);
 
-// iOS-specific axios configuration
+// Request deduplication to prevent simultaneous identical requests
+const pendingRequests = new Map<string, Promise<any>>();
+
+// iOS-specific axios configuration with connection pooling
 const axiosConfig = {
   baseURL: API_URL,
-  timeout: Platform.OS === 'ios' ? 25000 : 30000, // Reduced timeout for iOS to prevent connection issues
+  timeout: Platform.OS === 'ios' ? 20000 : 25000, // Further reduced timeout for iOS
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
@@ -49,16 +52,19 @@ const axiosConfig = {
       'User-Agent': 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0',
       'Accept': 'application/json',
       'Connection': 'keep-alive',
-    }
+    },
+    // Prevent connection reuse issues on iOS
+    maxRedirects: 0,
+    validateStatus: (status: number) => status < 500, // Don't throw on 4xx errors
   })
 };
 
 const api = axios.create(axiosConfig);
 
-// Retry configuration for failed requests
+// Enhanced retry configuration with circuit breaker pattern
 const retryConfig = {
-  retries: 2, // Reduced retries to prevent connection issues
-  retryDelay: 2000, // Increased delay to reduce server load
+  retries: 1, // Reduced to 1 retry to prevent connection overload
+  retryDelay: 1000, // Reduced delay
   retryCondition: (error: any) => {
     // Only retry on actual network errors, not on client-side issues
     return (
@@ -73,7 +79,54 @@ const retryConfig = {
   }
 };
 
-// Retry interceptor
+// Circuit breaker pattern to prevent cascading failures
+class CircuitBreaker {
+  private failures = 0;
+  private lastFailureTime = 0;
+  private state = 'CLOSED';
+  private readonly failureThreshold = 5;
+  private readonly resetTimeout = 30000; // 30 seconds
+
+  async execute(fn: () => Promise<any>) {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > this.resetTimeout) {
+        this.state = 'HALF_OPEN';
+        logger.log('[CIRCUIT_BREAKER] Moving to HALF_OPEN state');
+      } else {
+        logger.log('[CIRCUIT_BREAKER] Circuit breaker is OPEN, rejecting request');
+        throw new Error('Service temporarily unavailable. Please try again later.');
+      }
+    }
+    
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess() {
+    this.failures = 0;
+    this.state = 'CLOSED';
+  }
+
+  private onFailure() {
+    this.failures += 1;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failures >= this.failureThreshold) {
+      this.state = 'OPEN';
+      logger.error(`[CIRCUIT_BREAKER] Circuit breaker opened after ${this.failures} failures`);
+    }
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
+// Enhanced retry interceptor with circuit breaker
 api.interceptors.response.use(
   response => response,
   async error => {
@@ -82,6 +135,17 @@ api.interceptors.response.use(
     // Initialize retry count if not set
     if (!config || !config.__retryCount) {
       config.__retryCount = 0;
+    }
+    
+    // Handle 499 errors immediately - don't retry
+    if (error.response?.status === 499) {
+      logger.error('[API] Client closed connection (499):', error.config?.url);
+      
+      return Promise.reject({
+        ...error,
+        message: 'Request was cancelled. Please try again.',
+        isClientClosedError: true
+      });
     }
     
     // Check if we should retry
@@ -107,7 +171,6 @@ api.interceptors.response.use(
     )) {
       logger.error('[API] iOS connection issue detected:', error.message || error.code);
       
-      // Return a more specific error for iOS
       return Promise.reject({
         ...error,
         message: 'Connection issue detected. Please check your internet connection and try again.',
@@ -115,23 +178,11 @@ api.interceptors.response.use(
       });
     }
     
-    // Handle 499 errors specifically (client closed connection)
-    if (error.response?.status === 499) {
-      logger.error('[API] Client closed connection (499):', error.config?.url);
-      
-      // Don't retry on 499, just return the error
-      return Promise.reject({
-        ...error,
-        message: 'Request was cancelled. Please try again.',
-        isClientClosedError: true
-      });
-    }
-    
     return Promise.reject(error);
   }
 );
 
-// Add request interceptor for better error handling
+// Enhanced request interceptor with deduplication
 api.interceptors.request.use(
   config => {
     logger.log('[API] Making request to:', config.url);
@@ -141,7 +192,8 @@ api.interceptors.request.use(
       config.headers = {
         ...config.headers,
         'X-Platform': 'ios',
-        'X-App-Version': '1.0.0'
+        'X-App-Version': '1.0.0',
+        'X-Request-ID': Date.now().toString() // Add request ID for tracking
       } as any;
     }
     
@@ -152,6 +204,47 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+// Enhanced API wrapper with request deduplication and circuit breaker
+const enhancedApi = {
+  get: async (url: string, config?: any) => {
+    const requestKey = `GET:${url}`;
+    
+    // Check if there's already a pending request
+    if (pendingRequests.has(requestKey)) {
+      logger.log('[API] Deduplicating request:', url);
+      return pendingRequests.get(requestKey);
+    }
+    
+    // Create new request
+    const requestPromise = circuitBreaker.execute(() => api.get(url, config));
+    pendingRequests.set(requestKey, requestPromise);
+    
+    try {
+      const result = await requestPromise;
+      return result;
+    } finally {
+      // Clean up pending request
+      pendingRequests.delete(requestKey);
+    }
+  },
+  
+  post: async (url: string, data?: any, config?: any) => {
+    return circuitBreaker.execute(() => api.post(url, data, config));
+  },
+  
+  patch: async (url: string, data?: any, config?: any) => {
+    return circuitBreaker.execute(() => api.patch(url, data, config));
+  },
+  
+  delete: async (url: string, config?: any) => {
+    return circuitBreaker.execute(() => api.delete(url, config));
+  },
+  
+  put: async (url: string, data?: any, config?: any) => {
+    return circuitBreaker.execute(() => api.put(url, data, config));
+  }
+};
 
 export interface FoodItem {
   id: string;
@@ -293,14 +386,14 @@ export interface SubscriptionResponse {
 }
 
 export async function searchFood(query: string): Promise<FoodItem[]> {
-  const response = await api.get('/food/search', { params: { query } });
+  const response = await enhancedApi.get('/food/search', { params: { query } });
   return response.data.foods;
 }
 
 export const logFood = async (userId: string, foodName: string, servingSize: string = "100") => {
   try {
     logger.log('[logFood] Request payload:', { userId, foodName, servingSize });
-    const response = await api.post('/food/log', { userId, foodName, servingSize });
+    const response = await enhancedApi.post('/food/log', { userId, foodName, servingSize });
     logger.log('[logFood] Response:', response.data);
     return response.data;
   } catch (error) {
@@ -325,7 +418,7 @@ export const logWorkout = async (workoutData: {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logger.log(`[logWorkout] Attempt ${attempt}/${maxRetries} - Request payload:`, workoutData);
-      const response = await api.post('/workout/log', workoutData);
+      const response = await enhancedApi.post('/workout/log', workoutData);
       logger.log('[logWorkout] Response:', response.data);
       return response.data;
     } catch (error: any) {
@@ -350,7 +443,7 @@ export const logWorkout = async (workoutData: {
   logger.log('[logWorkout] All attempts failed, trying fallback...');
   try {
     // Try with a simpler endpoint or different approach
-    const fallbackResponse = await api.post('/api/workouts/log', {
+    const fallbackResponse = await enhancedApi.post('/api/workouts/log', {
       workout_id: workoutData.exerciseId,
       duration: workoutData.duration
     });
@@ -384,7 +477,7 @@ export interface LogSummaryResponse {
 export const getLogSummary = async (userId: string): Promise<LogSummaryResponse> => {
   try {
     logger.log('[getLogSummary] Request for userId:', userId);
-    const response = await api.get(`/food/log/summary/${userId}`);
+    const response = await enhancedApi.get(`/food/log/summary/${userId}`);
     logger.log('[getLogSummary] Response:', response.data);
     return response.data;
   } catch (error) {
@@ -396,7 +489,7 @@ export const getLogSummary = async (userId: string): Promise<LogSummaryResponse>
 // User Profile API calls
 export const createUserProfile = async (profile: UserProfile): Promise<UserProfile> => {
   try {
-    const response = await axios.post(`${API_URL}/users/profile`, profile);
+    const response = await enhancedApi.post(`/users/profile`, profile);
     return response.data;
   } catch (error) {
     logger.error('Error creating user profile:', error);
@@ -406,7 +499,7 @@ export const createUserProfile = async (profile: UserProfile): Promise<UserProfi
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const response = await api.get(`/users/${userId}/profile`);
+    const response = await enhancedApi.get(`/users/${userId}/profile`);
     return response.data;
   } catch (error: any) {
     if (error.response && error.response.status === 404) {
@@ -420,7 +513,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
 export const updateUserProfile = async (userId: string, profileUpdate: UpdateUserProfile): Promise<UserProfile> => {
   try {
-    const response = await axios.patch(`${API_URL}/users/${userId}/profile`, profileUpdate);
+    const response = await enhancedApi.patch(`/users/${userId}/profile`, profileUpdate);
     return response.data;
   } catch (error) {
     logger.error('Error updating user profile:', error);
@@ -446,7 +539,7 @@ export const sendChatbotMessage = async (
   user_message: string
 ): Promise<string> => {
   try {
-    const response = await api.post<ChatMessageResponse>('/chatbot/message', {
+    const response = await enhancedApi.post('/chatbot/message', {
       userId,
       chat_history,
       user_profile,
@@ -489,26 +582,26 @@ export interface RoutineUpdateRequest {
 }
 
 export const listRoutines = async (userId: string): Promise<Routine[]> => {
-  const response = await api.get(`/users/${userId}/routines`);
+  const response = await enhancedApi.get(`/users/${userId}/routines`);
   return response.data;
 };
 
 export const createRoutine = async (userId: string, routine: RoutineCreateRequest): Promise<Routine> => {
-  const response = await api.post(`/users/${userId}/routines`, routine);
+  const response = await enhancedApi.post(`/users/${userId}/routines`, routine);
   return response.data;
 };
 
 export const updateRoutine = async (userId: string, routineId: string, routine: RoutineUpdateRequest): Promise<Routine> => {
-  const response = await api.patch(`/users/${userId}/routines/${routineId}`, routine);
+  const response = await enhancedApi.patch(`/users/${userId}/routines/${routineId}`, routine);
   return response.data;
 };
 
 export const deleteRoutine = async (userId: string, routineId: string): Promise<void> => {
-  await api.delete(`/users/${userId}/routines/${routineId}`);
+  await enhancedApi.delete(`/users/${userId}/routines/${routineId}`);
 };
 
 export const logRoutine = async (userId: string, routineId: string): Promise<void> => {
-  await api.post(`/users/${userId}/routines/${routineId}/log`);
+  await enhancedApi.post(`/users/${userId}/routines/${routineId}/log`);
 };
 
 export interface WorkoutLogSummaryDay {
@@ -521,7 +614,7 @@ export interface WorkoutLogSummaryResponse {
 }
 
 export const getWorkoutLogSummary = async (userId: string): Promise<WorkoutLogSummaryResponse> => {
-  const response = await api.get(`/workout/log/summary/${userId}`);
+  const response = await enhancedApi.get(`/workout/log/summary/${userId}`);
   return response.data;
 };
 
@@ -549,7 +642,7 @@ export const uploadDietPdf = async (userId: string, dieticianId: string, file: a
   const formData = new FormData();
   formData.append('file', file);
   formData.append('dietician_id', dieticianId);
-  const response = await api.post(`/users/${userId}/diet/upload`, formData, {
+  const response = await enhancedApi.post(`/users/${userId}/diet/upload`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
@@ -557,140 +650,140 @@ export const uploadDietPdf = async (userId: string, dieticianId: string, file: a
 
 // --- Get User Diet PDF and Countdown ---
 export const getUserDiet = async (userId: string) => {
-  const response = await api.get(`/users/${userId}/diet`);
+  const response = await enhancedApi.get(`/users/${userId}/diet`);
   return response.data;
 };
 
 // --- Diet Notification Management ---
 export const extractDietNotifications = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/diet/notifications/extract`);
+  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/extract`);
   return response.data;
 };
 
 export const getDietNotifications = async (userId: string) => {
-  const response = await api.get(`/users/${userId}/diet/notifications`);
+  const response = await enhancedApi.get(`/users/${userId}/diet/notifications`);
   return response.data;
 };
 
 export const deleteDietNotification = async (userId: string, notificationId: string) => {
-  const response = await api.delete(`/users/${userId}/diet/notifications/${notificationId}`);
+  const response = await enhancedApi.delete(`/users/${userId}/diet/notifications/${notificationId}`);
   return response.data;
 };
 
 export const updateDietNotification = async (userId: string, notificationId: string, notificationUpdate: any) => {
-  const response = await api.put(`/users/${userId}/diet/notifications/${notificationId}`, notificationUpdate);
+  const response = await enhancedApi.put(`/users/${userId}/diet/notifications/${notificationId}`, notificationUpdate);
   return response.data;
 };
 
 export const scheduleDietNotifications = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/diet/notifications/schedule`);
+  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/schedule`);
   return response.data;
 };
 
 export const cancelDietNotifications = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/diet/notifications/cancel`);
+  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/cancel`);
   return response.data;
 };
 
 export const testDietNotification = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/diet/notifications/test`);
+  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/test`);
   return response.data;
 };
 
 // --- List All Users Except Dietician ---
 export const listNonDieticianUsers = async () => {
-  const response = await api.get('/users/non-dietician');
+  const response = await enhancedApi.get('/users/non-dietician');
   return response.data;
 };
 
 // --- Refresh Free Plans (for Dietician) ---
 export const refreshFreePlans = async (): Promise<{ success: boolean; message: string; updated_count: number }> => {
-  const response = await api.post('/users/refresh-free-plans');
+  const response = await enhancedApi.post('/users/refresh-free-plans');
   return response.data;
 };
 
 // --- Get All User Profiles (for Messages Screen) ---
 export const getAllUserProfiles = async () => {
-  const response = await api.get('/users/all-profiles');
+  const response = await enhancedApi.get('/users/all-profiles');
   return response.data;
 };
 
 // --- Subscription Management ---
 export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
-  const response = await api.get('/subscription/plans');
+  const response = await enhancedApi.get('/subscription/plans');
   return response.data.plans;
 };
 
 export const selectSubscription = async (userId: string, planId: string): Promise<SubscriptionResponse> => {
-  const response = await api.post('/subscription/select', { userId, planId });
+  const response = await enhancedApi.post('/subscription/select', { userId, planId });
   return response.data;
 };
 
 export const getSubscriptionStatus = async (userId: string): Promise<SubscriptionStatus> => {
-  const response = await api.get(`/subscription/status/${userId}`);
+  const response = await enhancedApi.get(`/subscription/status/${userId}`);
   return response.data;
 };
 
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
-  const response = await api.post(`/subscription/cancel/${userId}`);
+  const response = await enhancedApi.post(`/subscription/cancel/${userId}`);
   return response.data;
 };
 
 export const toggleAutoRenewal = async (userId: string, enabled: boolean): Promise<{ success: boolean; message: string }> => {
-  const response = await api.post(`/subscription/toggle-auto-renewal/${userId}?enabled=${enabled}`);
+  const response = await enhancedApi.post(`/subscription/toggle-auto-renewal/${userId}?enabled=${enabled}`);
   return response.data;
 };
 
 export const addSubscriptionAmount = async (userId: string, planId: string): Promise<{ success: boolean; message: string; amountAdded: number; newTotal: number }> => {
-  const response = await api.post(`/subscription/add-amount/${userId}?planId=${planId}`);
+  const response = await enhancedApi.post(`/subscription/add-amount/${userId}?planId=${planId}`);
   return response.data;
 };
 
 // --- Notification Management ---
 export const getUserNotifications = async (userId: string): Promise<{ notifications: Notification[] }> => {
-  const response = await api.get(`/notifications/${userId}`);
+  const response = await enhancedApi.get(`/notifications/${userId}`);
   return response.data;
 };
 
 export const markNotificationRead = async (notificationId: string): Promise<{ success: boolean; message: string }> => {
-  const response = await api.put(`/notifications/${notificationId}/read`);
+  const response = await enhancedApi.put(`/notifications/${notificationId}/read`);
   return response.data;
 };
 
 export const deleteNotification = async (notificationId: string): Promise<{ success: boolean; message: string }> => {
-  const response = await api.delete(`/notifications/${notificationId}`);
+  const response = await enhancedApi.delete(`/notifications/${notificationId}`);
   return response.data;
 };
 
 // --- User Management (Dietician) ---
 export const getUserDetails = async (userId: string) => {
-  const response = await api.get(`/users/${userId}/details`);
+  const response = await enhancedApi.get(`/users/${userId}/details`);
   return response.data;
 };
 
 export const markUserPaid = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/mark-paid`);
+  const response = await enhancedApi.post(`/users/${userId}/mark-paid`);
   return response.data;
 };
 
 export const lockUserApp = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/lock-app`);
+  const response = await enhancedApi.post(`/users/${userId}/lock-app`);
   return response.data;
 };
 
 export const unlockUserApp = async (userId: string) => {
-  const response = await api.post(`/users/${userId}/unlock-app`);
+  const response = await enhancedApi.post(`/users/${userId}/unlock-app`);
   return response.data;
 };
 
 export const getUserLockStatus = async (userId: string) => {
-  const response = await api.get(`/users/${userId}/lock-status`);
+  const response = await enhancedApi.get(`/users/${userId}/lock-status`);
   return response.data;
 };
 
 export const testUserExists = async (userId: string) => {
-  const response = await api.get(`/users/${userId}/test`);
+  const response = await enhancedApi.get(`/users/${userId}/test`);
   return response.data;
 };
 
-export default api; 
+export default enhancedApi; 

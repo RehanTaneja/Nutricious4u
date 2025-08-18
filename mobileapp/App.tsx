@@ -381,9 +381,12 @@ function AppContent() {
                     await AsyncStorage.setItem('hasCompletedQuiz', 'false');
                   }
                   
-                  // Check subscription status for non-dietician users
+                  // Check subscription status for non-dietician users - SEQUENTIAL to prevent 499 errors
                   if (!isDieticianAccount && profile) {
                     try {
+                      // Add delay between API calls to prevent connection conflicts
+                      await new Promise(resolve => setTimeout(resolve, 500));
+                      
                       const { getSubscriptionStatus } = await import('./services/api');
                       const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
                       
@@ -393,9 +396,6 @@ function AppContent() {
                         console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(false);
                         setIsFreeUser(true);
-                        
-                        // Don't show popup for free users - they can use basic features
-                        // Only show popup if they explicitly need premium features
                       } else {
                         console.log('[Subscription Check] User has active paid subscription');
                         console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
@@ -403,8 +403,14 @@ function AppContent() {
                         setIsFreeUser(false);
                       }
                       
+                      // Add delay before next API call
+                      await new Promise(resolve => setTimeout(resolve, 300));
+                      
                       // Check and reset daily data
                       await checkAndResetDailyData();
+                      
+                      // Add delay before next API call
+                      await new Promise(resolve => setTimeout(resolve, 300));
                       
                       // Check app lock status
                       await checkAppLockStatus();
