@@ -33,35 +33,92 @@ if (__DEV__) {
 export const API_URL = `${protocol}://${apiHost}${port}/api`;
 logger.log('[API] Final API_URL:', API_URL);
 
-const api = axios.create({
+// iOS-specific axios configuration
+const axiosConfig = {
   baseURL: API_URL,
-  timeout: 30000, // Increased timeout to 30 seconds for Gemini API calls
+  timeout: Platform.OS === 'ios' ? 45000 : 30000, // Longer timeout for iOS
   headers: {
     'Content-Type': 'application/json',
-  }
-});
+    'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
+  },
+  // iOS-specific settings
+  ...(Platform.OS === 'ios' && {
+    // Enable keep-alive for iOS
+    httpAgent: undefined,
+    httpsAgent: undefined,
+    // Add iOS-specific headers
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0',
+      'Accept': 'application/json',
+      'Connection': 'keep-alive',
+    }
+  })
+};
 
-// Add response interceptor for better error handling
+const api = axios.create(axiosConfig);
+
+// Retry configuration for failed requests
+const retryConfig = {
+  retries: 3,
+  retryDelay: 1000,
+  retryCondition: (error: any) => {
+    // Retry on network errors, 5xx errors, and specific iOS connection issues
+    return (
+      error.message === 'Network Error' ||
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ECONNREFUSED' ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ETIMEDOUT' ||
+      (error.response && error.response.status >= 500) ||
+      (error.response && error.response.status === 499) // Client closed connection
+    );
+  }
+};
+
+// Retry interceptor
 api.interceptors.response.use(
   response => response,
-  error => {
-    logger.log('[API] Axios error:', error);
-    if (error.message === 'Network Error' || error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-      logger.error('Network Error - Backend server is not available');
-      // In production, throw the error to help with debugging
-      if (!__DEV__) {
-        return Promise.reject(error);
-      }
-      // In development, return a mock response to prevent app crashes
-      return Promise.resolve({ 
-        data: { 
-          error: 'Backend not available',
-          message: 'The backend server is not currently available. Please ensure your backend is deployed and accessible.',
-          isBackendError: true
-        }, 
-        status: 503 
+  async error => {
+    const { config } = error;
+    
+    // Initialize retry count if not set
+    if (!config || !config.__retryCount) {
+      config.__retryCount = 0;
+    }
+    
+    // Check if we should retry
+    if (retryConfig.retryCondition(error) && config.__retryCount < retryConfig.retries) {
+      config.__retryCount += 1;
+      
+      logger.log(`[API] Retrying request (${config.__retryCount}/${retryConfig.retries}): ${config.url}`);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, retryConfig.retryDelay * config.__retryCount));
+      
+      // Retry the request
+      return api(config);
+    }
+    
+    // Log the final error
+    logger.log('[API] Final error after retries:', error);
+    
+    // Handle specific iOS connection issues
+    if (Platform.OS === 'ios' && (
+      error.message === 'Network Error' || 
+      error.code === 'ECONNABORTED' ||
+      error.response?.status === 499
+    )) {
+      logger.error('[API] iOS connection issue detected:', error.message || error.code);
+      
+      // Return a more specific error for iOS
+      return Promise.reject({
+        ...error,
+        message: 'Connection issue detected. Please check your internet connection and try again.',
+        isIOSConnectionError: true
       });
     }
+    
     return Promise.reject(error);
   }
 );
@@ -70,6 +127,16 @@ api.interceptors.response.use(
 api.interceptors.request.use(
   config => {
     logger.log('[API] Making request to:', config.url);
+    
+    // Add iOS-specific request headers
+    if (Platform.OS === 'ios') {
+      config.headers = {
+        ...config.headers,
+        'X-Platform': 'ios',
+        'X-App-Version': '1.0.0'
+      } as any;
+    }
+    
     return config;
   },
   error => {

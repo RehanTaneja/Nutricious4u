@@ -605,8 +605,16 @@ const LoginSignupScreen = () => {
       return;
     }
 
+    setError(null);
+    
     try {
-      const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+      // Add iOS-specific timeout handling
+      const signupPromise = auth.createUserWithEmailAndPassword(email, password);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Signup timeout')), Platform.OS === 'ios' ? 30000 : 15000)
+      );
+      
+      const userCredential = await Promise.race([signupPromise, timeoutPromise]) as any;
       const user = userCredential.user;
 
       if (user) {
@@ -641,7 +649,31 @@ const LoginSignupScreen = () => {
         }
       }
     } catch (error: any) {
-      setError(error.message);
+      console.log('[SignUp] Error:', error);
+      
+      // Handle iOS-specific connection issues
+      if (Platform.OS === 'ios' && (
+        error.message === 'Signup timeout' ||
+        error.code === 'auth/network-request-failed' ||
+        error.message?.includes('network') ||
+        error.message?.includes('connection')
+      )) {
+        setError('Network connection issue. Please check your internet connection and try again.');
+        return;
+      }
+      
+      // Provide more specific error messages
+      if (error.code === 'auth/email-already-in-use') {
+        setError('An account with this email already exists. Please try logging in instead.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Invalid email address. Please check your email format.');
+      } else if (error.code === 'auth/weak-password') {
+        setError('Password is too weak. Please use at least 6 characters.');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Please try again later.');
+      } else {
+        setError('Signup failed. Please try again.');
+      }
     }
   };
 
@@ -651,8 +683,17 @@ const LoginSignupScreen = () => {
       return;
     }
     setLoadingLogin(true);
+    setError(null);
+    
     try {
-      await auth.signInWithEmailAndPassword(email, password);
+      // Add iOS-specific timeout handling
+      const loginPromise = auth.signInWithEmailAndPassword(email, password);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Login timeout')), Platform.OS === 'ios' ? 30000 : 15000)
+      );
+      
+      await Promise.race([loginPromise, timeoutPromise]);
+      
       if (rememberMe) {
         await AsyncStorage.setItem('savedEmail', email);
         await AsyncStorage.setItem('savedPassword', password);
@@ -661,6 +702,19 @@ const LoginSignupScreen = () => {
         await AsyncStorage.removeItem('savedPassword');
       }
     } catch (error: any) {
+      console.log('[Login] Error:', error);
+      
+      // Handle iOS-specific connection issues
+      if (Platform.OS === 'ios' && (
+        error.message === 'Login timeout' ||
+        error.code === 'auth/network-request-failed' ||
+        error.message?.includes('network') ||
+        error.message?.includes('connection')
+      )) {
+        setError('Network connection issue. Please check your internet connection and try again.');
+        return;
+      }
+      
       // If login fails for dietician, try to create the account
       if (
         email.trim().toLowerCase() === 'nutricious4u@gmail.com' &&
@@ -668,6 +722,7 @@ const LoginSignupScreen = () => {
         (error.code === 'auth/user-not-found' || error.message?.toLowerCase().includes('no user record'))
       ) {
         try {
+          console.log('[Login] Creating dietician account...');
           // Create the dietician account
           const userCredential = await auth.createUserWithEmailAndPassword(email, password);
           const user = userCredential.user;
@@ -700,10 +755,22 @@ const LoginSignupScreen = () => {
           await auth.signInWithEmailAndPassword(email, password);
           setError(null);
         } catch (createErr: any) {
+          console.log('[Login] Error creating dietician account:', createErr);
           setError('Failed to create dietician account: ' + (createErr.message || 'Unknown error'));
         }
       } else {
-        setError('Wrong email or password. Please try again.');
+        // Provide more specific error messages for iOS
+        if (error.code === 'auth/invalid-email') {
+          setError('Invalid email address. Please check your email format.');
+        } else if (error.code === 'auth/user-not-found') {
+          setError('No account found with this email. Please check your email or sign up.');
+        } else if (error.code === 'auth/wrong-password') {
+          setError('Incorrect password. Please try again.');
+        } else if (error.code === 'auth/too-many-requests') {
+          setError('Too many failed attempts. Please try again later.');
+        } else {
+          setError('Login failed. Please check your credentials and try again.');
+        }
       }
     } finally {
       setLoadingLogin(false);
@@ -10529,20 +10596,83 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     return `${API_URL}/users/${user.userId}/diet/pdf`;
   };
 
-  // Helper function to create a PDF viewer HTML
+  // Helper function to create a simplified PDF viewer HTML for iOS compatibility
   const createPdfViewerHtml = (pdfUrl: string) => {
     return `
       <!DOCTYPE html>
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
           <style>
-            body { margin: 0; padding: 0; }
-            #pdf-viewer { width: 100%; height: 100vh; }
+            body { 
+              margin: 0; 
+              padding: 0; 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              background-color: #f5f5f5;
+            }
+            .pdf-container {
+              width: 100%;
+              height: 100vh;
+              display: flex;
+              flex-direction: column;
+            }
+            .pdf-header {
+              background: #fff;
+              padding: 10px;
+              border-bottom: 1px solid #e0e0e0;
+              text-align: center;
+              font-weight: bold;
+            }
+            .pdf-viewer {
+              flex: 1;
+              width: 100%;
+              height: 100%;
+              border: none;
+            }
+            .pdf-fallback {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              flex-direction: column;
+              background: #fff;
+            }
+            .pdf-fallback a {
+              color: #007AFF;
+              text-decoration: none;
+              font-size: 16px;
+              margin-top: 10px;
+            }
           </style>
         </head>
         <body>
-          <embed id="pdf-viewer" src="${pdfUrl}" type="application/pdf" />
+          <div class="pdf-container">
+            <div class="pdf-header">Diet PDF Viewer</div>
+            <iframe 
+              class="pdf-viewer" 
+              src="${pdfUrl}" 
+              type="application/pdf"
+              onerror="showFallback()"
+            ></iframe>
+          </div>
+          <script>
+            function showFallback() {
+              document.body.innerHTML = \`
+                <div class="pdf-fallback">
+                  <p>Unable to display PDF in browser</p>
+                  <a href="${pdfUrl}" target="_blank">Open PDF in New Tab</a>
+                </div>
+              \`;
+            }
+            
+            // Check if PDF loads successfully
+            setTimeout(() => {
+              const iframe = document.querySelector('.pdf-viewer');
+              if (iframe && iframe.contentDocument && iframe.contentDocument.body.innerHTML === '') {
+                showFallback();
+              }
+            }, 3000);
+          </script>
         </body>
       </html>
     `;
@@ -10887,254 +11017,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
           <View style={{ flex: 1 }}>
             {pdfUrl ? (
               <WebView
-                source={{ 
-                  html: `
-                    <!DOCTYPE html>
-                    <html>
-                      <head>
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <title>PDF Viewer</title>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-                        <style>
-                          body { 
-                            margin: 0; 
-                            padding: 0; 
-                            font-family: Arial, sans-serif;
-                            background-color: #f0f0f0;
-                          }
-                          .container {
-                            width: 100%;
-                            height: 100vh;
-                            display: flex;
-                            flex-direction: column;
-                          }
-                          .header {
-                            display: none;
-                          }
-                          .pdf-container {
-                            flex: 1;
-                            background: white;
-                            overflow: auto;
-                            position: relative;
-                            touch-action: manipulation;
-                            scroll-behavior: smooth;
-                          }
-                          .page-wrapper {
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            padding: 20px 0;
-                          }
-                          .page-canvas {
-                            display: block;
-                            margin: 0 auto 20px auto;
-                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                            touch-action: manipulation;
-                          }
-                          .loading {
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            height: 100%;
-                            font-size: 18px;
-                            color: #666;
-                          }
-                          .error {
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            height: 100%;
-                            font-size: 16px;
-                            color: #d32f2f;
-                            text-align: center;
-                            padding: 20px;
-                          }
-                          .page-indicator {
-                            background: rgba(0, 0, 0, 0.7);
-                            color: white;
-                            padding: 8px 16px;
-                            text-align: center;
-                            position: fixed;
-                            top: 20px;
-                            left: 50%;
-                            transform: translateX(-50%);
-                            border-radius: 20px;
-                            z-index: 1000;
-                            font-size: 14px;
-                          }
-                          .page-info {
-                            margin: 0;
-                            font-size: 14px;
-                            color: white;
-                          }
-                        </style>
-                      </head>
-                      <body>
-                        <div class="container">
-                          <div class="header">
-                            <h3>Diet PDF Viewer</h3>
-                          </div>
-                          <div class="pdf-container" id="pdf-container">
-                            <div class="loading">Loading PDF...</div>
-                          </div>
-                          <div class="page-indicator">
-                            <span class="page-info">
-                              Page <span id="page-num">1</span> of <span id="page-count">1</span>
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <script>
-                          // Set up PDF.js worker
-                          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                          
-                          let pdfDoc = null;
-                          let currentScale = 1.5;
-                          const minScale = 0.5;
-                          const maxScale = 3.0;
-                          let allPages = [];
-                          let isZooming = false;
-                          let zoomTimeout = null;
-                          
-                          const container = document.getElementById('pdf-container');
-                          
-                          // Touch handling variables
-                          let initialDistance = 0;
-                          let initialScale = 1.5;
-                          let isPinching = false;
-                          
-                          // Render all pages for vertical scrolling
-                          async function renderAllPages() {
-                            const pageWrapper = document.createElement('div');
-                            pageWrapper.className = 'page-wrapper';
-                            
-                            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-                              const page = await pdfDoc.getPage(pageNum);
-                              const viewport = page.getViewport({scale: currentScale});
-                              
-                              const canvas = document.createElement('canvas');
-                              canvas.className = 'page-canvas';
-                              canvas.height = viewport.height;
-                              canvas.width = viewport.width;
-                              
-                              const ctx = canvas.getContext('2d');
-                              const renderContext = {
-                                canvasContext: ctx,
-                                viewport: viewport
-                              };
-                              
-                              await page.render(renderContext).promise;
-                              pageWrapper.appendChild(canvas);
-                              
-                              // Add touch listeners to each canvas
-                              addTouchListeners(canvas);
-                            }
-                            
-                            container.innerHTML = '';
-                            container.appendChild(pageWrapper);
-                            
-                            // Update page indicator
-                            document.getElementById('page-count').textContent = pdfDoc.numPages;
-                            document.getElementById('page-num').textContent = '1';
-                            
-                            // Add scroll listener for page tracking
-                            container.addEventListener('scroll', updateCurrentPage);
-                          }
-                          
-                          // Update current page based on scroll position
-                          function updateCurrentPage() {
-                            const scrollTop = container.scrollTop;
-                            const containerHeight = container.clientHeight;
-                            const pageHeight = container.scrollHeight / pdfDoc.numPages;
-                            
-                            const currentPage = Math.floor(scrollTop / pageHeight) + 1;
-                            const clampedPage = Math.max(1, Math.min(currentPage, pdfDoc.numPages));
-                            
-                            document.getElementById('page-num').textContent = clampedPage;
-                          }
-                          
-                          // Touch event handlers for pinch-to-zoom
-                          function getDistance(touch1, touch2) {
-                            const dx = touch1.clientX - touch2.clientX;
-                            const dy = touch1.clientY - touch2.clientY;
-                            return Math.sqrt(dx * dx + dy * dy);
-                          }
-                          
-                          function handleTouchStart(e) {
-                            if (e.touches.length === 2) {
-                              isPinching = true;
-                              initialDistance = getDistance(e.touches[0], e.touches[1]);
-                              initialScale = currentScale;
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }
-                          }
-                          
-                          function handleTouchMove(e) {
-                            if (isPinching && e.touches.length === 2) {
-                              const currentDistance = getDistance(e.touches[0], e.touches[1]);
-                              const scaleFactor = currentDistance / initialDistance;
-                              const newScale = initialScale * scaleFactor;
-                              
-                              if (newScale >= minScale && newScale <= maxScale) {
-                                currentScale = newScale;
-                                isZooming = true;
-                                
-                                // Clear previous timeout
-                                if (zoomTimeout) {
-                                  clearTimeout(zoomTimeout);
-                                }
-                                
-                                // Debounce the render to prevent lag
-                                zoomTimeout = setTimeout(() => {
-                                  renderAllPages();
-                                  isZooming = false;
-                                }, 100);
-                              }
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }
-                          }
-                          
-                          function handleTouchEnd(e) {
-                            if (e.touches.length < 2) {
-                              isPinching = false;
-                            }
-                          }
-                          
-                          // Add touch event listeners to canvas
-                          function addTouchListeners(canvas) {
-                            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-                            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-                            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-                          }
-                          
-                          // Load the PDF
-                          fetch('${pdfUrl}')
-                            .then(response => {
-                              if (!response.ok) {
-                                throw new Error('Failed to load PDF');
-                              }
-                              return response.arrayBuffer();
-                            })
-                            .then(data => {
-                              return pdfjsLib.getDocument({data: data}).promise;
-                            })
-                            .then(pdf => {
-                              pdfDoc = pdf;
-                              
-                              // Render all pages for vertical scrolling
-                              renderAllPages();
-                            })
-                            .catch(error => {
-                              console.error('Error loading PDF:', error);
-                              container.innerHTML = '<div class="error">Error loading PDF. Please try again.</div>';
-                            });
-                        </script>
-                      </body>
-                    </html>
-                  `
-                }}
+                source={{ html: createPdfViewerHtml(pdfUrl) }}
                 style={{ flex: 1, width: '100%' }}
                 startInLoadingState
                 javaScriptEnabled={true}

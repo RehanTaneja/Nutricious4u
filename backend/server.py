@@ -188,14 +188,59 @@ class SubscriptionStatus(BaseModel):
 # Define app before any usage
 app = FastAPI(title="Fitness Tracker API", version="1.0.0")
 
-# Add CORS middleware
+# Add CORS middleware with iOS-specific headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_headers=[
+        "*",  # Allows all headers
+        "X-Platform",
+        "X-App-Version",
+        "User-Agent",
+        "Accept",
+        "Connection",
+        "Keep-Alive"
+    ],
+    expose_headers=[
+        "X-Platform",
+        "X-App-Version",
+        "Content-Length",
+        "Content-Type"
+    ]
 )
+
+# Add middleware for iOS connection handling and logging
+@app.middleware("http")
+async def ios_connection_middleware(request, call_next):
+    """Middleware to handle iOS connection issues and add logging"""
+    import time
+    start_time = time.time()
+    
+    # Log request details
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    platform = request.headers.get("x-platform", "unknown")
+    
+    logger.info(f"[REQUEST] {request.method} {request.url.path} from {client_ip} (Platform: {platform}, UA: {user_agent[:50]}...)")
+    
+    try:
+        response = await call_next(request)
+        
+        # Log response details
+        process_time = time.time() - start_time
+        logger.info(f"[RESPONSE] {request.method} {request.url.path} - {response.status_code} ({process_time:.3f}s)")
+        
+        # Add iOS-specific headers
+        response.headers["X-Platform"] = platform
+        response.headers["X-Response-Time"] = f"{process_time:.3f}"
+        
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(f"[ERROR] {request.method} {request.url.path} - {str(e)} ({process_time:.3f}s)")
+        raise
 
 # Define api_router before any usage
 api_router = APIRouter(prefix='/api')
@@ -459,14 +504,38 @@ async def get_food_log_summary(user_id: str):
     loop = asyncio.get_event_loop()
     try:
         logger.info(f"[SUMMARY] Fetching summary for user: {user_id}")
+        
+        # Add timeout handling for iOS
+        import asyncio
+        try:
+            # Set a timeout for the entire operation
+            summary_task = asyncio.create_task(_get_food_log_summary_internal(user_id, loop))
+            result = await asyncio.wait_for(summary_task, timeout=25.0)  # 25 second timeout
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"[SUMMARY] Timeout getting food log summary for user {user_id}")
+            raise HTTPException(status_code=408, detail="Request timeout. Please try again.")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SUMMARY] Error getting food log summary for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve summary.")
+
+async def _get_food_log_summary_internal(user_id: str, loop):
+    """Internal function to get food log summary with better error handling"""
+    try:
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
+        
         # Use datetime object for query, not isoformat string
         query = logs_ref.where("timestamp", ">=", start_of_week)
         docs_stream = await loop.run_in_executor(executor, query.stream)
+        
         history = {}
         all_logs = []
+        
         for doc in docs_stream:
             log = doc.to_dict()
             all_logs.append(log)
@@ -499,6 +568,7 @@ async def get_food_log_summary(user_id: str):
             history[log_date]["calories"] += (calories * serving_size_num) / 100
             history[log_date]["protein"] += (protein * serving_size_num) / 100
             history[log_date]["fat"] += (fat * serving_size_num) / 100
+            
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         today_str = today.strftime('%Y-%m-%d')
         if today_str not in history:
@@ -507,9 +577,10 @@ async def get_food_log_summary(user_id: str):
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
         logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
         return LogSummaryResponse(history=formatted_history)
+        
     except Exception as e:
-        logger.error(f"[SUMMARY] Error getting food log summary for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve summary.")
+        logger.error(f"[SUMMARY INTERNAL] Error in internal function for user {user_id}: {e}")
+        raise
 
 @api_router.get("/workout/search", response_model=WorkoutSearchResponse)
 async def search_workouts(query: str = Query(..., min_length=1)):
@@ -649,6 +720,30 @@ async def get_user_profile(user_id: str):
     logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
     check_firebase_availability()
     loop = asyncio.get_event_loop()
+    
+    try:
+        # Add timeout handling for iOS
+        import asyncio
+        try:
+            # Set a timeout for the entire operation
+            profile_task = asyncio.create_task(_get_user_profile_internal(user_id, loop))
+            result = await asyncio.wait_for(profile_task, timeout=15.0)  # 15 second timeout
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"[PROFILE_FETCH] Timeout getting profile for user {user_id}")
+            raise HTTPException(status_code=408, detail="Request timeout. Please try again.")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[PROFILE_FETCH] Error getting user profile for user_id {user_id}: {e}")
+        logger.error(f"[PROFILE_FETCH] Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"[PROFILE_FETCH] Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to get user profile")
+
+async def _get_user_profile_internal(user_id: str, loop):
+    """Internal function to get user profile with better error handling"""
     try:
         logger.info(f"[PROFILE_FETCH] Querying Firestore for user_id: {user_id}")
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
@@ -673,16 +768,12 @@ async def get_user_profile(user_id: str):
         
         logger.info(f"[PROFILE_FETCH] Successfully returning profile for user_id: {user_id}")
         return profile
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        # Re-raise HTTPException so FastAPI can handle it, otherwise convert to 500
-        if isinstance(e, HTTPException):
-            logger.warning(f"[PROFILE_FETCH] HTTPException for user_id {user_id}: {e.detail}")
-            raise
-        logger.error(f"[PROFILE_FETCH] Error getting user profile for user_id {user_id}: {e}")
-        logger.error(f"[PROFILE_FETCH] Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"[PROFILE_FETCH] Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="Failed to get user profile")
+        logger.error(f"[PROFILE_FETCH INTERNAL] Error in internal function for user {user_id}: {e}")
+        raise
 
 @api_router.patch("/users/{user_id}/profile", response_model=UserProfile)
 async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
