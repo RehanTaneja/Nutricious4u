@@ -554,21 +554,68 @@ async def log_food_item(request: FoodLogRequest):
 
 @api_router.get("/food/log/summary/{user_id}", response_model=LogSummaryResponse)
 async def get_food_log_summary(user_id: str):
-    loop = asyncio.get_event_loop()
     try:
         logger.info(f"[SUMMARY] Fetching summary for user: {user_id}")
         
-        # Add timeout handling for iOS
-        import asyncio
-        try:
-            # Set a timeout for the entire operation
-            summary_task = asyncio.create_task(_get_food_log_summary_internal(user_id, loop))
-            result = await asyncio.wait_for(summary_task, timeout=25.0)  # 25 second timeout
-            return result
-        except asyncio.TimeoutError:
-            logger.error(f"[SUMMARY] Timeout getting food log summary for user {user_id}")
-            raise HTTPException(status_code=408, detail="Request timeout. Please try again.")
+        # Check if Firebase is available
+        if not FIREBASE_AVAILABLE or firestore_db is None:
+            logger.error("[SUMMARY] Firebase is not available, returning service unavailable")
+            raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
+        
+        # Simplified version without timeout handling
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_week = today - timedelta(days=6)
+        logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
+        
+        # Use datetime object for query, not isoformat string
+        query = logs_ref.where("timestamp", ">=", start_of_week)
+        docs_stream = query.stream()
+        
+        history = {}
+        all_logs = []
+        
+        for doc in docs_stream:
+            log = doc.to_dict()
+            all_logs.append(log)
+            if not log or not isinstance(log, dict):
+                continue
+            ts = log.get("timestamp")
+            # Firestore may return a datetime or a string
+            if isinstance(ts, str):
+                try:
+                    log_date = datetime.fromisoformat(ts).strftime('%Y-%m-%d')
+                except Exception:
+                    continue
+            elif isinstance(ts, datetime):
+                log_date = ts.strftime('%Y-%m-%d')
+            else:
+                continue
+            if log_date not in history:
+                history[log_date] = {"calories": 0, "protein": 0, "fat": 0}
+            food_item = log.get("food")
+            if food_item is None or not isinstance(food_item, dict):
+                food_item = {}
+            serving_size = log.get("servingSize", "100")
+            try:
+                serving_size_num = float(serving_size)
+            except Exception:
+                serving_size_num = 100
+            calories = food_item.get("calories", 0)
+            protein = food_item.get("protein", 0)
+            fat = food_item.get("fat", 0)
+            history[log_date]["calories"] += (calories * serving_size_num) / 100
+            history[log_date]["protein"] += (protein * serving_size_num) / 100
+            history[log_date]["fat"] += (fat * serving_size_num) / 100
             
+        logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
+        today_str = today.strftime('%Y-%m-%d')
+        if today_str not in history:
+            history[today_str] = {"calories": 0, "protein": 0, "fat": 0}
+        sorted_dates = sorted(history.keys(), reverse=True)
+        formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
+        logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
+        return LogSummaryResponse(history=formatted_history)
+        
     except HTTPException:
         raise
     except Exception as e:
