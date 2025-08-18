@@ -256,6 +256,33 @@ async def test_deployment():
         "ios_fixes": "applied"
     }
 
+# Add a Firebase test endpoint
+@api_router.get("/test-firebase")
+async def test_firebase():
+    """Test endpoint to verify Firebase connection"""
+    try:
+        check_firebase_availability()
+        
+        # Try a simple Firestore operation
+        test_collection = firestore_db.collection("test")
+        test_doc = test_collection.document("connection_test")
+        
+        # Just check if we can access the collection
+        return {
+            "message": "Firebase connection test successful",
+            "firebase_available": True,
+            "firestore_db_type": str(type(firestore_db)),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "message": "Firebase connection test failed",
+            "firebase_available": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "timestamp": datetime.now().isoformat()
+        }
+
 # Create a thread pool executor
 executor = ThreadPoolExecutor(max_workers=10)
 
@@ -757,14 +784,38 @@ async def _get_user_profile_internal(user_id: str, loop):
     """Internal function to get user profile with better error handling"""
     try:
         logger.info(f"[PROFILE_FETCH] Querying Firestore for user_id: {user_id}")
+        
+        # Check if firestore_db is available
+        if firestore_db is None:
+            logger.error("[PROFILE_FETCH] Firestore database is not initialized")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Create document reference
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
-        doc = await loop.run_in_executor(executor, doc_ref.get)
+        
+        # Execute the query with better error handling
+        try:
+            doc = await loop.run_in_executor(executor, doc_ref.get)
+        except Exception as firestore_error:
+            logger.error(f"[PROFILE_FETCH] Firestore query failed for user {user_id}: {firestore_error}")
+            logger.error(f"[PROFILE_FETCH] Firestore error type: {type(firestore_error).__name__}")
+            raise HTTPException(status_code=503, detail="Database query failed")
         
         if not doc.exists:
             logger.warning(f"[PROFILE_FETCH] No profile found for user_id: {user_id}")
             raise HTTPException(status_code=404, detail="User profile not found")
         
-        profile = doc.to_dict()
+        # Convert to dictionary with error handling
+        try:
+            profile = doc.to_dict()
+        except Exception as dict_error:
+            logger.error(f"[PROFILE_FETCH] Failed to convert document to dict for user {user_id}: {dict_error}")
+            raise HTTPException(status_code=500, detail="Failed to process user profile")
+        
+        if profile is None:
+            logger.warning(f"[PROFILE_FETCH] Profile is None for user_id: {user_id}")
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
         logger.info(f"[PROFILE_FETCH] Profile found for user_id: {user_id}, firstName: {profile.get('firstName', 'N/A')}")
         
         # Filter out placeholder profiles
@@ -783,8 +834,11 @@ async def _get_user_profile_internal(user_id: str, loop):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[PROFILE_FETCH INTERNAL] Error in internal function for user {user_id}: {e}")
-        raise
+        logger.error(f"[PROFILE_FETCH INTERNAL] Unexpected error in internal function for user {user_id}: {e}")
+        logger.error(f"[PROFILE_FETCH INTERNAL] Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"[PROFILE_FETCH INTERNAL] Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @api_router.patch("/users/{user_id}/profile", response_model=UserProfile)
 async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
