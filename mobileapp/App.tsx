@@ -134,7 +134,7 @@ function AppContent() {
         
         // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Daily reset timeout')), 10000)
+          setTimeout(() => reject(new Error('Daily reset timeout')), 15000) // Increased timeout
         );
         
         await Promise.race([resetPromise, timeoutPromise]);
@@ -146,8 +146,17 @@ function AppContent() {
         // Force refresh of dashboard data
         setForceReload(x => x + 1);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Daily Reset] Error resetting daily data:', error);
+      
+      // Handle specific error types
+      if (error.isClientClosedError || error.isIOSConnectionError) {
+        console.log('[Daily Reset] Connection error, will retry later');
+        // Don't show error to user, just log it
+      } else {
+        console.log('[Daily Reset] Other error, continuing without reset');
+      }
+      
       // Don't throw error to prevent login sequence failure
     }
   };
@@ -160,7 +169,7 @@ function AppContent() {
       // Add timeout to prevent hanging
       const lockPromise = getUserLockStatus(user.uid);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('App lock check timeout')), 8000)
+        setTimeout(() => reject(new Error('App lock check timeout')), 12000) // Increased timeout
       );
       
       const lockStatus = await Promise.race([lockPromise, timeoutPromise]);
@@ -171,8 +180,17 @@ function AppContent() {
       if (lockStatus.isAppLocked) {
         setShowLockModal(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[App Lock] Error checking lock status:', error);
+      
+      // Handle specific error types
+      if (error.isClientClosedError || error.isIOSConnectionError) {
+        console.log('[App Lock] Connection error, will retry later');
+        // Don't show error to user, just log it
+      } else {
+        console.log('[App Lock] Other error, continuing without lock check');
+      }
+      
       // Don't throw error to prevent login sequence failure
     }
   };
@@ -396,7 +414,7 @@ function AppContent() {
                   if (!isDieticianAccount && profile) {
                     try {
                       // Add longer delay between API calls to prevent connection conflicts
-                      await new Promise(resolve => setTimeout(resolve, 1000));
+                      await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
                       
                       const { getSubscriptionStatus, getQueueStatus } = await import('./services/api');
                       
@@ -420,7 +438,7 @@ function AppContent() {
                       }
                       
                       // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 800));
+                      await new Promise(resolve => setTimeout(resolve, 1200)); // Increased delay
                       
                       // Check and reset daily data (with error handling)
                       try {
@@ -430,7 +448,7 @@ function AppContent() {
                       }
                       
                       // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 800));
+                      await new Promise(resolve => setTimeout(resolve, 1200)); // Increased delay
                       
                       // Check app lock status (with error handling)
                       try {
@@ -529,13 +547,13 @@ function AppContent() {
         checkAppLockStatus();
       };
 
-      // Add delay to prevent conflict with login sequence
+      // Add longer delay to prevent conflict with login sequence
       const initialCheck = setTimeout(() => {
         checkLockOnFocus();
-      }, 2000); // 2 second delay to avoid conflict with login sequence
+      }, 5000); // Increased to 5 seconds to avoid conflict with login sequence
 
-      // Set up interval to check periodically (every 30 seconds)
-      const interval = setInterval(checkLockOnFocus, 30000);
+      // Set up interval to check periodically (every 60 seconds instead of 30)
+      const interval = setInterval(checkLockOnFocus, 60000); // Increased interval
 
       return () => {
         clearTimeout(initialCheck);

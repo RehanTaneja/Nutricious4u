@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-08-19T12:28:19.151547",
+  "api_base_url": "https://nutricious4u-production.up.railway.app/api",
+  "test_user_id": "EMoXb6rFuwN3xKsotq54K0kVArf1",
+  "sequential_results": [
+    {
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/profile",
+      "status_code": 200,
+      "duration": 1.2733871936798096,
+      "success": true
+    },
+    {
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/lock-status",
+      "status_code": 200,
+      "duration": 2.6427009105682373,
+      "success": true
+    },
+    {
+      "endpoint": "/subscription/status/EMoXb6rFuwN3xKsotq54K0kVArf1",
+      "status_code": 200,
+      "duration": 2.1166138648986816,
+      "success": true
+    },
+    {
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/profile",
+      "status_code": 200,
+      "duration": 2.3363730907440186,
+      "success": true
+    }
+  ],
+  "concurrent_results": [
+    {
+      "request_id": 1,
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/profile",
+      "status_code": 200,
+      "duration": 1.6519520282745361,
+      "success": true
+    },
+    {
+      "request_id": 3,
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/profile",
+      "status_code": 200,
+      "duration": 1.651473045349121,
+      "success": true
+    },
+    {
+      "request_id": 2,
+      "endpoint": "/users/EMoXb6rFuwN3xKsotq54K0kVArf1/profile",
+      "status_code": 200,
+      "duration": 1.6521670818328857,
+      "success": true
+    }
+  ],
+  "overall_success": true
+}

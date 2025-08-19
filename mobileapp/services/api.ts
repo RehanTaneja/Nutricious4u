@@ -40,13 +40,26 @@ const pendingRequests = new Map<string, Promise<any>>();
 class RequestQueue {
   private queue: Array<() => Promise<any>> = [];
   private processing = false;
-  private maxConcurrent = Platform.OS === 'ios' ? 2 : 5; // Limit concurrent requests on iOS
+  private maxConcurrent = Platform.OS === 'ios' ? 1 : 3; // Reduced to 1 for iOS to prevent conflicts
   private activeRequests = 0;
+  private lastRequestTime = 0;
+  private minRequestInterval = Platform.OS === 'ios' ? 500 : 100; // 500ms minimum interval for iOS
 
   async add<T>(requestFn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
       this.queue.push(async () => {
         try {
+          // Ensure minimum interval between requests on iOS
+          if (Platform.OS === 'ios') {
+            const now = Date.now();
+            const timeSinceLastRequest = now - this.lastRequestTime;
+            if (timeSinceLastRequest < this.minRequestInterval) {
+              const delay = this.minRequestInterval - timeSinceLastRequest;
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+            this.lastRequestTime = Date.now();
+          }
+          
           this.activeRequests++;
           const result = await requestFn();
           resolve(result);
@@ -74,9 +87,9 @@ class RequestQueue {
     while (this.queue.length > 0 && this.activeRequests < this.maxConcurrent) {
       const requestFn = this.queue.shift();
       if (requestFn) {
-        // Add small delay between requests on iOS to prevent connection issues
+        // Add longer delay between requests on iOS to prevent connection issues
         if (Platform.OS === 'ios' && this.activeRequests > 0) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 800)); // Increased delay
         }
         requestFn();
       }
@@ -99,13 +112,13 @@ const requestQueue = new RequestQueue();
 // iOS-specific axios configuration with connection pooling
 const axiosConfig = {
   baseURL: API_URL,
-  timeout: Platform.OS === 'ios' ? 30000 : 25000, // Increased timeout for iOS
+  timeout: Platform.OS === 'ios' ? 45000 : 25000, // Increased timeout for iOS
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
     'Accept': 'application/json',
     'Connection': 'keep-alive',
-    'Keep-Alive': 'timeout=75, max=1000',
+    'Keep-Alive': 'timeout=120, max=1000', // Increased timeout
   },
   // iOS-specific settings
   ...(Platform.OS === 'ios' && {
@@ -115,6 +128,10 @@ const axiosConfig = {
     // Add connection pooling settings
     httpAgent: undefined, // Let axios handle connection pooling
     httpsAgent: undefined,
+    // Add request timeout and retry settings
+    timeout: 45000, // 45 seconds for iOS
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
   })
 };
 
@@ -122,7 +139,7 @@ const api = axios.create(axiosConfig);
 
 // Enhanced retry configuration with circuit breaker pattern
 const retryConfig = {
-  retries: 1, // Reduced to 1 retry to prevent connection overload
+  retries: Platform.OS === 'ios' ? 0 : 1, // No retries for iOS to prevent cascading failures
   retryDelay: 1000, // Reduced delay
   retryCondition: (error: any) => {
     // Only retry on actual network errors, not on client-side issues
@@ -200,10 +217,16 @@ api.interceptors.response.use(
     if (error.response?.status === 499) {
       logger.error('[API] Client closed connection (499):', error.config?.url);
       
+      // For iOS, provide a more specific error message
+      const errorMessage = Platform.OS === 'ios' 
+        ? 'Connection was interrupted. Please try again.'
+        : 'Request was cancelled. Please try again.';
+      
       return Promise.reject({
         ...error,
-        message: 'Request was cancelled. Please try again.',
-        isClientClosedError: true
+        message: errorMessage,
+        isClientClosedError: true,
+        isIOSConnectionError: Platform.OS === 'ios'
       });
     }
     
