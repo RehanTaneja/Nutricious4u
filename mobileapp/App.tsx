@@ -394,6 +394,9 @@ function AppContent() {
                   // For regular users, check if they have a profile
                   let profile = null;
                   try {
+                    // Add delay before profile check to prevent conflicts
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
                     profile = await getUserProfile(firebaseUser.uid);
                     if (profile && profile.firstName && profile.firstName !== 'User') {
                       setHasCompletedQuiz(true);
@@ -414,7 +417,7 @@ function AppContent() {
                   if (!isDieticianAccount && profile) {
                     try {
                       // Add longer delay between API calls to prevent connection conflicts
-                      await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
+                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
                       
                       const { getSubscriptionStatus, getQueueStatus } = await import('./services/api');
                       
@@ -438,7 +441,7 @@ function AppContent() {
                       }
                       
                       // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 1200)); // Increased delay
+                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
                       
                       // Check and reset daily data (with error handling)
                       try {
@@ -448,7 +451,7 @@ function AppContent() {
                       }
                       
                       // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 1200)); // Increased delay
+                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
                       
                       // Check app lock status (with error handling)
                       try {

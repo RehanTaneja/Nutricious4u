@@ -40,10 +40,11 @@ const pendingRequests = new Map<string, Promise<any>>();
 class RequestQueue {
   private queue: Array<() => Promise<any>> = [];
   private processing = false;
-  private maxConcurrent = Platform.OS === 'ios' ? 1 : 3; // Reduced to 1 for iOS to prevent conflicts
+  private maxConcurrent = Platform.OS === 'ios' ? 1 : 3; // Single request at a time for iOS
   private activeRequests = 0;
   private lastRequestTime = 0;
-  private minRequestInterval = Platform.OS === 'ios' ? 500 : 100; // 500ms minimum interval for iOS
+  private minRequestInterval = Platform.OS === 'ios' ? 1000 : 100; // 1 second minimum interval for iOS
+  private requestTimeout = Platform.OS === 'ios' ? 30000 : 15000; // 30 second timeout for iOS
 
   async add<T>(requestFn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -55,20 +56,37 @@ class RequestQueue {
             const timeSinceLastRequest = now - this.lastRequestTime;
             if (timeSinceLastRequest < this.minRequestInterval) {
               const delay = this.minRequestInterval - timeSinceLastRequest;
+              logger.log(`[RequestQueue] Waiting ${delay}ms before next request`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
             this.lastRequestTime = Date.now();
           }
           
           this.activeRequests++;
-          const result = await requestFn();
+          logger.log(`[RequestQueue] Starting request. Active: ${this.activeRequests}`);
+          
+          // Add timeout to prevent hanging requests
+          const timeoutPromise = new Promise((_, timeoutReject) => {
+            setTimeout(() => {
+              timeoutReject(new Error(`Request timeout after ${this.requestTimeout}ms`));
+            }, this.requestTimeout);
+          });
+          
+          // Race between the actual request and timeout
+          const result = await Promise.race([
+            requestFn(),
+            timeoutPromise
+          ]) as T;
+          
           resolve(result);
           return result;
         } catch (error) {
+          logger.error(`[RequestQueue] Request failed:`, error);
           reject(error);
           throw error;
         } finally {
           this.activeRequests--;
+          logger.log(`[RequestQueue] Request completed. Active: ${this.activeRequests}`);
           this.processNext();
         }
       });
@@ -89,7 +107,7 @@ class RequestQueue {
       if (requestFn) {
         // Add longer delay between requests on iOS to prevent connection issues
         if (Platform.OS === 'ios' && this.activeRequests > 0) {
-          await new Promise(resolve => setTimeout(resolve, 800)); // Increased delay
+          await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
         }
         requestFn();
       }
@@ -112,13 +130,13 @@ const requestQueue = new RequestQueue();
 // iOS-specific axios configuration with connection pooling
 const axiosConfig = {
   baseURL: API_URL,
-  timeout: Platform.OS === 'ios' ? 45000 : 25000, // Increased timeout for iOS
+  timeout: Platform.OS === 'ios' ? 60000 : 25000, // Increased to 60 seconds for iOS
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1',
     'Accept': 'application/json',
     'Connection': 'keep-alive',
-    'Keep-Alive': 'timeout=120, max=1000', // Increased timeout
+    'Keep-Alive': 'timeout=300, max=1000', // Increased timeout significantly
   },
   // iOS-specific settings
   ...(Platform.OS === 'ios' && {
@@ -129,9 +147,11 @@ const axiosConfig = {
     httpAgent: undefined, // Let axios handle connection pooling
     httpsAgent: undefined,
     // Add request timeout and retry settings
-    timeout: 45000, // 45 seconds for iOS
+    timeout: 60000, // 60 seconds for iOS
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
+    // Add additional iOS-specific settings
+    decompress: true,
   })
 };
 
@@ -160,8 +180,8 @@ class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
   private state = 'CLOSED';
-  private readonly failureThreshold = 5;
-  private readonly resetTimeout = 30000; // 30 seconds
+  private readonly failureThreshold = Platform.OS === 'ios' ? 3 : 5; // Lower threshold for iOS
+  private readonly resetTimeout = Platform.OS === 'ios' ? 60000 : 30000; // 60 seconds for iOS
 
   async execute(fn: () => Promise<any>) {
     if (this.state === 'OPEN') {
@@ -216,17 +236,34 @@ api.interceptors.response.use(
     // Handle 499 errors immediately - don't retry
     if (error.response?.status === 499) {
       logger.error('[API] Client closed connection (499):', error.config?.url);
+      logger.error('[API] 499 Error details:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        platform: Platform.OS,
+        timestamp: new Date().toISOString()
+      });
       
-      // For iOS, provide a more specific error message
+      // For iOS, provide a more specific error message and implement recovery
       const errorMessage = Platform.OS === 'ios' 
         ? 'Connection was interrupted. Please try again.'
         : 'Request was cancelled. Please try again.';
+      
+      // For iOS, implement a more graceful error handling
+      if (Platform.OS === 'ios') {
+        // Log additional context for debugging
+        logger.error('[API] iOS 499 Error Context:', {
+          userAgent: error.config?.headers?.['User-Agent'],
+          connection: error.config?.headers?.['Connection'],
+          keepAlive: error.config?.headers?.['Keep-Alive']
+        });
+      }
       
       return Promise.reject({
         ...error,
         message: errorMessage,
         isClientClosedError: true,
-        isIOSConnectionError: Platform.OS === 'ios'
+        isIOSConnectionError: Platform.OS === 'ios',
+        shouldRetry: false // Explicitly mark as non-retryable
       });
     }
     
@@ -289,7 +326,7 @@ api.interceptors.request.use(
 
 // Enhanced API wrapper with request deduplication, circuit breaker, and queuing
 const enhancedApi = {
-  get: async (url: string, config?: any) => {
+  get: async <T>(url: string, config?: any) => {
     const requestKey = `GET:${url}`;
     
     // Check if there's already a pending request
