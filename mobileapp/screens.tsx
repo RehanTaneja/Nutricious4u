@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
-import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
+import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
@@ -48,7 +48,7 @@ import { scanFoodPhoto } from './services/api';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -1122,7 +1122,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       // Fetch profile from backend instead of direct Firestore
       const fetchProfile = async () => {
         try {
-          const profile = await getUserProfile(userId);
+          const profile = await getUserProfileSafe(userId);
           if (profile) {
             console.log('[Dashboard Debug] Profile fetched - dietPdfUrl:', profile.dietPdfUrl);
             setDietPdfUrl(profile.dietPdfUrl || null);
@@ -1293,7 +1293,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     const fetchProfile = async () => {
       if (!userId) return;
       try {
-        const profile = await getUserProfile(userId);
+        const profile = await getUserProfileSafe(userId);
         setUserProfile(profile);
       } catch {}
     };
@@ -2802,7 +2802,7 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
         const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
         setIsDietician(isDieticianAccount);
         
-        const profile = await getUserProfile(userId);
+        const profile = await getUserProfileSafe(userId);
         if (profile) {
           setUserProfile(profile);
         } else {
@@ -2842,6 +2842,13 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
       // Clear saved credentials BEFORE signing out
       await AsyncStorage.removeItem('savedEmail');
       await AsyncStorage.removeItem('savedPassword');
+      
+      // Clear profile cache before sign out
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        clearProfileCache(currentUser.uid);
+      }
+      
       await new Promise(res => setTimeout(res, 150)); // Ensure storage is cleared before signOut
       await auth.signOut();
     } catch (error) {
@@ -3118,7 +3125,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
       try {
         const userId = auth.currentUser?.uid;
         if (!userId) return;
-        const profile = await getUserProfile(userId);
+        const profile = await getUserProfileSafe(userId);
         if (profile) {
           setUserProfile(profile);
           setEditProfile(profile);
@@ -9071,7 +9078,7 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
       setError(null);
       
       // Check if user is dietician (using email or special logic)
-      const userProfile = await getUserProfile(currentUser.uid);
+      const userProfile = await getUserProfileSafe(currentUser.uid);
       const userEmail = currentUser.email;
       const isDietician = userEmail === "dietician@nutricious4u.com" || userEmail?.includes("dietician");
       const userId = isDietician ? "dietician" : currentUser.uid;

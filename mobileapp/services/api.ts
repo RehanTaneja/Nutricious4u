@@ -626,19 +626,108 @@ export const createUserProfile = async (profile: UserProfile): Promise<UserProfi
   }
 };
 
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  try {
-    const response = await enhancedApi.get(`/users/${userId}/profile`);
-    return response.data;
-  } catch (error: any) {
-    if (error.response && error.response.status === 404) {
-      // No profile exists for this user
-      return null;
-    }
-    logger.error('Error getting user profile:', error);
-    throw error;
+// Global profile request lock to prevent multiple simultaneous requests
+let profileRequestLock: { [userId: string]: Promise<any> } = {};
+
+// Profile caching to prevent duplicate requests during login
+let profileCache: { [userId: string]: { profile: any; timestamp: number } } = {};
+const PROFILE_CACHE_DURATION = 30000; // 30 seconds
+
+export const getUserProfile = async (userId: string): Promise<UserProfile> => {
+  // Check cache first
+  const cached = profileCache[userId];
+  if (cached && Date.now() - cached.timestamp < PROFILE_CACHE_DURATION) {
+    logger.log(`[getUserProfile] Returning cached profile for ${userId}`);
+    return cached.profile;
   }
-}
+
+  // Check if there's already a request in progress for this user
+  const existingRequest = profileRequestLock[userId];
+  if (existingRequest) {
+    logger.log(`[getUserProfile] Request already in progress for ${userId}, waiting...`);
+    try {
+      const result = await existingRequest;
+      return result;
+    } catch (error) {
+      logger.error(`[getUserProfile] Error waiting for existing request for ${userId}:`, error);
+      // If the existing request failed, we'll try again
+    }
+  }
+
+  logger.log(`[getUserProfile] Fetching fresh profile for ${userId}`);
+  
+  // Create a new request promise and store it in the lock
+  const requestPromise = requestQueue.add(async () => {
+    try {
+      const response = await api.get(`/users/${userId}/profile`);
+      
+      // Cache the profile
+      profileCache[userId] = {
+        profile: response.data,
+        timestamp: Date.now()
+      };
+      
+      logger.log(`[getUserProfile] Successfully fetched and cached profile for ${userId}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`[getUserProfile] Error fetching profile for ${userId}:`, error);
+      throw error;
+    } finally {
+      // Remove the lock when the request completes (success or failure)
+      delete profileRequestLock[userId];
+    }
+  });
+
+  // Store the promise in the lock
+  profileRequestLock[userId] = requestPromise;
+  
+  return requestPromise;
+};
+
+// Function to clear profile cache (useful for logout)
+export const clearProfileCache = (userId?: string) => {
+  if (userId) {
+    delete profileCache[userId];
+    delete profileRequestLock[userId]; // Also clear the lock
+    logger.log(`[clearProfileCache] Cleared cache and lock for ${userId}`);
+  } else {
+    profileCache = {};
+    profileRequestLock = {}; // Clear all locks
+    logger.log(`[clearProfileCache] Cleared all profile cache and locks`);
+  }
+};
+
+// Function to update profile cache (useful after profile updates)
+export const updateProfileCache = (userId: string, profile: UserProfile) => {
+  profileCache[userId] = {
+    profile,
+    timestamp: Date.now()
+  };
+  logger.log(`[updateProfileCache] Updated cache for ${userId}`);
+};
+
+// Function to check if a profile request is in progress
+export const isProfileRequestInProgress = (userId: string): boolean => {
+  return !!profileRequestLock[userId];
+};
+
+// Function to check if login is in progress (imported from App.tsx)
+export const isLoginInProgress = (): boolean => {
+  // This will be set by App.tsx during login sequence
+  return (global as any).isLoginInProgress || false;
+};
+
+// Enhanced getUserProfile that respects login state
+export const getUserProfileSafe = async (userId: string): Promise<UserProfile> => {
+  // Check if login is in progress
+  if (isLoginInProgress()) {
+    logger.log(`[getUserProfileSafe] Login in progress, deferring profile request for ${userId}`);
+    // Wait a bit and try again
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  
+  return getUserProfile(userId);
+};
 
 export const updateUserProfile = async (userId: string, profileUpdate: UpdateUserProfile): Promise<UserProfile> => {
   try {

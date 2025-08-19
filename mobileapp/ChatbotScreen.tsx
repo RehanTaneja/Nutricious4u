@@ -13,7 +13,7 @@ import {
 import { Send } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
 import { sendChatbotMessage } from './services/api';
-import { getUserProfile, UserProfile } from './services/api';
+import { getUserProfileSafe, UserProfile } from './services/api';
 import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -44,8 +44,16 @@ export const ChatbotScreen = () => {
     const fetchProfile = async () => {
       const userId = auth.currentUser?.uid;
       if (userId) {
-        const profile = await getUserProfile(userId);
-        setUserProfile(profile);
+        try {
+          // Add delay to prevent race condition with App.tsx login sequence
+          await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+          
+          const profile = await getUserProfileSafe(userId);
+          setUserProfile(profile);
+        } catch (error) {
+          console.log('[ChatbotScreen] Error fetching profile, will retry later:', error);
+          // Don't crash the app, just log the error
+        }
       }
     };
     fetchProfile();

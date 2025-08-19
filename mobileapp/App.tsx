@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
-import { getUserProfile, createUserProfile } from './services/api';
+import { getUserProfile, createUserProfile, clearProfileCache } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
   API_KEY, 
@@ -90,6 +90,11 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
     <Tab.Screen name="Settings" component={SettingsScreen} />
   </Tab.Navigator>
 );
+
+// Global login state to prevent profile requests during login
+let isLoginInProgress = false;
+// Set global flag for other components to check
+(global as any).isLoginInProgress = false;
 
 function AppContent() {
   const navigationRef = useRef<any>(null);
@@ -231,6 +236,7 @@ function AppContent() {
       setLoading(false);
       setCheckingAuth(false);
       setCheckingProfile(false);
+      isLoginInProgress = false; // Clear login flag
     }, 15000); // Increased to 15 seconds
     
     const initializeApp = async () => {
@@ -289,6 +295,8 @@ function AppContent() {
         setLoading(false);
         setCheckingAuth(false);
         setCheckingProfile(false);
+        isLoginInProgress = false; // Clear login flag
+        (global as any).isLoginInProgress = false; // Clear global flag
         if (timeoutId) clearTimeout(timeoutId);
       }
     };
@@ -319,6 +327,8 @@ function AppContent() {
             if (firebaseUser) {
               setUser(firebaseUser);
               setCheckingProfile(true);
+              isLoginInProgress = true; // Set login flag
+              (global as any).isLoginInProgress = true; // Set global flag
               
               try {
                 // Check if user is dietician by trying to get their profile from backend
@@ -481,11 +491,15 @@ function AppContent() {
                 await AsyncStorage.setItem('hasCompletedQuiz', 'false');
               }
               setCheckingProfile(false);
+              isLoginInProgress = false; // Clear login flag
+              (global as any).isLoginInProgress = false; // Clear global flag
             } else {
               setUser(null);
               setHasCompletedQuiz(false);
               setIsDietician(false);
               setHasActiveSubscription(null);
+              isLoginInProgress = false; // Clear login flag
+              (global as any).isLoginInProgress = false; // Clear global flag
               
               // Only check for saved credentials and auto-login on app start, not on every logout
               try {
