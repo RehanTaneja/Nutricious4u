@@ -41,7 +41,7 @@ import {
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen // <-- import my subscriptions screen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL } from './services/api';
+import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getQueueStatus } from './services/api';
 
 type User = firebase.User;
 
@@ -450,8 +450,6 @@ function AppContent() {
                     try {
                       // Add longer delay between API calls to prevent connection conflicts
                       await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
-                      
-                      const { getSubscriptionStatus, getQueueStatus } = await import('./services/api');
                       
                       // Log queue status before making requests
                       const queueStatus = getQueueStatus();
