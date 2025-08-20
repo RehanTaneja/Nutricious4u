@@ -3419,6 +3419,26 @@ async def get_recipes():
         logger.error(f"Error fetching recipes: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch recipes: {str(e)}")
 
+@api_router.post("/recipes")
+async def add_recipe(recipe_data: dict):
+    """Add a new recipe to Firestore"""
+    try:
+        check_firebase_availability()
+        
+        # Add timestamp and creator info
+        recipe_data['createdAt'] = datetime.now()
+        recipe_data['createdBy'] = 'system'
+        
+        # Use ThreadPoolExecutor for async Firestore operations
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(add_recipe_to_firestore, recipe_data)
+            recipe_id = await asyncio.wrap_future(future)
+        
+        return {"message": "Recipe added successfully", "recipe_id": recipe_id}
+    except Exception as e:
+        logger.error(f"Error adding recipe: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add recipe: {str(e)}")
+
 def get_recipes_from_firestore():
     """Helper function to get recipes from Firestore"""
     if not FIREBASE_AVAILABLE:
@@ -3431,6 +3451,19 @@ def get_recipes_from_firestore():
     except Exception as e:
         logger.error(f"Error in get_recipes_from_firestore: {e}")
         return []
+
+def add_recipe_to_firestore(recipe_data: dict):
+    """Helper function to add recipe to Firestore"""
+    if not FIREBASE_AVAILABLE:
+        raise Exception("Firebase not available")
+    
+    try:
+        recipes_ref = firestore_db.collection('recipes')
+        doc_ref = recipes_ref.add(recipe_data)
+        return doc_ref[1].id
+    except Exception as e:
+        logger.error(f"Error in add_recipe_to_firestore: {e}")
+        raise e
 
 app.include_router(api_router)
 
