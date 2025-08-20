@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
-import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes } from './services/api';
+import { searchFood, logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest } from './services/api';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
@@ -148,20 +148,27 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
     checkDieticianStatus();
   }, []);
 
-  // Fetch recipes using API queue system
+  // Fetch recipes from Firestore
   const fetchRecipes = async () => {
     try {
       setLoading(true);
-      console.log('[RecipesScreen] Fetching recipes through API queue');
+      // Add defensive check for firestore
+      if (!firestore) {
+        console.error('Firestore not initialized');
+        setRecipes([]);
+        setFilteredRecipes([]);
+        return;
+      }
       
-      // Use the API queue system instead of direct Firestore access
-      const recipesData = await getRecipes();
-      console.log('[RecipesScreen] Successfully fetched recipes:', recipesData.length);
-      
+      const recipesSnapshot = await firestore.collection('recipes').orderBy('createdAt', 'desc').get();
+      const recipesData = recipesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       setRecipes(recipesData);
       setFilteredRecipes(recipesData);
     } catch (error) {
-      console.error('[RecipesScreen] Error fetching recipes:', error);
+      console.error('Error fetching recipes:', error);
       // Don't show alert on build, just set empty arrays
       setRecipes([]);
       setFilteredRecipes([]);
