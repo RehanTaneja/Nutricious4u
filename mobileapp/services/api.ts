@@ -10,21 +10,39 @@ console.log('__DEV__:', __DEV__);
 console.log('Platform:', Platform.OS);
 console.log('==========================');
 
-// Environment-based API URL configuration
+// Environment-based API URL configuration with fallbacks
 let apiHost = 'nutricious4u-production.up.railway.app';
 let port = '';
 let protocol = 'https';
 
+// Enhanced environment variable handling for EAS builds
+const getBackendUrl = () => {
+  // Priority 1: Environment variable
+  if (PRODUCTION_BACKEND_URL) {
+    return PRODUCTION_BACKEND_URL;
+  }
+  
+  // Priority 2: Hardcoded fallback for EAS builds
+  if (!__DEV__) {
+    logger.log('[API] Using hardcoded fallback URL for EAS build');
+    return 'nutricious4u-production.up.railway.app';
+  }
+  
+  // Priority 3: Development fallback
+  logger.log('[API] Using development fallback URL');
+  return 'nutricious4u-production.up.railway.app';
+};
+
 // Always use production backend URL for now (since localhost backend is not running)
 if (__DEV__) {
   // Development: Use Railway URL for Expo Go testing
-  apiHost = PRODUCTION_BACKEND_URL || 'nutricious4u-production.up.railway.app';
+  apiHost = getBackendUrl();
   port = '';
   protocol = 'https';
   logger.log('[API] Using Railway backend for development:', apiHost);
 } else {
   // Production: Use Railway URL
-  apiHost = PRODUCTION_BACKEND_URL || 'nutricious4u-production.up.railway.app';
+  apiHost = getBackendUrl();
   port = '';
   protocol = 'https';
   logger.log('[API] Using production backend:', apiHost);
@@ -43,8 +61,8 @@ class RequestQueue {
   private maxConcurrent = Platform.OS === 'ios' ? 1 : 3; // Single request at a time for iOS
   private activeRequests = 0;
   private lastRequestTime = 0;
-  private minRequestInterval = Platform.OS === 'ios' ? 1000 : 100; // 1 second minimum interval for iOS
-  private requestTimeout = Platform.OS === 'ios' ? 30000 : 15000; // 30 second timeout for iOS
+  private minRequestInterval = Platform.OS === 'ios' ? 2000 : 100; // 2 seconds minimum interval for iOS
+  private requestTimeout = Platform.OS === 'ios' ? 45000 : 15000; // 45 second timeout for iOS
 
   async add<T>(requestFn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -107,7 +125,7 @@ class RequestQueue {
       if (requestFn) {
         // Add longer delay between requests on iOS to prevent connection issues
         if (Platform.OS === 'ios' && this.activeRequests > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
+          await new Promise(resolve => setTimeout(resolve, 2500)); // Increased delay to 2.5 seconds
         }
         requestFn();
       }
@@ -729,6 +747,21 @@ export const getUserProfileSafe = async (userId: string): Promise<UserProfile> =
   return getUserProfile(userId);
 };
 
+// Recipe API functions using the queue system
+export const getRecipes = async (): Promise<any[]> => {
+  logger.log('[getRecipes] Fetching recipes through API queue');
+  return requestQueue.add(async () => {
+    try {
+      const response = await api.get('/recipes');
+      logger.log('[getRecipes] Successfully fetched recipes');
+      return response.data.recipes || [];
+    } catch (error: any) {
+      logger.error('[getRecipes] Error fetching recipes:', error);
+      throw error;
+    }
+  });
+};
+
 export const updateUserProfile = async (userId: string, profileUpdate: UpdateUserProfile): Promise<UserProfile> => {
   try {
     const response = await enhancedApi.patch(`/users/${userId}/profile`, profileUpdate);
@@ -1004,7 +1037,7 @@ export const testUserExists = async (userId: string) => {
   return response.data;
 };
 
-// Debug function to get queue status
+// Function to get queue status for debugging
 export const getQueueStatus = () => {
   return {
     queueLength: requestQueue.getQueueLength(),

@@ -407,15 +407,37 @@ function AppContent() {
                     // Add delay before profile check to prevent conflicts
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
-                    profile = await getUserProfile(firebaseUser.uid);
-                    if (profile && profile.firstName && profile.firstName !== 'User') {
-                      setHasCompletedQuiz(true);
-                      await AsyncStorage.setItem('hasCompletedQuiz', 'true');
-                      console.log('[Profile Check] User has completed profile, quiz status: true');
-                    } else {
-                      setHasCompletedQuiz(false);
-                      await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-                      console.log('[Profile Check] User has no profile or placeholder profile, quiz status: false');
+                    // Add EAS build-specific error handling
+                    try {
+                      profile = await getUserProfile(firebaseUser.uid);
+                      if (profile && profile.firstName && profile.firstName !== 'User') {
+                        setHasCompletedQuiz(true);
+                        await AsyncStorage.setItem('hasCompletedQuiz', 'true');
+                        console.log('[Profile Check] User has completed profile, quiz status: true');
+                      } else {
+                        setHasCompletedQuiz(false);
+                        await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                        console.log('[Profile Check] User has no profile or placeholder profile, quiz status: false');
+                      }
+                    } catch (profileError: any) {
+                      console.log('[Profile Check] Error checking profile:', profileError);
+                      
+                      // EAS build-specific fallback
+                      if (!__DEV__) {
+                        console.log('[EAS Build] Using fallback profile handling');
+                        // For EAS builds, assume user needs to complete quiz
+                        setHasCompletedQuiz(false);
+                        await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                        
+                        // Skip additional API calls to prevent crashes
+                        setHasActiveSubscription(false);
+                        setIsFreeUser(true);
+                        return; // Exit early to prevent further API calls
+                      } else {
+                        // For Expo Go, use normal error handling
+                        setHasCompletedQuiz(false);
+                        await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                      }
                     }
                   } catch (error) {
                     console.log('[Profile Check] Error checking profile, assuming quiz not completed:', error);
@@ -435,10 +457,16 @@ function AppContent() {
                       const queueStatus = getQueueStatus();
                       console.log('[Queue Status] Before subscription check:', queueStatus);
                       
-                      const subscriptionStatus = await getSubscriptionStatus(firebaseUser.uid);
+                      // Add EAS build-specific timeout handling
+                      const subscriptionPromise = getSubscriptionStatus(firebaseUser.uid);
+                      const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Subscription check timeout')), __DEV__ ? 15000 : 30000)
+                      );
                       
-                      // Check if user is on free plan or has active subscription
-                      if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
+                                          const subscriptionStatus = await Promise.race([subscriptionPromise, timeoutPromise]) as any;
+                    
+                    // Check if user is on free plan or has active subscription
+                    if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
                         console.log('[Subscription Check] User is on free plan or has no active subscription');
                         console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(false);
@@ -475,9 +503,17 @@ function AppContent() {
                       console.log('[Queue Status] After login sequence:', finalQueueStatus);
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
-                      // If we can't check subscription, assume they are free users
-                      setHasActiveSubscription(false);
-                      setIsFreeUser(true);
+                      
+                      // EAS build-specific fallback
+                      if (!__DEV__) {
+                        console.log('[EAS Build] Using fallback subscription handling');
+                        setHasActiveSubscription(false);
+                        setIsFreeUser(true);
+                      } else {
+                        // If we can't check subscription, assume they are free users
+                        setHasActiveSubscription(false);
+                        setIsFreeUser(true);
+                      }
                     }
                   } else if (!isDieticianAccount && !profile) {
                     // New user without profile - default to free plan

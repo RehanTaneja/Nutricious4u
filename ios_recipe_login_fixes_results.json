@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-08-20T15:19:36.274445",
+  "results": {
+    "recipe_endpoint": false,
+    "login_sequence": true,
+    "concurrent_recipes": false,
+    "ios_headers": false,
+    "timeout": false
+  },
+  "overall_success": false,
+  "test_description": "iOS Recipe and Login Fixes Test"
+}

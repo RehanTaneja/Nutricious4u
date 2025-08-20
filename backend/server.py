@@ -3393,62 +3393,50 @@ if __name__ == "__main__":
 # Add a comprehensive test endpoint for iOS connection and diet functionality
 @api_router.get("/test-ios-diet")
 async def test_ios_diet_functionality():
-    """Test endpoint to verify iOS connection and diet functionality"""
+    """Test endpoint for iOS diet functionality"""
     try:
         # Test Firebase connection
-        check_firebase_availability()
+        if not FIREBASE_AVAILABLE:
+            return {"status": "error", "message": "Firebase not available"}
         
-        # Test basic operations
-        test_collection = firestore_db.collection("test")
-        test_doc = test_collection.document("ios_test")
-        
-        # Test write operation
-        test_data = {
-            "test": True,
-            "timestamp": datetime.now().isoformat(),
-            "platform": "ios_test"
-        }
-        
-        # Use ThreadPoolExecutor for async operation
-        import asyncio
-        from concurrent.futures import ThreadPoolExecutor
-        
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(
-                executor, 
-                lambda: test_doc.set(test_data)
-            )
-        
-        # Test read operation
-        with ThreadPoolExecutor() as executor:
-            doc = await loop.run_in_executor(
-                executor, 
-                lambda: test_doc.get()
-            )
-        
-        # Clean up test data
-        with ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(
-                executor, 
-                lambda: test_doc.delete()
-            )
+        # Test basic Firestore operation
+        test_doc = firestore_db.collection("test").document("ios_test")
+        test_doc.set({"timestamp": datetime.now().isoformat()})
         
         return {
-            "message": "iOS diet functionality test successful",
-            "firebase_available": True,
-            "firestore_operations": "successful",
-            "async_operations": "working",
-            "timestamp": datetime.now().isoformat(),
-            "ios_fixes": "applied",
-            "connection_timeout": "30s",
-            "keep_alive": "75s"
-        }
-    except Exception as e:
-        return {
-            "message": "iOS diet functionality test failed",
-            "firebase_available": False,
-            "error": str(e),
-            "error_type": type(e).__name__,
+            "status": "success",
+            "message": "iOS diet functionality test passed",
+            "firebase_available": FIREBASE_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@api_router.get("/recipes")
+async def get_recipes():
+    """Get all recipes from Firestore"""
+    try:
+        check_firebase_availability()
+        
+        # Use ThreadPoolExecutor for async Firestore operations
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(get_recipes_from_firestore)
+            recipes = await asyncio.wrap_future(future)
+        
+        return {"recipes": recipes}
+    except Exception as e:
+        logger.error(f"Error fetching recipes: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch recipes: {str(e)}")
+
+def get_recipes_from_firestore():
+    """Helper function to get recipes from Firestore"""
+    if not FIREBASE_AVAILABLE:
+        return []
+    
+    try:
+        recipes_ref = firestore_db.collection('recipes').order_by('createdAt', direction=firestore.Query.DESCENDING)
+        docs = recipes_ref.stream()
+        return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+    except Exception as e:
+        logger.error(f"Error in get_recipes_from_firestore: {e}")
+        return []

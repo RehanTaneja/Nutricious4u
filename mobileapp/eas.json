@@ -11,7 +11,8 @@
         "resourceClass": "m-medium"
       },
       "env": {
-        "NODE_ENV": "development"
+        "NODE_ENV": "development",
+        "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
       }
     },
     "preview": {
@@ -23,7 +24,8 @@
         "buildType": "apk"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
       }
     },
     "production": {
@@ -32,7 +34,8 @@
         "resourceClass": "m-medium"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
       }
     }
   }

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-08-20T15:08:45.273463",
+  "results": {
+    "environment": true,
+    "login_flow": true,
+    "concurrent": true,
+    "timeout": true,
+    "ios_headers": true
+  },
+  "overall_success": true
+}
