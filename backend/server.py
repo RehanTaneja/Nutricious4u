@@ -3381,15 +3381,6 @@ async def test_user_exists(user_id: str):
             "error": str(e)
         }
 
-app.include_router(api_router)
-
-if __name__ == "__main__":
-    import uvicorn
-    print("🎉 Server initialization complete!")
-    print("🌐 Starting server on http://0.0.0.0:8000")
-    print("⏰ Diet reminder scheduler started (checking every 6 hours)")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 # Add a comprehensive test endpoint for iOS connection and diet functionality
 @api_router.get("/test-ios-diet")
 async def test_ios_diet_functionality():
@@ -3440,3 +3431,12 @@ def get_recipes_from_firestore():
     except Exception as e:
         logger.error(f"Error in get_recipes_from_firestore: {e}")
         return []
+
+app.include_router(api_router)
+
+if __name__ == "__main__":
+    import uvicorn
+    print("🎉 Server initialization complete!")
+    print("🌐 Starting server on http://0.0.0.0:8000")
+    print("⏰ Diet reminder scheduler started (checking every 6 hours)")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
