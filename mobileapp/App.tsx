@@ -463,7 +463,7 @@ function AppContent() {
                         setTimeout(() => reject(new Error('Subscription check timeout')), __DEV__ ? 15000 : 30000)
                       );
                       
-                                          const subscriptionStatus = await Promise.race([subscriptionPromise, timeoutPromise]) as any;
+                      const subscriptionStatus = await Promise.race([subscriptionPromise, timeoutPromise]) as any;
                     
                     // Check if user is on free plan or has active subscription
                     if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
