@@ -3419,6 +3419,55 @@ async def get_recipes():
         logger.error(f"Error fetching recipes: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch recipes: {str(e)}")
 
+@api_router.get("/debug-recipes")
+async def debug_recipes():
+    """Debug endpoint to check recipes collection"""
+    try:
+        check_firebase_availability()
+        
+        # Use ThreadPoolExecutor for async Firestore operations
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(debug_recipes_from_firestore)
+            result = await asyncio.wrap_future(future)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in debug recipes: {e}")
+        return {"error": str(e), "firebase_available": FIREBASE_AVAILABLE}
+
+def debug_recipes_from_firestore():
+    """Debug function to check recipes collection"""
+    if not FIREBASE_AVAILABLE:
+        return {"error": "Firebase not available", "firebase_available": False}
+    
+    try:
+        # Check if recipes collection exists
+        recipes_ref = firestore_db.collection('recipes')
+        docs = list(recipes_ref.stream())
+        
+        result = {
+            "firebase_available": FIREBASE_AVAILABLE,
+            "collection_exists": True,
+            "total_docs": len(docs),
+            "sample_docs": []
+        }
+        
+        # Get sample documents
+        for i, doc in enumerate(docs[:3]):  # First 3 documents
+            doc_data = doc.to_dict()
+            result["sample_docs"].append({
+                "id": doc.id,
+                "fields": list(doc_data.keys()),
+                "has_createdAt": "createdAt" in doc_data,
+                "title": doc_data.get("title", "No title"),
+                "type": doc_data.get("type", "No type")
+            })
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in debug_recipes_from_firestore: {e}")
+        return {"error": str(e), "firebase_available": FIREBASE_AVAILABLE}
+
 def get_recipes_from_firestore():
     """Helper function to get recipes from Firestore"""
     if not FIREBASE_AVAILABLE:
