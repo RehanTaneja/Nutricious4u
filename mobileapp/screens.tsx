@@ -171,7 +171,12 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
   };
 
   useEffect(() => {
-    fetchRecipes();
+    // Add delay to prevent conflict with login sequence API calls
+    const delayedFetch = setTimeout(() => {
+      fetchRecipes();
+    }, 2500); // 2.5 second delay to ensure login sequence completes
+    
+    return () => clearTimeout(delayedFetch);
   }, []);
 
   // Search functionality
@@ -1346,7 +1351,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     return () => { isMounted = false; };
   }, [isFocused, refresh, showFoodSuccess, showWorkoutSuccess]);
 
-  // Fetch summary (nutrition) and workout calories for today
+  // Fetch summary (nutrition) and workout calories for today - DELAYED to prevent conflict with login sequence
   const fetchSummary = async () => {
     if (!userId) {
       setError('User not authenticated');
@@ -1378,31 +1383,41 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Refresh summary after logging food or workout
+  // Refresh summary after logging food or workout - DELAYED to prevent conflict with login sequence
   useEffect(() => {
     if (isFocused && userId) {
-      fetchSummary();
+      // Add delay to prevent conflict with login sequence API calls
+      const delayedFetch = setTimeout(() => {
+        fetchSummary();
+      }, 3000); // 3 second delay to ensure login sequence completes
+      
+      return () => clearTimeout(delayedFetch);
     }
   }, [isFocused, userId, refresh, showFoodSuccess, showWorkoutSuccess]);
 
-  // Check for daily reset when dashboard is focused
+  // Check for daily reset when dashboard is focused - DELAYED to prevent conflict with login sequence
   useEffect(() => {
     if (isFocused && userId) {
-      const checkDailyReset = async () => {
-        try {
-          const today = new Date().toISOString().split('T')[0];
-          const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
-          
-          if (lastReset !== today) {
-            console.log('[Dashboard] Daily reset needed, refreshing data');
-            fetchSummary();
+      // Add delay to prevent conflict with login sequence API calls
+      const delayedCheck = setTimeout(async () => {
+        const checkDailyReset = async () => {
+          try {
+            const today = new Date().toISOString().split('T')[0];
+            const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
+            
+            if (lastReset !== today) {
+              console.log('[Dashboard] Daily reset needed, refreshing data');
+              fetchSummary();
+            }
+          } catch (error) {
+            console.error('[Dashboard] Error checking daily reset:', error);
           }
-        } catch (error) {
-          console.error('[Dashboard] Error checking daily reset:', error);
-        }
-      };
+        };
+        
+        checkDailyReset();
+      }, 4000); // 4 second delay to ensure login sequence completes
       
-      checkDailyReset();
+      return () => clearTimeout(delayedCheck);
     }
   }, [isFocused, userId]);
 
@@ -2792,29 +2807,34 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
   const [isDietician, setIsDietician] = useState(false);
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const userId = auth.currentUser?.uid;
-        if (!userId) return;
-        
-        // Check if user is dietician based on email
-        const userEmail = auth.currentUser?.email;
-        const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
-        setIsDietician(isDieticianAccount);
-        
-        const profile = await getUserProfileSafe(userId);
-        if (profile) {
-          setUserProfile(profile);
-        } else {
-          setUserProfile(null); // No profile found, do not show error
+    // Add delay to prevent conflict with login sequence API calls
+    const delayedFetch = setTimeout(async () => {
+      const fetchProfile = async () => {
+        try {
+          const userId = auth.currentUser?.uid;
+          if (!userId) return;
+          
+          // Check if user is dietician based on email
+          const userEmail = auth.currentUser?.email;
+          const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
+          setIsDietician(isDieticianAccount);
+          
+          const profile = await getUserProfileSafe(userId);
+          if (profile) {
+            setUserProfile(profile);
+          } else {
+            setUserProfile(null); // No profile found, do not show error
+          }
+        } catch (e) {
+          setError('Could not load user profile.');
+        } finally {
+          setLoading(false);
         }
-      } catch (e) {
-        setError('Could not load user profile.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
+      };
+      fetchProfile();
+    }, 2000); // 2 second delay to ensure login sequence completes
+    
+    return () => clearTimeout(delayedFetch);
   }, []);
 
   const handleUpdateProfile = async () => {
@@ -3121,27 +3141,32 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const userId = auth.currentUser?.uid;
-        if (!userId) return;
-        const profile = await getUserProfileSafe(userId);
-        if (profile) {
-          setUserProfile(profile);
-          setEditProfile(profile);
-          setTargets({
-            calories: profile.targetCalories || 0,
-            protein: profile.targetProtein || 0,
-            fat: profile.targetFat || 0,
-          });
+    // Add delay to prevent conflict with login sequence API calls
+    const delayedFetch = setTimeout(async () => {
+      const fetchProfile = async () => {
+        try {
+          const userId = auth.currentUser?.uid;
+          if (!userId) return;
+          const profile = await getUserProfileSafe(userId);
+          if (profile) {
+            setUserProfile(profile);
+            setEditProfile(profile);
+            setTargets({
+              calories: profile.targetCalories || 0,
+              protein: profile.targetProtein || 0,
+              fat: profile.targetFat || 0,
+            });
+          }
+        } catch (e) {
+          setError('Could not load user profile.');
+        } finally {
+          setLoading(false);
         }
-      } catch (e) {
-        setError('Could not load user profile.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
+      };
+      fetchProfile();
+    }, 2500); // 2.5 second delay to ensure login sequence completes
+    
+    return () => clearTimeout(delayedFetch);
   }, []);
 
   useEffect(() => {
