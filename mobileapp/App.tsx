@@ -647,15 +647,7 @@ function AppContent() {
     );
   }
 
-  // Safety check to prevent crashes
-  if (!user && !checkingAuth && !checkingProfile && !loading) {
-    // User is not logged in and we're not in any loading state
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
-        <Text style={{ color: COLORS.text, fontSize: 16 }}>Please log in to continue</Text>
-      </View>
-    );
-  }
+
 
   // Import screens with error handling to prevent crashes
   let QnAScreen, AccountSettingsScreen;
