@@ -1175,12 +1175,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             }
             
             setDietPdfUrl(dietData.dietPdfUrl || null);
-          } catch (error) {
-            console.error('[Dashboard Debug] Error fetching diet countdown:', error);
-            setDietError('Failed to load diet countdown');
-          } finally {
-            setDietLoading(false);
-          }
+                  } catch (error) {
+          console.error('[Dashboard Debug] Error fetching diet countdown:', error);
+          // Don't show error to user, just log it and continue
+          setDietError('');
+          // Set default values to prevent crashes
+          setDaysLeft(null);
+          setDietPdfUrl(null);
+        } finally {
+          setDietLoading(false);
+        }
         };
         
         fetchDietCountdown();
@@ -1362,13 +1366,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setError('');
     try {
       // SEQUENTIAL API calls to prevent 499 errors - don't use Promise.all
+      console.log('[Dashboard] Fetching food log summary...');
       const foodData = await getLogSummary(userId);
+      console.log('[Dashboard] Food log summary received:', foodData);
       setSummary(foodData);
       
       // Add delay between API calls to prevent connection conflicts
       await new Promise(resolve => setTimeout(resolve, 300));
       
+      console.log('[Dashboard] Fetching workout log summary...');
       const workoutData = await getWorkoutLogSummary(userId);
+      console.log('[Dashboard] Workout log summary received:', workoutData);
       setWorkoutSummary(workoutData);
       
       // Set burnedToday from workout summary for today
@@ -1376,8 +1384,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const todayWorkout = workoutData.history.find((d) => d.day === today);
       setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
     } catch (e) {
-      setError('Could not load dashboard data.');
-      console.error('Dashboard data error:', e);
+      console.error('[Dashboard] Error fetching summary data:', e);
+      // Don't show error to user, just log it and continue
+      setError('');
+      // Set default values to prevent crashes
+      setSummary({ 
+        history: [],
+        daily_summary: { calories: 0, protein: 0, fat: 0 },
+        seven_day_history: []
+      });
+      setWorkoutSummary({ history: [] });
+      setBurnedToday(0);
     } finally {
       setLoading(false);
     }
