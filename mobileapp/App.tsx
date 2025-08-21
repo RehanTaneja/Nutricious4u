@@ -134,8 +134,8 @@ function AppContent() {
         console.log('[Daily Reset] New day detected, resetting daily data');
         
         // Reset daily data by calling the backend with timeout
-        const enhancedApi = await import('./services/api');
-        const resetPromise = enhancedApi.default.post(`/user/${user.uid}/reset-daily`, {});
+        const apiModule = require('./services/api');
+        const resetPromise = apiModule.default.post(`/user/${user.uid}/reset-daily`, {});
         
         // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 

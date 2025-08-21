@@ -1163,8 +1163,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               if (daysRemaining === 1) {
                 try {
                   // Use enhanced API wrapper instead of direct fetch
-                  const enhancedApi = await import('./services/api');
-                  await enhancedApi.default.post('/diet/check-reminders', {});
+                  const apiModule = require('./services/api');
+                  await apiModule.default.post('/diet/check-reminders', {});
                   console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
                 } catch (notificationError) {
                   console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
@@ -2425,7 +2425,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
     setSearchResults([]);
     try {
       // Use the backend endpoint for food search
-      const { searchFood } = await import('./services/api');
+      const { searchFood } = require('./services/api');
       const foods = await searchFood(searchQuery);
       setSearchResults(foods);
       // Set default serving size to 100 for all results
@@ -5841,8 +5841,8 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   const sendPushNotification = async (recipientUserId: string, message: string, senderName: string = '') => {
     try {
       // Use enhanced API wrapper instead of direct fetch
-      const enhancedApi = await import('./services/api');
-      await enhancedApi.default.post('/notifications/send-message', {
+      const apiModule = require('./services/api');
+      await apiModule.default.post('/notifications/send-message', {
         recipientUserId,
         message,
         senderName,
