@@ -1129,65 +1129,72 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, []);
 
-  // Fetch diet countdown data
+  // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
     const userId = firebase.auth().currentUser?.uid;
     if (userId) {
-      const fetchDietCountdown = async () => {
-        try {
-          setDietLoading(true);
-          const dietData = await getUserDiet(userId);
-          console.log('[Dashboard Debug] Diet data fetched:', dietData);
-          console.log('[Dashboard Debug] daysLeft:', dietData.daysLeft, 'hoursLeft:', dietData.hoursLeft);
-          
-          if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
-            // Use the backend-calculated daysLeft and hoursLeft for accurate countdown
-            const daysRemaining = Math.max(0, dietData.daysLeft);
-            const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
-              ? Math.max(0, dietData.hoursLeft) 
-              : 0;
+      // Add delay to prevent conflict with login sequence API calls
+      const delayedFetch = setTimeout(async () => {
+        const fetchDietCountdown = async () => {
+          try {
+            setDietLoading(true);
+            const dietData = await getUserDiet(userId);
+            console.log('[Dashboard Debug] Diet data fetched:', dietData);
+            console.log('[Dashboard Debug] daysLeft:', dietData.daysLeft, 'hoursLeft:', dietData.hoursLeft);
             
-            setDaysLeft({
-              days: daysRemaining,
-              hours: hoursRemaining
-            });
-            
-            // Check if user has 1 day remaining and notify dietician
-            if (daysRemaining === 1) {
-              try {
-                // Use enhanced API wrapper instead of direct fetch
-                const enhancedApi = await import('./services/api');
-                await enhancedApi.default.post('/diet/check-reminders', {});
-                console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
-              } catch (notificationError) {
-                console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
+            if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
+              // Use the backend-calculated daysLeft and hoursLeft for accurate countdown
+              const daysRemaining = Math.max(0, dietData.daysLeft);
+              const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
+                ? Math.max(0, dietData.hoursLeft) 
+                : 0;
+              
+              setDaysLeft({
+                days: daysRemaining,
+                hours: hoursRemaining
+              });
+              
+              // Check if user has 1 day remaining and notify dietician
+              if (daysRemaining === 1) {
+                try {
+                  // Use enhanced API wrapper instead of direct fetch
+                  const enhancedApi = await import('./services/api');
+                  await enhancedApi.default.post('/diet/check-reminders', {});
+                  console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
+                } catch (notificationError) {
+                  console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
+                }
               }
+            } else {
+              setDaysLeft(null);
             }
-          } else {
-            setDaysLeft(null);
+            
+            setDietPdfUrl(dietData.dietPdfUrl || null);
+          } catch (error) {
+            console.error('[Dashboard Debug] Error fetching diet countdown:', error);
+            setDietError('Failed to load diet countdown');
+          } finally {
+            setDietLoading(false);
           }
-          
-          setDietPdfUrl(dietData.dietPdfUrl || null);
-        } catch (error) {
-          console.error('[Dashboard Debug] Error fetching diet countdown:', error);
-          setDietError('Failed to load diet countdown');
-        } finally {
-          setDietLoading(false);
-        }
-      };
-      
-      fetchDietCountdown();
-      
-      // Set up interval to update countdown every minute for real-time experience
-      console.log('[Dashboard Debug] Setting up countdown interval');
-      const interval = setInterval(() => {
-        console.log('[Dashboard Debug] Countdown interval triggered');
+        };
+        
         fetchDietCountdown();
-      }, 60 * 1000); // Update every minute
+        
+        // Set up interval to update countdown every minute for real-time experience
+        console.log('[Dashboard Debug] Setting up countdown interval');
+        const interval = setInterval(() => {
+          console.log('[Dashboard Debug] Countdown interval triggered');
+          fetchDietCountdown();
+        }, 60 * 1000); // Update every minute
+        
+        return () => {
+          console.log('[Dashboard Debug] Clearing countdown interval');
+          clearInterval(interval);
+        };
+      }, 5000); // 5 second delay to ensure login sequence completes
       
       return () => {
-        console.log('[Dashboard Debug] Clearing countdown interval');
-        clearInterval(interval);
+        clearTimeout(delayedFetch);
       };
     }
   }, []);
