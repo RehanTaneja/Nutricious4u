@@ -647,7 +647,28 @@ function AppContent() {
     );
   }
 
-  const { QnAScreen, AccountSettingsScreen } = require('./screens');
+  // Safety check to prevent crashes
+  if (!user && !checkingAuth && !checkingProfile && !loading) {
+    // User is not logged in and we're not in any loading state
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+        <Text style={{ color: COLORS.text, fontSize: 16 }}>Please log in to continue</Text>
+      </View>
+    );
+  }
+
+  // Import screens with error handling to prevent crashes
+  let QnAScreen, AccountSettingsScreen;
+  try {
+    const screensModule = require('./screens');
+    QnAScreen = screensModule.QnAScreen;
+    AccountSettingsScreen = screensModule.AccountSettingsScreen;
+  } catch (error) {
+    console.error('Error loading screens module:', error);
+    // Provide fallback components to prevent crash
+    QnAScreen = () => <View><Text>Loading...</Text></View>;
+    AccountSettingsScreen = () => <View><Text>Loading...</Text></View>;
+  }
 
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
@@ -670,7 +691,18 @@ function AppContent() {
             <>
               <Stack.Screen
                 name="Main"
-                children={() => <MainTabs isDietician={isDietician} isFreeUser={isFreeUser} />}
+                children={() => {
+                  try {
+                    return <MainTabs isDietician={isDietician} isFreeUser={isFreeUser} />;
+                  } catch (error) {
+                    console.error('Error rendering MainTabs:', error);
+                    return (
+                      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+                        <Text style={{ color: COLORS.text, fontSize: 16 }}>Loading app...</Text>
+                      </View>
+                    );
+                  }
+                }}
                 options={{ headerShown: false }}
               />
               <Stack.Screen name="DieticianMessage" component={DieticianMessageScreen} options={{ headerShown: false }} />
