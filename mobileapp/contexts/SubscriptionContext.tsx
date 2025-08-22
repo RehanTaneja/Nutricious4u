@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { auth } from '../services/firebase';
+import { getSubscriptionStatus } from '../services/api';
 
 interface SubscriptionContextType {
   showUpgradeModal: boolean;
@@ -28,7 +29,6 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Add delay to prevent conflict with login sequence
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const { getSubscriptionStatus } = require('../services/api');
       const user = auth.currentUser;
       if (user) {
         const subscriptionStatus = await getSubscriptionStatus(user.uid);

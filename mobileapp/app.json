@@ -12,7 +12,7 @@
       "androidCollapsedTitle": "Nutricious4u"
     },
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "jsEngine": "hermes",
     "splash": {
       "image": "./assets/logo.png",

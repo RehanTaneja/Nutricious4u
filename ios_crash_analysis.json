@@ -1,0 +1,89 @@
+{
+  "timestamp": "2025-08-22T23:30:22.115239",
+  "primary_cause": "Dynamic require() calls in EAS build",
+  "dynamic_requires": [
+    {
+      "file": "screens.tsx:1166",
+      "code": "const apiModule = require('./services/api');",
+      "context": "Dashboard diet reminder notification"
+    },
+    {
+      "file": "screens.tsx:2570",
+      "code": "const { searchFood } = require('./services/api');",
+      "context": "Food search functionality"
+    },
+    {
+      "file": "screens.tsx:5986",
+      "code": "const apiModule = require('./services/api');",
+      "context": "Message push notifications"
+    },
+    {
+      "file": "App.tsx:137",
+      "code": "const apiModule = require('./services/api');",
+      "context": "Daily reset functionality"
+    },
+    {
+      "file": "contexts/SubscriptionContext.tsx:31",
+      "code": "const { getSubscriptionStatus } = require('../services/api');",
+      "context": "Subscription status check"
+    }
+  ],
+  "test_scenarios": [
+    {
+      "name": "Dynamic Require Test",
+      "priority": "HIGH",
+      "description": "Test if dynamic require() calls work in EAS build",
+      "test_method": "Replace all require() with static imports"
+    },
+    {
+      "name": "Firebase Initialization Test",
+      "priority": "MEDIUM",
+      "description": "Test Firebase setup timing in EAS build",
+      "test_method": "Add extensive logging around Firebase init"
+    },
+    {
+      "name": "Auth State Listener Test",
+      "priority": "MEDIUM",
+      "description": "Test auth state changes in EAS build",
+      "test_method": "Isolate auth listener from other operations"
+    },
+    {
+      "name": "Memory Pressure Test",
+      "priority": "LOW",
+      "description": "Test memory usage during login sequence",
+      "test_method": "Monitor memory allocation patterns"
+    }
+  ],
+  "fix_recommendations": [
+    {
+      "priority": "CRITICAL",
+      "fix": "Replace all dynamic require() with static imports",
+      "files": [
+        "screens.tsx",
+        "App.tsx",
+        "contexts/SubscriptionContext.tsx"
+      ],
+      "effort": "Low",
+      "impact": "High"
+    },
+    {
+      "priority": "HIGH",
+      "fix": "Add EAS build-specific error boundaries",
+      "files": [
+        "App.tsx",
+        "screens.tsx"
+      ],
+      "effort": "Medium",
+      "impact": "High"
+    },
+    {
+      "priority": "MEDIUM",
+      "fix": "Implement iOS-specific Firebase initialization",
+      "files": [
+        "services/firebase.ts"
+      ],
+      "effort": "Low",
+      "impact": "Medium"
+    }
+  ]
+}

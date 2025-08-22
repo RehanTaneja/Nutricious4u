@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
-import { getUserProfile, createUserProfile, clearProfileCache } from './services/api';
+import { getUserProfile, createUserProfile, clearProfileCache, getSubscriptionStatus, resetDailyData } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
   API_KEY, 
@@ -39,7 +39,9 @@ import {
   UploadDietScreen, // <-- import the new screen
   RecipesScreen, // <-- import the new recipes screen
   SubscriptionSelectionScreen, // <-- import subscription selection screen
-  MySubscriptionsScreen // <-- import my subscriptions screen
+  MySubscriptionsScreen, // <-- import my subscriptions screen
+  QnAScreen,
+  AccountSettingsScreen
 } from './screens';
 import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getQueueStatus } from './services/api';
 
@@ -133,9 +135,8 @@ function AppContent() {
       if (storedDate !== today) {
         console.log('[Daily Reset] New day detected, resetting daily data');
         
-        // Reset daily data by calling the backend with timeout
-        const apiModule = require('./services/api');
-        const resetPromise = apiModule.default.post(`/user/${user.uid}/reset-daily`, {});
+        // Reset daily data by calling the backend with timeout  
+        const resetPromise = resetDailyData(user.uid);
         
         // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 
@@ -649,18 +650,7 @@ function AppContent() {
 
 
 
-  // Import screens with error handling to prevent crashes
-  let QnAScreen, AccountSettingsScreen;
-  try {
-    const screensModule = require('./screens');
-    QnAScreen = screensModule.QnAScreen;
-    AccountSettingsScreen = screensModule.AccountSettingsScreen;
-  } catch (error) {
-    console.error('Error loading screens module:', error);
-    // Provide fallback components to prevent crash
-    QnAScreen = () => <View><Text>Loading...</Text></View>;
-    AccountSettingsScreen = () => <View><Text>Loading...</Text></View>;
-  }
+
 
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>

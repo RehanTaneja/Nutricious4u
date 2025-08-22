@@ -1,0 +1,59 @@
+{
+  "test_timestamp": "2025-08-22T23:15:55.261907",
+  "analysis": {
+    "total_users": 2,
+    "successful_extractions": 0,
+    "total_notifications": 0,
+    "extraction_success_rate": 0.0
+  },
+  "detailed_results": [
+    {
+      "user_info": {
+        "name": "Unknown",
+        "email": "EMoXb6rFuwN3xKsotq54K0kVArf1@example.com",
+        "id": null
+      },
+      "get_notifications": {
+        "status": "success",
+        "count": 0
+      },
+      "extract_notifications": {
+        "status": "server_error",
+        "count": 0,
+        "message": "Server error during extraction"
+      },
+      "schedule_notifications": {
+        "status": "success",
+        "count": 0
+      },
+      "cancel_notifications": {
+        "status": "success",
+        "count": 0
+      }
+    },
+    {
+      "user_info": {
+        "name": "Unknown",
+        "email": "snjeevtaneja@outlook.com",
+        "id": null
+      },
+      "get_notifications": {
+        "status": "success",
+        "count": 0
+      },
+      "extract_notifications": {
+        "status": "server_error",
+        "count": 0,
+        "message": "Server error during extraction"
+      },
+      "schedule_notifications": {
+        "status": "success",
+        "count": 0
+      },
+      "cancel_notifications": {
+        "status": "success",
+        "count": 0
+      }
+    }
+  ]
+}

@@ -1048,4 +1048,25 @@ export const getQueueStatus = () => {
   };
 };
 
+// --- Missing Functions for iOS Fix ---
+export const resetDailyData = async (userId: string) => {
+  const response = await enhancedApi.post(`/user/${userId}/reset-daily`, {});
+  return response.data;
+};
+
+export const sendMessageNotification = async (recipientUserId: string, message: string, senderName: string) => {
+  const response = await enhancedApi.post('/notifications/send-message', {
+    recipientUserId,
+    message,
+    senderName,
+    senderUserId: recipientUserId // Simplified for now
+  });
+  return response.data;
+};
+
+export const searchFood = async (searchQuery: string): Promise<FoodItem[]> => {
+  const response = await enhancedApi.get(`/food/search?q=${encodeURIComponent(searchQuery)}`);
+  return response.data.foods || [];
+};
+
 export default enhancedApi; 

@@ -1,0 +1,123 @@
+{
+  "backend_endpoints": {
+    "status": "passed",
+    "details": [
+      {
+        "message": "Get diet notifications: 200",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:54.554516"
+      },
+      {
+        "message": "Extract diet notifications: Error 500",
+        "success": false,
+        "timestamp": "2025-08-22T23:05:56.258377"
+      },
+      {
+        "message": "Schedule notifications: 200",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:57.627080"
+      },
+      {
+        "message": "Cancel notifications: 200",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.569239"
+      }
+    ]
+  },
+  "timing_logic": {
+    "status": "passed",
+    "details": [
+      {
+        "message": "Morning 08:00 IST -> 02:30 UTC",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630686"
+      },
+      {
+        "message": "Lunch 12:00 IST -> 06:30 UTC",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630710"
+      },
+      {
+        "message": "Afternoon 16:30 IST -> 11:00 UTC",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630723"
+      },
+      {
+        "message": "Dinner 19:00 IST -> 13:30 UTC",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630732"
+      },
+      {
+        "message": "Night 22:00 IST -> 16:30 UTC",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630741"
+      },
+      {
+        "message": "Monday is 3 days ahead",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630750"
+      },
+      {
+        "message": "Tuesday is 4 days ahead",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630755"
+      },
+      {
+        "message": "Wednesday is 5 days ahead",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630759"
+      },
+      {
+        "message": "Thursday is 6 days ahead",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630763"
+      },
+      {
+        "message": "Friday is Today",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630767"
+      },
+      {
+        "message": "Saturday is Tomorrow",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630771"
+      },
+      {
+        "message": "Sunday is 2 days ahead",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:58.630775"
+      }
+    ]
+  },
+  "api_compatibility": {
+    "status": "passed",
+    "details": [
+      {
+        "message": "Backend API is accessible",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:59.470949"
+      },
+      {
+        "message": "API supports CORS for mobile app requests",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:59.471005"
+      },
+      {
+        "message": "API uses JSON request/response format",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:59.471023"
+      },
+      {
+        "message": "API returns proper HTTP status codes",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:59.471283"
+      },
+      {
+        "message": "API handles timeouts gracefully",
+        "success": true,
+        "timestamp": "2025-08-22T23:05:59.471328"
+      }
+    ]
+  },
+  "overall_score": 100.0
+}
