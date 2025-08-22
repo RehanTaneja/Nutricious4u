@@ -511,6 +511,27 @@ async def get_status_checks():
 
 
 
+@api_router.get("/food/nutrition")
+async def get_food_nutrition(food_name: str, quantity: str = "100"):
+    """Get nutrition data for a food item without logging it"""
+    try:
+        logger.info(f"[NUTRITION] Getting nutrition for: {food_name}, {quantity}")
+        nutrition = await get_nutrition_from_gemini(food_name, quantity)
+        logger.info(f"[NUTRITION] Gemini nutrition response: {nutrition}")
+        
+        food = FoodItem(
+            name=food_name,
+            calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
+            protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
+            fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
+            per_100g=True
+        )
+        
+        return {"food": food.dict(), "success": True}
+    except Exception as e:
+        logger.error(f"[NUTRITION] Error getting nutrition data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get nutrition data: {e}")
+
 @api_router.post("/food/log", response_model=FoodLog)
 async def log_food_item(request: FoodLogRequest):
     loop = asyncio.get_event_loop()

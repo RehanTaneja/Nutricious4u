@@ -532,9 +532,11 @@ export interface SubscriptionResponse {
   };
 }
 
-export async function searchFood(query: string): Promise<FoodItem[]> {
-  const response = await enhancedApi.get('/food/search', { params: { query } });
-  return response.data.foods;
+export async function getNutritionData(foodName: string, quantity: string): Promise<{food: FoodItem, success: boolean}> {
+  const response = await enhancedApi.get('/food/nutrition', { 
+    params: { food_name: foodName, quantity: quantity } 
+  });
+  return response.data;
 }
 
 export const logFood = async (userId: string, foodName: string, servingSize: string = "100") => {
