@@ -1461,9 +1461,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     </View>
   );
 
-  // --- Food Modal Handler ---
+  // --- Food Modal Handler with Gemini API Integration ---
   const [foodLoading, setFoodLoading] = useState(false);
-  const [workoutLoading, setWorkoutLoading] = useState(false); // Add this line
+  const [workoutLoading, setWorkoutLoading] = useState(false);
+  const [showNutritionConfirm, setShowNutritionConfirm] = useState(false);
+  const [nutritionData, setNutritionData] = useState<{calories: number, protein: number, fat: number} | null>(null);
+  const [editableNutrition, setEditableNutrition] = useState<{calories: string, protein: string, fat: string}>({calories: '', protein: '', fat: ''});
+  const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string} | null>(null);
+  
   const handleLogFoodModal = async () => {
     if (!foodName.trim() || !foodQty.trim()) {
       setShowFoodError(true);
@@ -1473,12 +1478,73 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     if (userId) {
       try {
         setFoodLoading(true);
-        // If foodQty is not a number, send as string; if it is a number, send as string
-        await logFood(userId, foodName.trim(), foodQty);
+        
+        // Use Gemini API to get nutrition data
+        console.log('[Food Log] Fetching nutrition data from Gemini API...');
+        const { searchFood } = require('./services/api');
+        const nutritionResults = await searchFood(`${foodName.trim()} ${foodQty.trim()}g nutrition calories protein fat`);
+        
+        if (nutritionResults && nutritionResults.length > 0) {
+          const nutrition = nutritionResults[0];
+          setNutritionData({
+            calories: nutrition.calories || 0,
+            protein: nutrition.protein || 0,
+            fat: nutrition.fat || 0
+          });
+          setEditableNutrition({
+            calories: (nutrition.calories || 0).toString(),
+            protein: (nutrition.protein || 0).toString(),
+            fat: (nutrition.fat || 0).toString()
+          });
+          setPendingFoodData({name: foodName.trim(), quantity: foodQty});
+          setShowNutritionConfirm(true);
+        } else {
+          // Fallback to direct logging if Gemini doesn't return data
+          await logFood(userId, foodName.trim(), foodQty);
+          setShowFoodModal(false);
+          setShowFoodSuccess(true);
+          setFoodName('');
+          setFoodQty('');
+          fetchSummary();
+        }
+      } catch (error) {
+        console.error('[Food Log] Error fetching nutrition data:', error);
+        // Fallback to direct logging
+        try {
+          await logFood(userId, foodName.trim(), foodQty);
+          setShowFoodModal(false);
+          setShowFoodSuccess(true);
+          setFoodName('');
+          setFoodQty('');
+          fetchSummary();
+        } catch {
+          setShowFoodError(true);
+        }
+      } finally {
+        setFoodLoading(false);
+      }
+    }
+  };
+
+  const handleConfirmNutrition = async () => {
+    if (!pendingFoodData) return;
+    const userId = auth.currentUser?.uid;
+    if (userId) {
+      try {
+        setFoodLoading(true);
+        // Log food with the confirmed nutrition data
+        await logFood(userId, pendingFoodData.name, pendingFoodData.quantity, {
+          calories: parseFloat(editableNutrition.calories) || 0,
+          protein: parseFloat(editableNutrition.protein) || 0,
+          fat: parseFloat(editableNutrition.fat) || 0
+        });
+        setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
         setFoodName('');
         setFoodQty('');
+        setNutritionData(null);
+        setPendingFoodData(null);
         fetchSummary();
       } catch {
         setShowFoodError(true);
@@ -2279,6 +2345,76 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           </View>
         </View>
       </Modal>
+      {/* Nutrition Confirmation Modal */}
+      <Modal
+        visible={showNutritionConfirm}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowNutritionConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Confirm Nutrition Data</Text>
+            <Text style={styles.modalExplanation}>
+              AI has estimated the nutrition values. Please review and adjust if needed:
+            </Text>
+            
+            <Text style={styles.modalLabel}>Calories:</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editableNutrition.calories}
+              onChangeText={(text) => setEditableNutrition(prev => ({...prev, calories: text}))}
+              placeholder="Calories"
+              keyboardType="numeric"
+            />
+            
+            <Text style={styles.modalLabel}>Protein (g):</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editableNutrition.protein}
+              onChangeText={(text) => setEditableNutrition(prev => ({...prev, protein: text}))}
+              placeholder="Protein"
+              keyboardType="numeric"
+            />
+            
+            <Text style={styles.modalLabel}>Fat (g):</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editableNutrition.fat}
+              onChangeText={(text) => setEditableNutrition(prev => ({...prev, fat: text}))}
+              placeholder="Fat"
+              keyboardType="numeric"
+            />
+            
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: foodLoading ? COLORS.placeholder : COLORS.primary }]}
+                onPress={handleConfirmNutrition}
+                disabled={foodLoading}
+              >
+                {foodLoading ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.modalButtonText}>Confirm & Log</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: COLORS.error }]}
+                onPress={() => {
+                  setShowNutritionConfirm(false);
+                  setNutritionData(null);
+                  setPendingFoodData(null);
+                }}
+                disabled={foodLoading}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
+          </View>
+        </View>
+      </Modal>
+
       {/* Scan Food Modal */}
       <Modal
         visible={showScanModal}
@@ -2289,6 +2425,31 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Scan Food</Text>
+            
+            {/* AI Accuracy Warning */}
+            <View style={{
+              backgroundColor: '#FEF3C7',
+              borderLeftWidth: 4,
+              borderLeftColor: '#F59E0B',
+              padding: 12,
+              marginBottom: 16,
+              borderRadius: 8
+            }}>
+              <Text style={{
+                color: '#92400E',
+                fontSize: 14,
+                fontWeight: '600',
+                marginBottom: 4
+              }}>⚠️ AI Photo Recognition Notice</Text>
+              <Text style={{
+                color: '#92400E',
+                fontSize: 13,
+                lineHeight: 18
+              }}>
+                AI photo analysis may be inaccurate. For better results, consider logging food manually with precise measurements.
+              </Text>
+            </View>
+            
             <Text style={styles.modalLabel}>Choose an option</Text>
             <View style={styles.modalButtonRow}>
               <TouchableOpacity
