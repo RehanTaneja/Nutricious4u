@@ -1532,12 +1532,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     if (userId) {
       try {
         setFoodLoading(true);
-        // Log food with the confirmed nutrition data
-        await logFood(userId, pendingFoodData.name, pendingFoodData.quantity, {
-          calories: parseFloat(editableNutrition.calories) || 0,
-          protein: parseFloat(editableNutrition.protein) || 0,
-          fat: parseFloat(editableNutrition.fat) || 0
-        });
+        // Log food with the confirmed data (backend will fetch nutrition)
+        await logFood(userId, pendingFoodData.name, pendingFoodData.quantity);
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
