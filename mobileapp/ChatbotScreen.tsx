@@ -104,10 +104,20 @@ export const ChatbotScreen = () => {
           text: m.text
         }))
       ];
+      // Ensure userProfile is valid or provide a minimal one
+      const validProfile = userProfile || {
+        firstName: 'User',
+        lastName: '',
+        age: 25,
+        gender: 'other',
+        email: userId + '@example.com'
+      };
+      
+      console.log('[ChatbotScreen] Sending message with profile:', validProfile);
       const botText = await sendChatbotMessage(
         userId,
         chat_history,
-        userProfile,
+        validProfile,
         inputText
       );
       setMessages(prevMessages => [

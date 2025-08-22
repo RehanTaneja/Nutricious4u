@@ -1468,6 +1468,35 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [nutritionData, setNutritionData] = useState<{calories: number, protein: number, fat: number} | null>(null);
   const [editableNutrition, setEditableNutrition] = useState<{calories: string, protein: string, fat: string}>({calories: '', protein: '', fat: ''});
   const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string} | null>(null);
+
+  // Helper function to estimate nutrition values for common foods
+  const estimateNutrition = (foodName: string, quantity: number) => {
+    const food = foodName.toLowerCase();
+    let caloriesPerGram = 2; // Default fallback
+    let proteinPerGram = 0.1;
+    let fatPerGram = 0.1;
+
+    // Common food estimates (calories per gram)
+    if (food.includes('rice')) {
+      caloriesPerGram = 1.3; proteinPerGram = 0.03; fatPerGram = 0.003;
+    } else if (food.includes('chicken') || food.includes('meat')) {
+      caloriesPerGram = 2.5; proteinPerGram = 0.25; fatPerGram = 0.15;
+    } else if (food.includes('bread')) {
+      caloriesPerGram = 2.6; proteinPerGram = 0.08; fatPerGram = 0.03;
+    } else if (food.includes('egg')) {
+      caloriesPerGram = 1.5; proteinPerGram = 0.13; fatPerGram = 0.10;
+    } else if (food.includes('milk')) {
+      caloriesPerGram = 0.6; proteinPerGram = 0.03; fatPerGram = 0.03;
+    } else if (food.includes('apple') || food.includes('fruit')) {
+      caloriesPerGram = 0.5; proteinPerGram = 0.003; fatPerGram = 0.002;
+    }
+
+    return {
+      calories: Math.round(quantity * caloriesPerGram),
+      protein: Math.round(quantity * proteinPerGram * 10) / 10,
+      fat: Math.round(quantity * fatPerGram * 10) / 10
+    };
+  };
   
   const handleLogFoodModal = async () => {
     if (!foodName.trim() || !foodQty.trim()) {
@@ -1479,47 +1508,23 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       try {
         setFoodLoading(true);
         
-        // Use Gemini API to get nutrition data
-        console.log('[Food Log] Fetching nutrition data from Gemini API...');
-        const { searchFood } = require('./services/api');
-        const nutritionResults = await searchFood(`${foodName.trim()} ${foodQty.trim()}g nutrition calories protein fat`);
+        // Show nutrition confirmation popup with estimated values
+        console.log('[Food Log] Showing nutrition confirmation for:', foodName.trim());
         
-        if (nutritionResults && nutritionResults.length > 0) {
-          const nutrition = nutritionResults[0];
-          setNutritionData({
-            calories: nutrition.calories || 0,
-            protein: nutrition.protein || 0,
-            fat: nutrition.fat || 0
-          });
-          setEditableNutrition({
-            calories: (nutrition.calories || 0).toString(),
-            protein: (nutrition.protein || 0).toString(),
-            fat: (nutrition.fat || 0).toString()
-          });
-          setPendingFoodData({name: foodName.trim(), quantity: foodQty});
-          setShowNutritionConfirm(true);
-        } else {
-          // Fallback to direct logging if Gemini doesn't return data
-          await logFood(userId, foodName.trim(), foodQty);
-          setShowFoodModal(false);
-          setShowFoodSuccess(true);
-          setFoodName('');
-          setFoodQty('');
-          fetchSummary();
-        }
+        // Provide estimated nutrition values based on common foods
+        const estimatedNutrition = estimateNutrition(foodName.trim(), parseInt(foodQty) || 100);
+        
+        setNutritionData(estimatedNutrition);
+        setEditableNutrition({
+          calories: estimatedNutrition.calories.toString(),
+          protein: estimatedNutrition.protein.toString(),
+          fat: estimatedNutrition.fat.toString()
+        });
+        setPendingFoodData({name: foodName.trim(), quantity: foodQty});
+        setShowNutritionConfirm(true);
       } catch (error) {
-        console.error('[Food Log] Error fetching nutrition data:', error);
-        // Fallback to direct logging
-        try {
-          await logFood(userId, foodName.trim(), foodQty);
-          setShowFoodModal(false);
-          setShowFoodSuccess(true);
-          setFoodName('');
-          setFoodQty('');
-          fetchSummary();
-        } catch {
-          setShowFoodError(true);
-        }
+        console.error('[Food Log] Error showing nutrition confirmation:', error);
+        setShowFoodError(true);
       } finally {
         setFoodLoading(false);
       }
@@ -2352,7 +2357,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Confirm Nutrition Data</Text>
             <Text style={styles.modalExplanation}>
-              AI has estimated the nutrition values. Please review and adjust if needed:
+              Estimated nutrition values for {pendingFoodData?.name} ({pendingFoodData?.quantity}g). Please review and adjust if needed:
             </Text>
             
             <Text style={styles.modalLabel}>Calories:</Text>
@@ -2406,7 +2411,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
+            <Text style={styles.poweredBy}>Nutrition estimates • Backend will fetch precise data</Text>
           </View>
         </View>
       </Modal>
