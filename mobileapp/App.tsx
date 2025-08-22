@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
-import { getUserProfile, createUserProfile, clearProfileCache, getSubscriptionStatus, resetDailyData } from './services/api';
+import { getUserProfile, createUserProfile, clearProfileCache, resetDailyData } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
   API_KEY, 
