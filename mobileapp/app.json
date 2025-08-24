@@ -59,7 +59,7 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "nutricious4u",
-    "owner": "rt4231",
+    "owner": "rt3546",
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
@@ -90,7 +90,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "310ee74f-2c1e-4a91-af6e-b11709ddb981"
+        "projectId": "23b497a5-baac-44c7-82a4-487a59bfff5b"
       }
     },
 

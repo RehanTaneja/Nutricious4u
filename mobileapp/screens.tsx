@@ -1133,6 +1133,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   // Consolidated profile fetch - removed duplicate to prevent iOS crashes
   // Profile fetching is now handled by the main useEffect below
+  
+
 
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
@@ -1289,14 +1291,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     `;
   };
 
-  useEffect(() => {
-    if (scanResult) {
-      setEditScanName('Photo Food');
-      setEditScanCalories(scanResult.calories?.toString() || '');
-      setEditScanProtein(scanResult.protein?.toString() || '');
-      setEditScanFat(scanResult.fat?.toString() || '');
-    }
-  }, [scanResult]);
+
 
   // Fetch user profile for targets whenever focused - FIXED: removed problematic refresh dependency
   useEffect(() => {
@@ -1468,6 +1463,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [editableNutrition, setEditableNutrition] = useState<{calories: string, protein: string, fat: string}>({calories: '', protein: '', fat: ''});
   const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string} | null>(null);
 
+  // Cleanup effect to ensure food loading state is reset when modals close
+  useEffect(() => {
+    if (!showFoodModal && !showNutritionConfirm) {
+      // Reset loading state when both modals are closed
+      setFoodLoading(false);
+    }
+  }, [showFoodModal, showNutritionConfirm]);
 
   
   const handleLogFoodModal = async () => {
@@ -1480,9 +1482,18 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       try {
         setFoodLoading(true);
         
+        // Safety timeout to prevent infinite loading state
+        const safetyTimeout = setTimeout(() => {
+          console.warn('[Food Log] Safety timeout triggered - resetting loading state');
+          setFoodLoading(false);
+        }, 30000); // 30 seconds timeout
+        
         // Call the backend to get Gemini nutrition data (without logging yet)
         console.log('[Food Log] Fetching nutrition data from backend Gemini API...');
         const response = await getNutritionData(foodName.trim(), foodQty);
+        
+        // Clear safety timeout since API call succeeded
+        clearTimeout(safetyTimeout);
         
         // Extract nutrition data from the response
         const nutrition = response.food;
@@ -1498,20 +1509,30 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         });
         setPendingFoodData({name: foodName.trim(), quantity: foodQty});
         
-        // Show the confirmation modal first, then clear loading
-        console.log('[Food Log] Setting up nutrition confirmation modal');
-        setShowNutritionConfirm(true);
+        // Close the first modal and show the confirmation modal
+        console.log('[Food Log] Closing first modal and opening nutrition confirmation modal');
+        setShowFoodModal(false);
         
-        // Clear loading state after modal is shown
+        // Small delay to ensure first modal closes before opening confirmation
         setTimeout(() => {
-          setFoodLoading(false);
-          console.log('[Food Log] Nutrition confirmation modal should be visible now');
-        }, 50);
+          setShowNutritionConfirm(true);
+          
+          // Clear loading state after confirmation modal is shown
+          setTimeout(() => {
+            setFoodLoading(false);
+            console.log('[Food Log] Nutrition confirmation modal should be visible now');
+          }, 50);
+        }, Platform.OS === 'ios' ? 150 : 100);
         
       } catch (error) {
         console.error('[Food Log] Error fetching nutrition data from backend:', error);
         setShowFoodError(true);
         setFoodLoading(false);
+        
+        // Safety timeout to ensure loading state is reset
+        setTimeout(() => {
+          setFoodLoading(false);
+        }, 1000);
       }
     }
   };
@@ -2069,6 +2090,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                   setShowFoodModal(false);
                   setFoodName('');
                   setFoodQty('');
+                  setFoodLoading(false); // Ensure loading state is reset
                 }}
                 disabled={foodLoading}
               >
@@ -2262,6 +2284,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                   setShowNutritionConfirm(false);
                   setNutritionData(null);
                   setPendingFoodData(null);
+                  setFoodLoading(false); // Ensure loading state is reset
                 }}
                 disabled={foodLoading}
               >
@@ -4875,11 +4898,11 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
                      <View style={{
              position: 'absolute',
              top: 0,
-             left: '10%',
+             left: '5%',
              right: 0,
              bottom: 0,
              backgroundColor: COLORS.white,
-             opacity: 0.3,
+             opacity: 0.25,
            }} />
           {items.map((item, idx) => {
             const progress = item.target ? Math.min(1, item.value / item.target) : 0;
@@ -7399,9 +7422,7 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     backgroundColor: COLORS.white,
-    transform: Platform.OS === 'ios' 
-      ? [{ scale: 1.2 }, { translateY: 15 }]  // Less aggressive scaling for iOS
-      : [{ scale: 1.58 }, { translateY: 28 }], // Original Android values
+    transform: [{ scale: 1.58 }, { translateY: 28 }], // Use Android settings for both platforms
   },
   dieticianName: {
     fontSize: 28,
