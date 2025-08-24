@@ -108,17 +108,34 @@ export async function registerForPushNotificationsAsync() {
       logger.log('Failed to get push token for push notification!');
       return;
     }
-    token = (await Notifications.getExpoPushTokenAsync()).data;
+    
+    // Platform-specific token generation for EAS builds
+    if (Platform.OS === 'ios') {
+      // For iOS EAS builds, use Expo push token
+      token = (await Notifications.getExpoPushTokenAsync({
+        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b' // Your project ID
+      })).data;
+    } else {
+      // For Android EAS builds, use Expo push token
+      token = (await Notifications.getExpoPushTokenAsync({
+        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b' // Your project ID
+      })).data;
+    }
+    
     logger.log('Expo push token:', token);
+    logger.log('Platform:', Platform.OS);
+    logger.log('Token type:', typeof token);
     
     // Save token to Firestore with error handling
     try {
       const user = auth.currentUser;
       if (user && token) {
         await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
-          expoPushToken: token 
+          expoPushToken: token,
+          platform: Platform.OS,
+          lastTokenUpdate: new Date().toISOString()
         }, { merge: true });
-        logger.log('Saved expoPushToken to Firestore');
+        logger.log('Saved expoPushToken to Firestore with platform info');
       }
     } catch (error) {
       logger.log('Failed to save push token to Firestore:', error);
@@ -132,8 +149,13 @@ export async function registerForPushNotificationsAsync() {
 // Add notification listener for diet notifications
 export function setupDietNotificationListener() {
   try {
+    logger.log('Setting up diet notification listener for platform:', Platform.OS);
+    
     const subscription = Notifications.addNotificationReceivedListener(notification => {
       logger.log('Notification received:', notification);
+      logger.log('Notification data:', notification.request.content.data);
+      logger.log('Notification title:', notification.request.content.title);
+      logger.log('Notification body:', notification.request.content.body);
       
       // Handle diet-related notifications
       const data = notification.request.content.data;
@@ -143,10 +165,26 @@ export function setupDietNotificationListener() {
       } else if (data?.type === 'diet_reminder') {
         logger.log('Diet reminder notification received for dietician');
         // You can add custom handling here if needed
+      } else if (data?.type === 'message_notification') {
+        logger.log('Message notification received:', data);
+      } else {
+        logger.log('Other notification type received:', data?.type);
       }
     });
 
-    return subscription;
+    // Also add response listener for when user taps notification
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      logger.log('Notification response received:', response);
+      logger.log('Response data:', response.notification.request.content.data);
+    });
+
+    // Return combined subscription
+    return {
+      remove: () => {
+        subscription.remove();
+        responseSubscription.remove();
+      }
+    };
   } catch (error) {
     logger.log('Failed to setup diet notification listener:', error);
     // Return a dummy subscription to prevent crashes

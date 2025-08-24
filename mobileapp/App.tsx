@@ -370,18 +370,27 @@ function AppContent() {
     const initializeServices = async () => {
       try {
         
-        // Register for push notifications
+        // Register for push notifications with platform-specific handling
         try {
-          await registerForPushNotificationsAsync();
+          console.log('[NOTIFICATIONS] Registering for push notifications on platform:', Platform.OS);
+          const token = await registerForPushNotificationsAsync();
+          if (token) {
+            console.log('[NOTIFICATIONS] ✅ Push notification token obtained successfully');
+            console.log('[NOTIFICATIONS] Token length:', token.length);
+          } else {
+            console.warn('[NOTIFICATIONS] ⚠️ No push notification token obtained');
+          }
         } catch (error) {
-          console.warn('Push notification registration failed:', error);
+          console.warn('[NOTIFICATIONS] Push notification registration failed:', error);
         }
         
-        // Set up diet notification listener
+        // Set up diet notification listener with platform-specific handling
         try {
+          console.log('[NOTIFICATIONS] Setting up diet notification listener on platform:', Platform.OS);
           dietNotificationSubscription = setupDietNotificationListener();
+          console.log('[NOTIFICATIONS] ✅ Diet notification listener setup successful');
         } catch (error) {
-          console.warn('Diet notification listener setup failed:', error);
+          console.warn('[NOTIFICATIONS] Diet notification listener setup failed:', error);
         }
         
         
@@ -434,33 +443,39 @@ function AppContent() {
                   }
                 }
                 
-                // Set up real-time notification listener for non-dietician users
-                if (!isDieticianAccount) {
-                  try {
-                    notificationUnsubscribe = firestore
-                      .collection('notifications')
-                      .where('userId', '==', firebaseUser.uid)
-                      .where('read', '==', false)
-                      .onSnapshot(snapshot => {
-                        snapshot.docChanges().forEach(change => {
-                          if (change.type === 'added') {
-                            const notification = change.doc.data();
-                            // Mark notification as read immediately to prevent re-triggering
-                            firestore.collection('notifications').doc(change.doc.id).update({
-                              read: true
-                            });
-                            
-                            setNotificationMessage(notification.message);
-                            setShowNotification(true);
-                          }
-                        });
-                      }, error => {
-                        console.error('Error listening to notifications:', error);
-                      });
-                  } catch (error) {
-                    console.warn('Failed to set up notification listener:', error);
+                        // Set up real-time notification listener for non-dietician users
+        if (!isDieticianAccount) {
+          try {
+            console.log('[NOTIFICATIONS] Setting up Firestore notification listener for user:', firebaseUser.uid);
+            notificationUnsubscribe = firestore
+              .collection('notifications')
+              .where('userId', '==', firebaseUser.uid)
+              .where('read', '==', false)
+              .onSnapshot(snapshot => {
+                console.log('[NOTIFICATIONS] Firestore notification snapshot received:', snapshot.docs.length, 'unread notifications');
+                snapshot.docChanges().forEach(change => {
+                  if (change.type === 'added') {
+                    const notification = change.doc.data();
+                    console.log('[NOTIFICATIONS] New notification received:', notification);
+                    
+                    // Mark notification as read immediately to prevent re-triggering
+                    firestore.collection('notifications').doc(change.doc.id).update({
+                      read: true
+                    });
+                    
+                    setNotificationMessage(notification.message);
+                    setShowNotification(true);
+                    console.log('[NOTIFICATIONS] ✅ Notification displayed to user');
                   }
-                }
+                });
+              }, error => {
+                console.error('[NOTIFICATIONS] Error listening to Firestore notifications:', error);
+              });
+            console.log('[NOTIFICATIONS] ✅ Firestore notification listener setup successful');
+          } catch (error) {
+            console.warn('[NOTIFICATIONS] Failed to set up Firestore notification listener:', error);
+          }
+        }
                 
                 // Dietician skips quiz
                 if (isDieticianAccount) {

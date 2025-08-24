@@ -2735,14 +2735,33 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
           const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
           setIsDietician(isDieticianAccount);
           
+          // For dieticians, don't try to load profile - they don't need one
+          if (isDieticianAccount) {
+            setUserProfile(null);
+            setError(''); // Clear any error for dieticians
+            setLoading(false);
+            return;
+          }
+          
+          // Only try to load profile for regular users
           const profile = await getUserProfileSafe(userId);
           if (profile) {
             setUserProfile(profile);
+            setError(''); // Clear any error
           } else {
             setUserProfile(null); // No profile found, do not show error
+            setError(''); // Clear any error
           }
         } catch (e) {
-          setError('Could not load user profile.');
+          // Only set error for non-dietician users
+          const userEmail = auth.currentUser?.email;
+          const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
+          
+          if (!isDieticianAccount) {
+            setError('Could not load user profile.');
+          } else {
+            setError(''); // Clear error for dieticians
+          }
         } finally {
           setLoading(false);
         }
@@ -3692,9 +3711,16 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (isFreeUser) {
         console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
         setShowUpgradeModal(true);
-        // Redirect to Dashboard after a short delay to prevent access
+        // Only redirect non-dietician users to prevent access
+        // Dieticians should have full access to notification settings
         setTimeout(() => {
-          navigation.navigate('Main');
+          // Check if user is dietician before redirecting
+          const currentUser = auth.currentUser;
+          const isDieticianUser = currentUser?.email === 'nutricious4u@gmail.com';
+          
+          if (!isDieticianUser) {
+            navigation.navigate('Main');
+          }
         }, 100);
       }
     }, [isFreeUser, setShowUpgradeModal, navigation])
@@ -4063,24 +4089,33 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       // Calculate seconds until the notification should trigger
       const seconds = Math.max(1, Math.floor((time.getTime() - Date.now()) / 1000));
       
-      // Enhanced notification content for better background delivery
+      // Platform-specific notification content for EAS builds
+      const notificationContent = {
+        title: 'Diet Reminder',
+        body: notification.message,
+        sound: 'default',
+        priority: 'high',
+        autoDismiss: false,
+        sticky: false,
+        data: {
+          type: 'diet_reminder',
+          source: 'diet_pdf',
+          time: notification.time,
+          notificationId: notification.id,
+          userId: auth.currentUser?.uid,
+          scheduledFor: time.toISOString(),
+          platform: Platform.OS,
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      console.log('[Diet Notifications] Scheduling notification for platform:', Platform.OS);
+      console.log('[Diet Notifications] Notification content:', notificationContent);
+      console.log('[Diet Notifications] Trigger seconds:', seconds);
+      
+      // Schedule the notification
       const scheduledId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Diet Reminder',
-          body: notification.message,
-          sound: 'default',
-          priority: 'high',
-          autoDismiss: false,
-          sticky: false,
-          data: {
-            type: 'diet_reminder',
-            source: 'diet_pdf',
-            time: notification.time,
-            notificationId: notification.id,
-            userId: auth.currentUser?.uid,
-            scheduledFor: time.toISOString()
-          }
-        },
+        content: notificationContent,
         trigger: {
           type: 'timeInterval',
           seconds,
@@ -4088,18 +4123,25 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         } as any,
       });
       
-      console.log('[Diet Notifications] Scheduled notification:', {
+      console.log('[Diet Notifications] ✅ Notification scheduled successfully:', {
         message: notification.message,
         time: notification.time,
         scheduledId,
         triggerTime: time.toISOString(),
         secondsUntilTrigger: seconds,
-        daysAhead
+        daysAhead,
+        platform: Platform.OS
       });
       
       return scheduledId;
     } catch (error) {
-      console.error('[Diet Notifications] Error scheduling notification:', error);
+      console.error('[Diet Notifications] ❌ Error scheduling notification:', error);
+      console.error('[Diet Notifications] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        platform: Platform.OS,
+        notification: notification
+      });
       throw error;
     }
   };
@@ -9825,67 +9867,86 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   }, []);
 
   React.useEffect(() => {
-    const cleanupPastAppointments = async () => {
+    let isMounted = true;
+    let unsubscribe: (() => void) | undefined;
+
+    const setupAppointmentsListener = async () => {
       try {
-        // Clean up past appointments first
+        // Only clean up past appointments once, not on every render
         const now = new Date();
         const pastAppointmentsSnapshot = await firestore
           .collection('appointments')
           .where('date', '<', now.toISOString())
           .get();
 
-        const batch = firestore.batch();
-        pastAppointmentsSnapshot.docs.forEach(doc => {
-          batch.delete(doc.ref);
-        });
-
         if (pastAppointmentsSnapshot.docs.length > 0) {
+          const batch = firestore.batch();
+          pastAppointmentsSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
           await batch.commit();
           console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
         }
+
+        // Set up real-time listener only once
+        if (isMounted) {
+          unsubscribe = firestore
+            .collection('appointments')
+            .onSnapshot(snapshot => {
+              if (isMounted) {
+                const appointmentsData = snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                }));
+                setAppointments(appointmentsData);
+                setLoading(false);
+              }
+            }, error => {
+              console.error('Error listening to appointments:', error);
+              if (isMounted) {
+                setLoading(false);
+              }
+            });
+        }
       } catch (error) {
-        console.error('Error cleaning up past appointments:', error);
+        console.error('Error setting up appointments listener:', error);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    let unsubscribe: (() => void) | undefined;
-    cleanupPastAppointments().then(() => {
-      // Real-time listener for appointments
-      unsubscribe = firestore
-        .collection('appointments')
-        .onSnapshot(snapshot => {
-          const appointmentsData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setAppointments(appointmentsData);
-          setLoading(false);
-        }, error => {
-          console.error('Error listening to appointments:', error);
-          setLoading(false);
-        });
-    });
+    setupAppointmentsListener();
 
     return () => {
+      isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, []); // Empty dependency array - runs only once
 
   // Real-time listener for breaks
   React.useEffect(() => {
+    let isMounted = true;
+    
     const unsubscribe = firestore
       .collection('breaks')
       .onSnapshot(snapshot => {
-        const breaksData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setBreaks(breaksData);
+        if (isMounted) {
+          const breaksData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setBreaks(breaksData);
+        }
       }, error => {
         console.error('Error listening to breaks:', error);
       });
-    return () => unsubscribe();
-  }, []);
+      
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []); // Empty dependency array - runs only once
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', { 
@@ -10121,6 +10182,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={{ marginTop: 10, color: COLORS.text, fontSize: 14 }}>
+            Loading appointments...
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -10143,7 +10207,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
             refreshing={loading}
             onRefresh={() => {
               // Force refresh by cleaning up and restarting the listener
+              // Use a separate refresh state to prevent infinite loops
               setLoading(true);
+              // The useEffect will handle setting loading to false
             }}
             colors={[COLORS.primary]}
             tintColor={COLORS.primary}
