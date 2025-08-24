@@ -40,7 +40,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import firebase from './services/firebase';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
-import { Pedometer } from 'expo-sensors';
+
 import { LinearGradient } from 'expo-linear-gradient';
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
 import * as ImagePicker from 'expo-image-picker';
@@ -636,7 +636,7 @@ const LoginSignupScreen = () => {
           targetProtein: 150,
           targetFat: 65,
           activityLevel: 'moderate',
-          stepGoal: 10000,
+
           caloriesBurnedGoal: 500
         });
 
@@ -745,7 +745,7 @@ const LoginSignupScreen = () => {
               targetProtein: 150,
               targetFat: 65,
               activityLevel: 'moderate',
-              stepGoal: 10000,
+    
               caloriesBurnedGoal: 500
             });
           }
@@ -1106,7 +1106,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [burnedToday, setBurnedToday] = useState(0);
-  const [stepsToday, setStepsToday] = useState(0);
+
   const isFocused = useIsFocused();
   const userId = auth.currentUser?.uid;
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1335,51 +1335,30 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     return () => clearTimeout(delayedFetch);
   }, [userId, isFocused]);
 
-  // --- Persist calories burned and steps for the current day ---
+  // --- Persist calories burned for the current day ---
   const getTodayKey = () => {
     const d = new Date();
     return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
   };
 
-  // Load burnedToday and stepsToday from AsyncStorage on mount or day change
+  // Load burnedToday from AsyncStorage on mount or day change
   useEffect(() => {
     const loadPersisted = async () => {
       const todayKey = getTodayKey();
       const burned = await AsyncStorage.getItem('burnedToday_' + todayKey);
-      const steps = await AsyncStorage.getItem('stepsToday_' + todayKey);
       setBurnedToday(safeNumber(Number(burned)));
-      setStepsToday(safeNumber(Number(steps)));
     };
     loadPersisted();
   }, [isFocused, getTodayKey()]);
 
-  // Persist burnedToday and stepsToday whenever they change
+  // Persist burnedToday whenever it changes
   useEffect(() => {
     const todayKey = getTodayKey();
     AsyncStorage.setItem('burnedToday_' + todayKey, String(safeNumber(burnedToday)));
   }, [burnedToday]);
-  useEffect(() => {
-    const todayKey = getTodayKey();
-    AsyncStorage.setItem('stepsToday_' + todayKey, String(safeNumber(stepsToday)));
-  }, [stepsToday]);
 
-  // Fetch step count for today
-  useEffect(() => {
-    let isMounted = true;
-    const fetchSteps = async () => {
-      try {
-        const end = new Date();
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        const result = await Pedometer.getStepCountAsync(start, end);
-        if (isMounted) setStepsToday(result.steps);
-      } catch (e) {
-        if (isMounted) setStepsToday(0);
-      }
-    };
-    fetchSteps();
-    return () => { isMounted = false; };
-  }, [isFocused, refresh, showFoodSuccess, showWorkoutSuccess]);
+
+
 
   // Fetch summary (nutrition) and workout calories for today - DELAYED to prevent conflict with login sequence
   const fetchSummary = async () => {
@@ -1628,18 +1607,36 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Handler for Scan Food button
+  // Handler for Scan Food button - iOS EAS safe implementation
   const handleScanFood = () => {
+    // For iOS EAS builds, show informative message instead of opening camera
+    if (Platform.OS === 'ios' && !__DEV__) {
+      Alert.alert(
+        'Photo Scanning Unavailable',
+        'Photo scanning is not available in this iOS build. Please use the "Log Food" button to manually enter your food details.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
     setShowScanModal(true);
     setScanResult(null);
     setScanError(null);
     setShowScanError(false);
   };
 
-  // Pick image from gallery
+  // Pick image from gallery - iOS EAS safe implementation
   const pickImageFromGallery = async () => {
     setScanError(null);
     setShowScanError(false);
+    
+    // For iOS EAS builds, disable camera functionality to prevent permission crashes
+    if (Platform.OS === 'ios' && !__DEV__) {
+      setScanError('Photo scanning is not available in this iOS build. Please use manual food logging.');
+      setShowScanError(true);
+      return;
+    }
+    
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -1663,10 +1660,18 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Take photo with camera
+  // Take photo with camera - iOS EAS safe implementation
   const takePhoto = async () => {
     setScanError(null);
     setShowScanError(false);
+    
+    // For iOS EAS builds, disable camera functionality to prevent permission crashes
+    if (Platform.OS === 'ios' && !__DEV__) {
+      setScanError('Photo scanning is not available in this iOS build. Please use manual food logging.');
+      setShowScanError(true);
+      return;
+    }
+    
     try {
       let result = await ImagePicker.launchCameraAsync({
         allowsEditing: true, // Enable crop/rotate UI
@@ -1787,7 +1792,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const targetCalories = userProfile?.targetCalories || 2000;
   const targetProtein = userProfile?.targetProtein || 150;
   const targetFat = userProfile?.targetFat || 65;
-  const targetSteps = userProfile?.stepGoal ?? 10000;
+
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 0;
 
   return (
@@ -1798,10 +1803,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       {/* --- Single Rectangle Widget --- */}
       <SummaryWidget
         todayData={todayData}
-        targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, steps: targetSteps, burned: targetBurned }}
-        stepsToday={stepsToday}
+        targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, burned: targetBurned }}
         burnedToday={burnedToday}
-        onPress={() => navigation.navigate('TrackingDetails', { summary, stepsToday, burnedToday, userProfile, workoutSummary })}
+        onPress={() => navigation.navigate('TrackingDetails', { summary, burnedToday, userProfile, workoutSummary })}
       />
       {/* --- End Widget --- */}
       <View style={styles.actionsContainer}>
@@ -3365,7 +3369,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
       })
     );
     setHasUnsavedChanges(true);
-  }, [editProfile?.currentWeight, editProfile?.height, editProfile?.age, editProfile?.gender, editProfile?.activityLevel, editProfile?.stepGoal, editProfile?.caloriesBurnedGoal]);
+  }, [editProfile?.currentWeight, editProfile?.height, editProfile?.age, editProfile?.gender, editProfile?.activityLevel, editProfile?.caloriesBurnedGoal]);
 
   const handleSave = async () => {
     if (!editProfile) return;
@@ -3381,7 +3385,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
         targetCalories: targets.calories,
         targetProtein: targets.protein,
         targetFat: targets.fat,
-        stepGoal: editProfile.stepGoal,
+
         caloriesBurnedGoal: editProfile.caloriesBurnedGoal,
       });
       setUserProfile(editProfile);
@@ -3532,21 +3536,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
             <Text style={{ fontSize: 15, color: '#222' }}>Protein: {targets.protein} g</Text>
             <Text style={{ fontSize: 15, color: '#222' }}>Fat: {targets.fat} g</Text>
           </View>
-          <View style={{ marginVertical: 12 }}>
-            <Text style={{ fontWeight: 'bold', color: '#888', fontSize: 16 }}>Daily Step Goal</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={editProfile?.stepGoal ?? 10000}
-                onValueChange={value => { setEditProfile({ ...editProfile!, stepGoal: value }); setHasUnsavedChanges(true); }}
-                style={styles.picker}
-                itemStyle={{ fontSize: 18 }}
-              >
-                {[...Array(20)].map((_, i) => (
-                  <Picker.Item key={i} label={`${(i+1)*1000}`} value={(i+1)*1000} />
-                ))}
-              </Picker>
-            </View>
-          </View>
+
           <View style={{ marginVertical: 12 }}>
             <Text style={{ fontWeight: 'bold', color: '#888', fontSize: 16 }}>Daily Calories Burned Goal</Text>
             <View style={styles.pickerWrapper}>
@@ -5148,20 +5138,18 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 };
 
 // --- Rectangle Summary Widget ---
-const SummaryWidget = ({ todayData, targets, stepsToday, burnedToday, onPress }: any) => {
+const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
   // Define unique, dark/vibrant colors for each label
   const labelColors = {
     Calories: '#B91C1C', // dark red
     Protein: '#0E7490', // dark teal
     Fat: '#B45309',     // dark amber
-    Steps: '#065F46',   // dark green
     Burned: '#A21CAF',  // dark purple
   };
   const items = [
     { label: 'Calories', value: safeNumber(todayData.calories), target: targets.calories, color: COLORS.energy, labelColor: labelColors.Calories },
     { label: 'Protein', value: safeNumber(todayData.protein), target: targets.protein, color: COLORS.protein, labelColor: labelColors.Protein },
     { label: 'Fat', value: safeNumber(todayData.fat), target: targets.fat, color: COLORS.fat, labelColor: labelColors.Fat },
-    { label: 'Steps', value: stepsToday, target: targets.steps, color: COLORS.primaryDark, labelColor: labelColors.Steps },
     { label: 'Burned', value: safeNumber(burnedToday), target: targets.burned, color: COLORS.streakActive, labelColor: labelColors.Burned },
   ];
   
@@ -5231,13 +5219,13 @@ const SummaryWidget = ({ todayData, targets, stepsToday, burnedToday, onPress }:
 
 // --- Tracking Details Screen ---
 const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: any }) => {
-  const { summary, stepsToday, burnedToday, userProfile, workoutSummary } = route.params || {};
+  const { summary, burnedToday, userProfile, workoutSummary } = route.params || {};
   
   // Get targets from userProfile if available
   const targetCalories = userProfile?.targetCalories || 2000;
   const targetProtein = userProfile?.targetProtein || 150;
   const targetFat = userProfile?.targetFat || 65;
-  const targetSteps = userProfile?.stepGoal ?? 10000;
+
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 500;
 
   // --- Build last 7 days (rolling window) ---
@@ -5259,7 +5247,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   const caloriesData = last7Dates.map(date => ({ value: historyByDate[date]?.calories || 0 }));
   const proteinData = last7Dates.map(date => ({ value: historyByDate[date]?.protein || 0 }));
   const fatData = last7Dates.map(date => ({ value: historyByDate[date]?.fat || 0 }));
-  const stepsData = last7Dates.map((date, idx) => ({ value: idx === 6 ? stepsToday : (historyByDate[date]?.steps || 0) }));
+
   // Add burnedData from workoutSummary if available
   const burnedData = (route.params?.workoutSummary?.history || []).map((item: any) => ({ value: item.calories || 0 }));
   while (burnedData.length < 7) burnedData.unshift({ value: 0 });
@@ -5274,7 +5262,6 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     calories: '#FF6B6B',
     protein: '#4ECDC4', 
     fat: '#FFD93D',
-    steps: '#34D399',
     burned: '#FFA500'
   };
 
@@ -5296,9 +5283,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     } else if (title.includes('Fat')) {
       maxValue = Math.max(...chartData.map(d => d.value), target) * 1.2;
       yLabels = [0, Math.round(maxValue/4), Math.round(maxValue/2), Math.round(maxValue*3/4), Math.round(maxValue)];
-    } else if (title.includes('Steps')) {
-      maxValue = 15000;
-      yLabels = [0, 3000, 6000, 9000, 12000, 15000];
+
     } else {
       maxValue = Math.max(...chartData.map(d => d.value), target) * 1.2;
       yLabels = [0, Math.round(maxValue/4), Math.round(maxValue/2), Math.round(maxValue*3/4), Math.round(maxValue)];
@@ -5307,6 +5292,63 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     const chartHeight = 140;
     const chartWidth = 260;
     const yAxisWidth = 40;
+    
+    // iOS EAS builds have issues with SVG - use simplified chart
+    if (Platform.OS === 'ios' && !__DEV__) {
+      return (
+        <View style={styles.chartContainer}>
+          <Text style={[styles.chartTitle, { color }]}>{title}</Text>
+          <View style={styles.chartArea}>
+            {/* Y-axis labels */}
+            <View style={styles.yAxis}>
+              {yLabels.map((label, index) => (
+                <Text key={index} style={styles.yAxisLabel}>
+                  {label >= 1000 ? `${label/1000}k` : label}
+                </Text>
+              ))}
+            </View>
+            {/* Simplified chart content for iOS */}
+            <View style={[styles.chartContent, { width: chartWidth, height: chartHeight, backgroundColor: '#f5f5f5', borderRadius: 8 }]}> 
+              {/* Goal line */}
+              <View style={[styles.goalLine, { 
+                top: chartHeight - (target / maxValue) * chartHeight,
+                borderColor: color,
+                borderWidth: 2,
+                borderStyle: 'dashed',
+                backgroundColor: 'transparent',
+                width: chartWidth,
+              }]} />
+              {/* Data points as bars instead of SVG */}
+              {chartData.map((item: any, index: number) => {
+                const barHeight = (item.value / maxValue) * chartHeight;
+                const barWidth = Math.max(20, chartWidth / 10);
+                const x = (index / (chartData.length - 1)) * (chartWidth - barWidth);
+                return (
+                  <View key={index} style={{ 
+                    position: 'absolute',
+                    left: x,
+                    bottom: 0,
+                    width: barWidth,
+                    height: barHeight,
+                    backgroundColor: color + '80',
+                    borderRadius: 2,
+                    marginHorizontal: 2
+                  }} />
+                );
+              })}
+            </View>
+            {/* X-axis labels */}
+            <View style={[styles.xAxis, { width: chartWidth, left: 0, marginLeft: 0, paddingHorizontal: 0, paddingLeft: 0, position: 'absolute', bottom: -40 }]}> 
+              {xLabels.map((label, index) => (
+                <Text key={index} style={styles.xAxisLabel}>
+                  {label}
+                </Text>
+              ))}
+            </View>
+          </View>
+        </View>
+      );
+    }
     
     return (
       <View style={styles.chartContainer}>
@@ -5404,8 +5446,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
             <Text style={styles.statusValue}>{fatData[6]?.value || 0} / {targetFat}g</Text>
           </View>
           <View style={styles.statusCard}>
-            <Text style={[styles.statusLabel, { color: chartColors.steps }]}>Steps</Text>
-            <Text style={styles.statusValue}>{stepsToday} / {targetSteps}</Text>
+
           </View>
           <View style={styles.statusCard}>
             <Text style={[styles.statusLabel, { color: chartColors.burned }]}>Burned</Text>
@@ -5428,18 +5469,11 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
           targetProtein,
           xLabels
         )}
-        {renderChart(
-          fatData,
-          'Fat Trend',
+                {renderChart(
+          fatData, 
+          'Fat Trend', 
           chartColors.fat, 
           targetFat,
-          xLabels
-        )}
-        {renderChart(
-          stepsData,
-          'Steps Trend',
-          chartColors.steps,
-          targetSteps,
           xLabels
         )}
         {renderChart(burnedData, 'Calories Burned', chartColors.burned, targetBurned, xLabels)}
@@ -10630,7 +10664,7 @@ const createMissingUserProfile = async (userId: string, userData: any) => {
       targetCalories: userData.targetCalories || 2000,
       targetProtein: userData.targetProtein || 150,
       targetFat: userData.targetFat || 65,
-      stepGoal: userData.stepGoal || 10000,
+
       caloriesBurnedGoal: userData.caloriesBurnedGoal || 500
     });
     console.log('[UploadDietScreen] Successfully created user profile for:', userId);

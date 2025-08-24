@@ -79,7 +79,7 @@ export const ChatbotScreen = () => {
       if (userProfile.allergies) prompt += `Allergies: ${userProfile.allergies}\n`;
       if (userProfile.medicalConditions) prompt += `Medical Conditions: ${userProfile.medicalConditions}\n`;
       if (userProfile.targetCalories) prompt += `Calories Goal: ${userProfile.targetCalories} kcal\n`;
-      if (userProfile.stepGoal) prompt += `Steps Goal: ${userProfile.stepGoal}\n`;
+
       if (userProfile.caloriesBurnedGoal) prompt += `Calories Burned Goal: ${userProfile.caloriesBurnedGoal}\n`;
       if (userProfile.dietPdfUrl) prompt += `Diet PDF Available: Yes\n`;
     }

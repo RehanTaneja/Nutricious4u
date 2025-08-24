@@ -425,7 +425,7 @@ function AppContent() {
                       targetProtein: 150,
                       targetFat: 65,
                       activityLevel: 'moderate',
-                      stepGoal: 10000,
+
                       caloriesBurnedGoal: 500
                     });
                     setForceReload(x => x + 1); // force re-render

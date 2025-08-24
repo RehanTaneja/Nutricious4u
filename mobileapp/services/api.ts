@@ -434,7 +434,7 @@ export interface UserProfile {
   targetProtein: number;
   targetFat: number;
   activityLevel: string;
-  stepGoal: number;
+
   caloriesBurnedGoal: number;
   email: string;
   dietPdfUrl?: string; // URL to the user's diet PDF
@@ -474,7 +474,7 @@ export interface UpdateUserProfile {
   targetProtein?: number;
   targetFat?: number;
   activityLevel?: string;
-  stepGoal?: number;
+
   caloriesBurnedGoal?: number;
   email?: string;
   // Subscription fields
