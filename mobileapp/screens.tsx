@@ -26,7 +26,7 @@ import {
   Linking,
 } from 'react-native';
 import { auth } from './services/firebase';
-import { Home, BookOpen, Dumbbell, Settings, Camera, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
+import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, getNutritionData, searchFood, sendMessageNotification } from './services/api';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,8 +43,8 @@ import * as Notifications from 'expo-notifications';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
-import * as ImagePicker from 'expo-image-picker';
-import { scanFoodPhoto } from './services/api';
+
+
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -470,7 +470,7 @@ export const COLORS = {
   protein: '#4ECDC4',     // Soft teal for protein
   fat: '#FFD93D',        // Bright yellow for fat
   logFood: '#6C5CE7',    // Soft purple
-  scanFood: '#00B894',   // Fresh green
+
   logWorkout: '#FF7675', // Soft red
   streakRed: '#FFB3B3', // very light red
   streakActive: '#FFA500', // bright orange
@@ -1124,16 +1124,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [showWorkoutError, setShowWorkoutError] = useState(false);
   const [workoutError, setWorkoutError] = useState('');
   const [workoutSummary, setWorkoutSummary] = useState<WorkoutLogSummaryResponse | null>(null);
-  const [showScanModal, setShowScanModal] = useState(false);
-  const [scanLoading, setScanLoading] = useState(false);
-  const [scanResult, setScanResult] = useState<{calories: number, protein: number, fat: number} | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [showScanError, setShowScanError] = useState(false);
-  const [editScanName, setEditScanName] = useState('Photo Food');
-  const [editScanCalories, setEditScanCalories] = useState('');
-  const [editScanProtein, setEditScanProtein] = useState('');
-  const [editScanFat, setEditScanFat] = useState('');
-  const [scanFoodLoading, setScanFoodLoading] = useState(false);
+
   const [dietPdfUrl, setDietPdfUrl] = useState<string | null>(null);
   const [daysLeft, setDaysLeft] = useState<{ days: number; hours: number } | null>(null);
   const [dietLoading, setDietLoading] = useState(false);
@@ -1506,12 +1497,20 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           fat: (nutrition.fat || 0).toString()
         });
         setPendingFoodData({name: foodName.trim(), quantity: foodQty});
+        
+        // Show the confirmation modal first, then clear loading
+        console.log('[Food Log] Setting up nutrition confirmation modal');
         setShowNutritionConfirm(true);
+        
+        // Clear loading state after modal is shown
+        setTimeout(() => {
+          setFoodLoading(false);
+          console.log('[Food Log] Nutrition confirmation modal should be visible now');
+        }, 50);
         
       } catch (error) {
         console.error('[Food Log] Error fetching nutrition data from backend:', error);
         setShowFoodError(true);
-      } finally {
         setFoodLoading(false);
       }
     }
@@ -1610,150 +1609,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Handler for Scan Food button - iOS EAS safe implementation
-  const handleScanFood = () => {
-    setShowScanModal(true);
-    setScanResult(null);
-    setScanError(null);
-    setShowScanError(false);
-  };
 
-  // Pick image from gallery - iOS EAS safe implementation
-  const pickImageFromGallery = async () => {
-    setScanError(null);
-    setShowScanError(false);
-    
-    // For iOS EAS builds, disable camera functionality to prevent permission crashes
-    if (Platform.OS === 'ios' && !__DEV__) {
-      setScanError('Photo scanning is not available in this iOS build. Please use manual food logging.');
-      setShowScanError(true);
-      return;
-    }
-    
-    try {
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true, // Enable crop/rotate UI
-        quality: 0.7,
-      });
-      if (result.canceled) {
-        setScanError('No photo selected.');
-        setShowScanError(true);
-        return;
-      }
-      if (result.assets && result.assets.length > 0 && result.assets[0].uri) {
-        handleScanPhoto(result.assets[0].uri);
-      } else {
-        setScanError('No photo selected.');
-        setShowScanError(true);
-      }
-    } catch (e) {
-      setScanError('Failed to pick image.');
-      setShowScanError(true);
-    }
-  };
-
-  // Take photo with camera - iOS EAS safe implementation
-  const takePhoto = async () => {
-    setScanError(null);
-    setShowScanError(false);
-    
-    // For iOS EAS builds, disable camera functionality to prevent permission crashes
-    if (Platform.OS === 'ios' && !__DEV__) {
-      setScanError('Photo scanning is not available in this iOS build. Please use manual food logging.');
-      setShowScanError(true);
-      return;
-    }
-    
-    try {
-      let result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true, // Enable crop/rotate UI
-        quality: 0.7,
-      });
-      if (result.canceled) {
-        setScanError('No photo taken.');
-        setShowScanError(true);
-        return;
-      }
-      if (result.assets && result.assets.length > 0 && result.assets[0].uri) {
-        handleScanPhoto(result.assets[0].uri);
-      } else {
-        setScanError('No photo taken.');
-        setShowScanError(true);
-      }
-    } catch (e) {
-      setScanError('Failed to take photo.');
-      setShowScanError(true);
-    }
-  };
-
-  // Upload photo to backend and get nutrition info
-  const handleScanPhoto = async (imageUri: string) => {
-    if (!imageUri) {
-      setScanError('Invalid image.');
-      setShowScanError(true);
-      return;
-    }
-    setScanLoading(true);
-    setScanResult(null);
-    setScanError(null);
-    setShowScanError(false);
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) throw new Error('User not authenticated');
-      const res = await scanFoodPhoto(imageUri, userId);
-      if (res && res.food && res.food.calories !== undefined) {
-        setScanResult(res.food);
-        // Do not auto-close modal; wait for user to press Log or Cancel
-      } else {
-        setScanError('Could not detect nutrition info.');
-        setShowScanError(true);
-      }
-    } catch (e: any) {
-      setScanError(e?.message || 'Failed to scan food. Please check your network connection.');
-      setShowScanError(true);
-    } finally {
-      setScanLoading(false);
-    }
-  };
-
-  // Handler for Log button in Scan Food modal
-  const handleLogScanResult = async () => {
-    if (!scanResult) return;
-    const userId = auth.currentUser?.uid;
-    if (!userId) return;
-    try {
-      // Log the food using the Gemini nutrition data
-      // Use a default name and serving size, or you can prompt the user for these
-      await logFood(userId, 'Scanned Food', '100');
-      await fetchSummary();
-    } catch (e) {
-      setScanError('Failed to log scanned food.');
-      setShowScanError(true);
-    }
-    setShowScanModal(false);
-    setScanResult(null);
-  };
-
-  // Handler for Done button in Scan Food edit modal
-  const handleDoneScanEdit = async () => {
-    if (!scanResult) return;
-    const userId = auth.currentUser?.uid;
-    if (!userId) return;
-    setScanFoodLoading(true);
-    try {
-      // Use the edited values for name and nutrition
-      await logFood(userId, editScanName.trim() || 'Scanned Food', '100');
-      await fetchSummary();
-      setShowFoodSuccess(true);
-    } catch (e) {
-      setScanError('Failed to log scanned food.');
-      setShowScanError(true);
-    }
-    setScanFoodLoading(false);
-    setShowScanModal(false);
-    setScanResult(null);
-  };
 
   if (loading) {
     return (
@@ -1810,13 +1666,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           <Search color={COLORS.white} size={24} />
           <Text style={styles.actionButtonText}>Log Food</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.actionButton, { backgroundColor: COLORS.scanFood }]} 
-          onPress={handleScanFood}
-        >
-          <Camera color={COLORS.white} size={24} />
-          <Text style={styles.actionButtonText}>Scan Food</Text>
-        </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.actionButton, { backgroundColor: COLORS.logWorkout }]}
           onPress={() => setShowWorkoutModal(true)}
@@ -2214,7 +2064,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: COLORS.error }]}
+                style={[styles.modalButton, { backgroundColor: foodLoading ? COLORS.placeholder : COLORS.error }]}
                 onPress={() => {
                   setShowFoodModal(false);
                   setFoodName('');
@@ -2222,7 +2072,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 }}
                 disabled={foodLoading}
               >
-                <Text style={styles.modalButtonText}>Cancel</Text>
+                <Text style={[styles.modalButtonText, { opacity: foodLoading ? 0.6 : 1 }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
@@ -2423,147 +2273,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         </View>
       </Modal>
 
-      {/* Scan Food Modal */}
-      <Modal
-        visible={showScanModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowScanModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Scan Food</Text>
-            
-            {/* AI Accuracy Warning */}
-            <View style={{
-              backgroundColor: '#FEF3C7',
-              borderLeftWidth: 4,
-              borderLeftColor: '#F59E0B',
-              padding: 12,
-              marginBottom: 16,
-              borderRadius: 8
-            }}>
-              <Text style={{
-                color: '#92400E',
-                fontSize: 14,
-                fontWeight: '600',
-                marginBottom: 4
-              }}>⚠️ AI Photo Recognition Notice</Text>
-              <Text style={{
-                color: '#92400E',
-                fontSize: 13,
-                lineHeight: 18
-              }}>
-                AI photo analysis may be inaccurate. For better results, consider logging food manually with precise measurements.
-              </Text>
-            </View>
-            
-            <Text style={styles.modalLabel}>Choose an option</Text>
-            <View style={styles.modalButtonRow}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: COLORS.primary }]}
-                onPress={pickImageFromGallery}
-                disabled={scanLoading || !!scanResult}
-              >
-                <Text style={styles.modalButtonText}>Upload from Gallery</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: COLORS.primaryDark }]}
-                onPress={takePhoto}
-                disabled={scanLoading || !!scanResult}
-              >
-                <Text style={styles.modalButtonText}>Take Photo</Text>
-              </TouchableOpacity>
-            </View>
-            {scanLoading && <ActivityIndicator color={COLORS.primary} style={{ marginTop: 16 }} />}
-            {scanResult && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={styles.modalLabel}>Food Name:</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={editScanName}
-                  onChangeText={setEditScanName}
-                  placeholder="Food Name"
-                />
-                <Text style={styles.modalLabel}>Calories:</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={editScanCalories}
-                  onChangeText={setEditScanCalories}
-                  placeholder="Calories"
-                  keyboardType="numeric"
-                />
-                <Text style={styles.modalLabel}>Protein:</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={editScanProtein}
-                  onChangeText={setEditScanProtein}
-                  placeholder="Protein (g)"
-                  keyboardType="numeric"
-                />
-                <Text style={styles.modalLabel}>Fat:</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={editScanFat}
-                  onChangeText={setEditScanFat}
-                  placeholder="Fat (g)"
-                  keyboardType="numeric"
-                />
-                <View style={styles.modalButtonRow}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, { backgroundColor: scanFoodLoading ? COLORS.placeholder : COLORS.primary, flex: 1, marginRight: 6 }]}
-                    onPress={handleDoneScanEdit}
-                    disabled={scanFoodLoading}
-                  >
-                    {scanFoodLoading ? (
-                      <ActivityIndicator color={COLORS.white} />
-                    ) : (
-                      <Text style={styles.modalButtonText}>Done</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, { backgroundColor: COLORS.error, flex: 1, marginLeft: 6 }]}
-                    onPress={() => setShowScanModal(false)}
-                    disabled={scanFoodLoading}
-                  >
-                    <Text style={styles.modalButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-            {/* Error Popup for Scan Food */}
-            <Modal
-              visible={showScanError}
-              animationType="fade"
-              transparent
-              onRequestClose={() => setShowScanError(false)}
-            >
-              <View style={styles.modalOverlay}>
-                <View style={styles.errorPopup}>
-                  <Text style={styles.errorTitle}>Error</Text>
-                  <Text style={styles.errorMessage}>{scanError || 'An error occurred while scanning food.'}</Text>
-                  <TouchableOpacity style={styles.errorButton} onPress={() => setShowScanError(false)}>
-                    <Text style={styles.errorButtonText}>Dismiss</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-            {/* Only show Cancel button if not showing scanResult */}
-            {!scanResult && (
-              <View style={styles.modalButtonRow}>
-                <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: COLORS.error }]}
-                  onPress={() => setShowScanModal(false)}
-                  disabled={scanFoodLoading}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            <Text style={styles.poweredBy}>Powered by Google Gemini Vision</Text>
-          </View>
-        </View>
-      </Modal>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -2661,10 +2371,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
           onChangeText={setSearchQuery}
         />
         <StyledButton title="Search" onPress={handleSearch} />
-        <TouchableOpacity style={[styles.button, styles.disabledButton]} disabled>
-          <Camera color={COLORS.white} size={20} style={{marginRight: 8}}/>
-          <Text style={styles.buttonText}>Scan with Camera (Coming Soon)</Text>
-        </TouchableOpacity>
+
         {loading && <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop: 20}} />}
         {error && <Text style={styles.errorText}>{error}</Text>}
         <FlatList
@@ -5168,11 +4875,11 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
                      <View style={{
              position: 'absolute',
              top: 0,
-             left: '30%',
+             left: '10%',
              right: 0,
              bottom: 0,
              backgroundColor: COLORS.white,
-             opacity: 0.5,
+             opacity: 0.3,
            }} />
           {items.map((item, idx) => {
             const progress = item.target ? Math.min(1, item.value / item.target) : 0;
@@ -5846,7 +5553,7 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
         <View style={styles.dieticianHeaderContainer}>
           <View style={styles.dieticianPhotoWrapper}>
             <Image
-              source={{ uri: 'https://via.placeholder.com/80x80.png?text=Dr' }}
+              source={require('./assets/dp.jpeg')}
               style={styles.dieticianPhoto}
               resizeMode="center"
             />
@@ -7692,7 +7399,9 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     backgroundColor: COLORS.white,
-    transform: [{ scale: 1.58 }, { translateY: 28 }],
+    transform: Platform.OS === 'ios' 
+      ? [{ scale: 1.2 }, { translateY: 15 }]  // Less aggressive scaling for iOS
+      : [{ scale: 1.58 }, { translateY: 28 }], // Original Android values
   },
   dieticianName: {
     fontSize: 28,
