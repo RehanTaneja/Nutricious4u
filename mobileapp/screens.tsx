@@ -5165,11 +5165,29 @@ const SummaryWidget = ({ todayData, targets, stepsToday, burnedToday, onPress }:
     { label: 'Burned', value: safeNumber(burnedToday), target: targets.burned, color: COLORS.streakActive, labelColor: labelColors.Burned },
   ];
   
-  // iOS EAS builds have issues with LinearGradient - use safe fallback
+  // iOS EAS builds have issues with LinearGradient - create visually identical alternative
   if (Platform.OS === 'ios' && !__DEV__) {
     return (
       <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.summaryWidgetContainer}>
-        <View style={[styles.summaryWidgetBg, { backgroundColor: COLORS.lightGreen }]}>
+        <View style={styles.summaryWidgetBg}>
+          {/* Create gradient effect using nested Views - visually identical to LinearGradient */}
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: COLORS.lightGreen,
+          }} />
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: '50%',
+            backgroundColor: COLORS.white,
+            opacity: 0.7,
+          }} />
           {items.map((item, idx) => {
             const progress = item.target ? Math.min(1, item.value / item.target) : 0;
             return (
