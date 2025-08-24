@@ -1408,10 +1408,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   // Refresh summary after logging food or workout - DELAYED to prevent conflict with login sequence
   useEffect(() => {
     if (isFocused && userId) {
-      // Add delay to prevent conflict with login sequence API calls
+      // Only add delay on first load, not when returning to dashboard
+      const isFirstLoad = !summary;
+      const delay = isFirstLoad ? 1000 : 0; // Reduced delay, immediate on return
+      
       const delayedFetch = setTimeout(() => {
         fetchSummary();
-      }, 3000); // 3 second delay to ensure login sequence completes
+      }, delay);
       
       return () => clearTimeout(delayedFetch);
     }
@@ -1437,7 +1440,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         };
         
         checkDailyReset();
-      }, 4000); // 4 second delay to ensure login sequence completes
+      }, 500); // Reduced delay for faster response
       
       return () => clearTimeout(delayedCheck);
     }
@@ -1609,16 +1612,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   // Handler for Scan Food button - iOS EAS safe implementation
   const handleScanFood = () => {
-    // For iOS EAS builds, show informative message instead of opening camera
-    if (Platform.OS === 'ios' && !__DEV__) {
-      Alert.alert(
-        'Photo Scanning Unavailable',
-        'Photo scanning is not available in this iOS build. Please use the "Log Food" button to manually enter your food details.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
     setShowScanModal(true);
     setScanResult(null);
     setScanError(null);
@@ -1796,10 +1789,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 0;
 
   return (
-    <SafeAreaView style={[styles.container, { paddingHorizontal: 16, paddingTop: 50 }]}> 
-      <View style={styles.headerContainer}>
-        <Text style={styles.screenTitle}>Dashboard</Text>
-      </View>
+    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}> 
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.screenTitle}>Dashboard</Text>
+        </View>
       {/* --- Single Rectangle Widget --- */}
       <SummaryWidget
         todayData={todayData}
@@ -2211,7 +2205,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 disabled={foodLoading}
               >
                 {foodLoading ? (
-                  <ActivityIndicator color={COLORS.white} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <ActivityIndicator color={COLORS.white} size="small" />
+                    <Text style={[styles.modalButtonText, { marginLeft: 8, fontSize: 12 }]}>Analyzing...</Text>
+                  </View>
                 ) : (
                   <Text style={styles.modalButtonText}>Log</Text>
                 )}
@@ -2567,6 +2564,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           </View>
         </View>
       </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -5167,15 +5165,15 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
             bottom: 0,
             backgroundColor: COLORS.lightGreen,
           }} />
-          <View style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '50%',
-            backgroundColor: COLORS.white,
-            opacity: 0.7,
-          }} />
+                     <View style={{
+             position: 'absolute',
+             top: 0,
+             left: '30%',
+             right: 0,
+             bottom: 0,
+             backgroundColor: COLORS.white,
+             opacity: 0.5,
+           }} />
           {items.map((item, idx) => {
             const progress = item.target ? Math.min(1, item.value / item.target) : 0;
             return (
