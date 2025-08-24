@@ -23,8 +23,21 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.nutricious4u.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "railway.app": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": false,
+              "NSExceptionMinimumTLSVersion": "1.2"
+            }
+          }
+        },
+        "UIRequiredDeviceCapabilities": ["armv7"],
+        "UIBackgroundModes": ["remote-notification"]
+      },
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {

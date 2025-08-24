@@ -34,9 +34,10 @@
     "@react-navigation/stack": "^7.3.6",
     "axios": "^1.10.0",
     "date-fns": "^4.1.0",
-    "expo": "53.0.20",
+    "expo": "53.0.22",
     "expo-build-properties": "~0.14.8",
     "expo-document-picker": "~13.1.6",
+    "expo-haptics": "~14.1.4",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~14.1.5",
     "expo-notifications": "~0.31.4",
@@ -57,15 +58,15 @@
     "react-native-screens": "~4.11.1",
     "react-native-svg": "15.11.2",
     "react-native-webview": "13.13.5",
-    "react-native-wheel-picker-expo": "^0.5.4"
+    "react-native-wheel-picker-expo": "^0.5.4",
+    "typescript": "~5.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@types/react": "~19.0.10",
     "metro": "^0.82.5",
     "metro-config": "^0.82.5",
-    "metro-resolver": "^0.82.5",
-    "typescript": "~5.8.3"
+    "metro-resolver": "^0.82.5"
   },
   "private": true
 }

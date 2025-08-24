@@ -1030,13 +1030,70 @@ export const unlockUserApp = async (userId: string) => {
 };
 
 export const getUserLockStatus = async (userId: string) => {
+  console.log('[API] 🔒 Fetching user lock status for:', userId);
   const response = await enhancedApi.get(`/users/${userId}/lock-status`);
+  console.log('[API] 🔒 Lock status response:', response.data);
+  console.log('[API] 🔒 Lock status call completed, app should continue to main screen');
+  
+  // Add additional logging call to backend for EAS builds
+  if (!__DEV__) {
+    try {
+      // Make a logging request with crash detection info
+      await enhancedApi.get(`/users/${userId}/profile?debugEvent=LOCK_STATUS_COMPLETED&platform=${Platform.OS}&timestamp=${new Date().toISOString()}&nextStep=NAVIGATE_TO_MAINTABS`);
+    } catch (logError) {
+      console.warn('Failed to log lock status completion:', logError);
+    }
+  }
+  
   return response.data;
 };
 
 export const testUserExists = async (userId: string) => {
   const response = await enhancedApi.get(`/users/${userId}/test`);
   return response.data;
+};
+
+// Frontend Event Logging for iOS Debug using existing endpoints
+export const logFrontendEvent = async (userId: string, event: string, data?: any) => {
+  try {
+    // Only log in EAS builds (not Expo Go)
+    if (!__DEV__) {
+      const logData = {
+        userId,
+        event,
+        data: JSON.stringify(data || {}),
+        platform: Platform.OS,
+        timestamp: new Date().toISOString(),
+        userAgent: Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1'
+      };
+      
+      // Use profile endpoint with special logging data - this will show in backend logs
+      // The backend will see this in the logs when the request is made
+      const profileLogData = {
+        ...logData,
+        frontendEvent: event,
+        eventData: data,
+        debugLog: true
+      };
+      
+      console.log('📱 FRONTEND EVENT LOG:', JSON.stringify(profileLogData, null, 2));
+      
+      // Make a quick GET request to existing endpoint to trigger backend logging
+      // The query params will show in Railway logs
+      const logUrl = `/users/${userId}/profile?frontendEvent=${encodeURIComponent(event)}&platform=${Platform.OS}&timestamp=${encodeURIComponent(new Date().toISOString())}&data=${encodeURIComponent(JSON.stringify(data || {}))}`;
+      
+      // Use a timeout to not hang the app
+      const logPromise = enhancedApi.get(logUrl);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Log timeout')), 3000)
+      );
+      
+      await Promise.race([logPromise, timeoutPromise]);
+    }
+  } catch (error) {
+    // Silently fail - don't let logging break the app
+    console.warn('Failed to log frontend event:', error);
+  }
 };
 
 // Function to get queue status for debugging

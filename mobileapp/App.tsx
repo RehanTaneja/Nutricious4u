@@ -7,8 +7,8 @@ import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDiet
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
-import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
-import { getUserProfile, createUserProfile, clearProfileCache, resetDailyData } from './services/api';
+import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView } from 'react-native';
+import { getUserProfile, createUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { 
   API_KEY, 
@@ -51,7 +51,31 @@ const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 // The new Tab Navigator with only Dashboard and Settings
-const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUser: boolean }) => (
+const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUser: boolean }) => {
+  console.log('[MAIN TABS] 🚀 MainTabs component rendering with props:', { isDietician, isFreeUser });
+  
+  // Log MainTabs rendering to backend for EAS builds
+  React.useEffect(() => {
+    const logMainTabsRender = async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser && !__DEV__) {
+          await logFrontendEvent(currentUser.uid, 'MAINTABS_RENDER_START', {
+            isDietician,
+            isFreeUser,
+            platform: Platform.OS
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to log MainTabs render:', error);
+      }
+    };
+    logMainTabsRender();
+  }, [isDietician, isFreeUser]);
+  
+  // Add iOS-specific error boundary
+  try {
+    return (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       headerShown: false, // The Stack Navigator will handle the header
@@ -78,7 +102,145 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
       tabBarInactiveTintColor: COLORS.placeholder,
     })}
   >
-    <Tab.Screen name="Dashboard" component={isDietician ? DieticianDashboardScreen : DashboardScreen} />
+    <Tab.Screen 
+      name="Dashboard" 
+      component={(() => {
+        const Component = isDietician ? DieticianDashboardScreen : DashboardScreen;
+        console.log('[MAIN TABS] 📊 Dashboard component selected:', isDietician ? 'DieticianDashboardScreen' : 'DashboardScreen');
+        
+        // Create a safe wrapper for iOS with progressive loading
+        const SafeComponent = (props: any) => {
+          console.log('[DASHBOARD WRAPPER] 🛡️ Rendering dashboard component safely');
+          
+          // For iOS EAS builds, use completely different rendering strategy to prevent useEffect storms
+          if (Platform.OS === 'ios' && !__DEV__) {
+            console.log('[iOS] 🍎 Using iOS-optimized dashboard rendering');
+            
+            // Return a simplified iOS dashboard that avoids the complex useEffect chains
+            return React.createElement((navigationProps: any) => {
+              const navigation = navigationProps.navigation;
+              const [loading, setLoading] = React.useState(true);
+              const [data, setData] = React.useState({ calories: 0, protein: 0, fat: 0 });
+              
+              React.useEffect(() => {
+                // Single, controlled API call for iOS instead of multiple useEffect hooks
+                const loadData = async () => {
+                  try {
+                    const userId = auth.currentUser?.uid;
+                    if (userId) {
+                      // Only make one safe API call
+                      const summary = await getLogSummary(userId);
+                      const todayData = summary?.history?.[0] || { calories: 0, protein: 0, fat: 0 };
+                      setData(todayData);
+                    }
+                  } catch (error) {
+                    console.warn('[iOS] Data fetch failed, using defaults');
+                  } finally {
+                    setLoading(false);
+                  }
+                };
+                
+                // Delay to ensure login sequence is complete
+                const timer = setTimeout(loadData, 2000);
+                return () => clearTimeout(timer);
+              }, []);
+              
+              if (loading) {
+                return (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 }}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold', marginTop: 20 }}>Loading Dashboard...</Text>
+                    <Text style={{ color: COLORS.placeholder, fontSize: 14, textAlign: 'center', marginTop: 10 }}>iOS Safe Mode</Text>
+                  </View>
+                );
+              }
+              
+              // Simple iOS dashboard with no complex useEffect chains
+              return (
+                <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingHorizontal: 16, paddingTop: 50 }}>
+                  <Text style={{ fontSize: 24, fontWeight: 'bold', color: COLORS.text, marginBottom: 20 }}>Dashboard</Text>
+                  
+                  {/* Simple nutrition display */}
+                  <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 20, marginBottom: 20 }}>
+                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text, marginBottom: 15 }}>Today's Nutrition</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+                      <View style={{ alignItems: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.primary }}>{Math.round(data.calories)}</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.placeholder }}>Calories</Text>
+                      </View>
+                      <View style={{ alignItems: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.primary }}>{Math.round(data.protein)}g</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.placeholder }}>Protein</Text>
+                      </View>
+                      <View style={{ alignItems: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.primary }}>{Math.round(data.fat)}g</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.placeholder }}>Fat</Text>
+                      </View>
+                    </View>
+                  </View>
+                  
+                  {/* Simple action buttons */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
+                    <TouchableOpacity 
+                      style={{ backgroundColor: COLORS.primary, padding: 15, borderRadius: 12, flex: 1, marginHorizontal: 5, alignItems: 'center' }}
+                      onPress={() => navigation.navigate('FoodLog')}
+                    >
+                      <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>Log Food</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={{ backgroundColor: COLORS.primary, padding: 15, borderRadius: 12, flex: 1, marginHorizontal: 5, alignItems: 'center' }}
+                      onPress={() => navigation.navigate('WorkoutLog')}
+                    >
+                      <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>Log Workout</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <Text style={{ fontSize: 14, color: COLORS.placeholder, textAlign: 'center', marginTop: 20 }}>
+                    iOS Optimized Dashboard - All features accessible via tabs
+                  </Text>
+                </SafeAreaView>
+              );
+            }, props);
+          }
+          
+          // Use normal component after delay or for non-iOS platforms
+          try {
+            return <Component {...props} />;
+          } catch (error) {
+            console.error('[DASHBOARD WRAPPER] ❌ Error rendering dashboard:', error);
+            
+            // Log to backend for EAS builds
+            const logDashboardError = async () => {
+              try {
+                const user = auth.currentUser;
+                if (user && !__DEV__) {
+                  await logFrontendEvent(user.uid, 'DASHBOARD_RENDER_ERROR', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                    componentType: isDietician ? 'DieticianDashboardScreen' : 'DashboardScreen',
+                    platform: Platform.OS
+                  });
+                }
+              } catch (logErr) {
+                console.warn('Failed to log dashboard error:', logErr);
+              }
+            };
+            logDashboardError();
+            
+            // Return fallback dashboard
+            return (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ color: COLORS.text, fontSize: 16, marginTop: 10 }}>Loading Dashboard...</Text>
+                <Text style={{ color: COLORS.placeholder, fontSize: 12, marginTop: 5 }}>Safe Mode</Text>
+              </View>
+            );
+          }
+        };
+        
+        return SafeComponent;
+      })()} 
+    />
     <Tab.Screen name="Recipes" component={RecipesScreen} options={{ title: 'Recipes' }} />
     {isDietician ? (
       <>
@@ -92,6 +254,43 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
     <Tab.Screen name="Settings" component={SettingsScreen} />
   </Tab.Navigator>
 );
+  } catch (error) {
+    console.error('[MAIN TABS] ❌ Error rendering MainTabs:', error);
+    
+    // Log error to backend for EAS builds
+    const logError = async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser && !__DEV__) {
+          await logFrontendEvent(currentUser.uid, 'MAINTABS_RENDER_ERROR', {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            name: error instanceof Error ? error.name : 'Unknown',
+            isDietician,
+            isFreeUser,
+            platform: Platform.OS
+          });
+        }
+      } catch (logErr) {
+        console.warn('Failed to log MainTabs error:', logErr);
+      }
+    };
+    logError();
+    
+    // iOS-specific fallback
+    if (Platform.OS === 'ios') {
+      console.log('[MAIN TABS] [iOS] Returning fallback loading screen');
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={{ color: COLORS.text, fontSize: 16, marginTop: 10 }}>Loading app...</Text>
+        </View>
+      );
+    }
+    
+    throw error; // Re-throw for other platforms
+  }
+};
 
 // Global login state to prevent profile requests during login
 let isLoginInProgress = false;
@@ -231,14 +430,15 @@ function AppContent() {
     let dietNotificationSubscription: any;
     let timeoutId: any;
     
-    // Set a timeout to prevent infinite loading
+    // Set a timeout to prevent infinite loading - reduced for iOS stability
     timeoutId = setTimeout(() => {
       console.log('Loading timeout reached, forcing app to continue');
       setLoading(false);
       setCheckingAuth(false);
       setCheckingProfile(false);
       isLoginInProgress = false; // Clear login flag
-    }, 15000); // Increased to 15 seconds
+      (global as any).isLoginInProgress = false; // Clear global flag
+    }, Platform.OS === 'ios' ? 20000 : 15000); // Longer timeout for iOS builds
     
     const initializeApp = async () => {
       try {
@@ -423,17 +623,27 @@ function AppContent() {
                     } catch (profileError: any) {
                       console.log('[Profile Check] Error checking profile:', profileError);
                       
-                      // EAS build-specific fallback
+                      // EAS build-specific fallback with iOS handling
                       if (!__DEV__) {
                         console.log('[EAS Build] Using fallback profile handling');
                         // For EAS builds, assume user needs to complete quiz
                         setHasCompletedQuiz(false);
                         await AsyncStorage.setItem('hasCompletedQuiz', 'false');
                         
-                        // Skip additional API calls to prevent crashes
+                        // iOS-specific: Skip additional API calls to prevent crashes
+                        if (Platform.OS === 'ios') {
+                          console.log('[iOS EAS Build] Minimal initialization to prevent crashes');
                         setHasActiveSubscription(false);
                         setIsFreeUser(true);
+                          setCheckingProfile(false);
+                          isLoginInProgress = false;
+                          (global as any).isLoginInProgress = false;
                         return; // Exit early to prevent further API calls
+                        }
+                        
+                        // Android EAS: Continue with normal flow
+                        setHasActiveSubscription(false);
+                        setIsFreeUser(true);
                       } else {
                         // For Expo Go, use normal error handling
                         setHasCompletedQuiz(false);
@@ -492,22 +702,62 @@ function AppContent() {
                       
                       // Check app lock status (with error handling)
                       try {
+                        console.log('[LOGIN SEQUENCE] Starting app lock status check...');
                         await checkAppLockStatus();
+                        console.log('[LOGIN SEQUENCE] ✅ App lock status check completed successfully');
                       } catch (lockError) {
-                        console.log('[App Lock] Error during login sequence, continuing:', lockError);
+                        console.log('[LOGIN SEQUENCE] ❌ App lock status check failed:', lockError);
                       }
                       
                       // Log final queue status
                       const finalQueueStatus = getQueueStatus();
-                      console.log('[Queue Status] After login sequence:', finalQueueStatus);
+                      console.log('[LOGIN SEQUENCE] Final queue status:', finalQueueStatus);
+                      
+                      // Critical: Log completion of login sequence
+                      console.log('[LOGIN SEQUENCE] 🎉 LOGIN SEQUENCE COMPLETED SUCCESSFULLY');
+                      
+                      // Log to backend for EAS builds
+                      try {
+                        await logFrontendEvent(firebaseUser.uid, 'LOGIN_SEQUENCE_COMPLETED', {
+                          isDietician: isDieticianAccount,
+                          hasProfile: !!profile,
+                          subscriptionActive: hasActiveSubscription
+                        });
+                      } catch (logError) {
+                        console.warn('Failed to log login completion:', logError);
+                      }
+                      
+                      console.log('[LOGIN SEQUENCE] Setting completion flags...');
+                      setCheckingProfile(false);
+                      isLoginInProgress = false;
+                      (global as any).isLoginInProgress = false;
+                      console.log('[LOGIN SEQUENCE] ✅ All login flags cleared, app should now navigate to MainTabs');
+                      
+                      // Log navigation attempt
+                      try {
+                        await logFrontendEvent(firebaseUser.uid, 'NAVIGATION_TO_MAINTABS', {
+                          checkingProfile: false,
+                          isLoginInProgress: false
+                        });
+                      } catch (logError) {
+                        console.warn('Failed to log navigation attempt:', logError);
+                      }
                     } catch (error) {
                       console.log('[Subscription Check] Error checking subscription status:', error);
                       
-                      // EAS build-specific fallback
+                      // EAS build-specific fallback with iOS optimization
                       if (!__DEV__) {
                         console.log('[EAS Build] Using fallback subscription handling');
                         setHasActiveSubscription(false);
                         setIsFreeUser(true);
+                        
+                        // iOS-specific: Complete login early to prevent crashes
+                        if (Platform.OS === 'ios') {
+                          console.log('[iOS EAS Build] Completing login early due to subscription error');
+                          setCheckingProfile(false);
+                          isLoginInProgress = false;
+                          (global as any).isLoginInProgress = false;
+                        }
                       } else {
                         // If we can't check subscription, assume they are free users
                         setHasActiveSubscription(false);
@@ -525,9 +775,11 @@ function AppContent() {
                 setHasCompletedQuiz(false);
                 await AsyncStorage.setItem('hasCompletedQuiz', 'false');
               }
+              console.log('[LOGIN SEQUENCE] 🏁 Finalizing login sequence...');
               setCheckingProfile(false);
               isLoginInProgress = false; // Clear login flag
               (global as any).isLoginInProgress = false; // Clear global flag
+              console.log('[LOGIN SEQUENCE] ✅ Login sequence finalized, user should see main app');
             } else {
               setUser(null);
               setHasCompletedQuiz(false);
@@ -652,6 +904,16 @@ function AppContent() {
 
 
 
+  console.log('[APP RENDER] 🎨 App rendering with state:', {
+    user: !!user,
+    hasCompletedQuiz,
+    isDietician,
+    isFreeUser,
+    checkingAuth,
+    checkingProfile,
+    loading
+  });
+
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
       <NavigationContainer ref={navigationRef}>
@@ -674,10 +936,91 @@ function AppContent() {
               <Stack.Screen
                 name="Main"
                 children={() => {
+                  console.log('[APP NAVIGATION] 🧭 Attempting to render MainTabs...');
+                  
+                  // Log navigation attempt to backend for EAS builds
+                  const logNavigation = async () => {
+                    try {
+                      if (user && !__DEV__) {
+                        await logFrontendEvent(user.uid, 'APP_NAVIGATION_ATTEMPT', {
+                          isDietician,
+                          isFreeUser,
+                          hasCompletedQuiz,
+                          checkingProfile,
+                          loading,
+                          platform: Platform.OS
+                        });
+                      }
+                    } catch (logError) {
+                      console.warn('Failed to log navigation attempt:', logError);
+                    }
+                  };
+                  logNavigation();
+                  
                   try {
-                    return <MainTabs isDietician={isDietician} isFreeUser={isFreeUser} />;
+                    // Critical checkpoint before MainTabs rendering
+                    console.log('[APP NAVIGATION] ✅ About to render MainTabs with:', { isDietician, isFreeUser });
+                    const result = <MainTabs isDietician={isDietician} isFreeUser={isFreeUser} />;
+                    console.log('[APP NAVIGATION] 🎉 MainTabs rendered successfully');
+                    return result;
                   } catch (error) {
-                    console.error('Error rendering MainTabs:', error);
+                    console.error('[APP NAVIGATION] ❌ CRITICAL ERROR rendering MainTabs:', error);
+                    console.error('[APP NAVIGATION] Error stack:', error instanceof Error ? error.stack : undefined);
+                    console.error('[APP NAVIGATION] Error name:', error instanceof Error ? error.name : 'Unknown');
+                    console.error('[APP NAVIGATION] Error message:', error instanceof Error ? error.message : String(error));
+                    
+                    // This is likely where the iOS crash is happening!
+                    console.error('[APP NAVIGATION] 🚨 iOS CRASH DETECTED - This is likely the crash point!');
+                    
+                    // Log critical error to backend for EAS builds
+                    const logCriticalError = async () => {
+                      try {
+                        if (user && !__DEV__) {
+                          await logFrontendEvent(user.uid, 'CRITICAL_NAVIGATION_ERROR', {
+                            error: error instanceof Error ? error.message : String(error),
+                            stack: error instanceof Error ? error.stack : undefined,
+                            name: error instanceof Error ? error.name : 'Unknown',
+                            isDietician,
+                            isFreeUser,
+                            hasCompletedQuiz,
+                            checkingProfile,
+                            loading,
+                            platform: Platform.OS,
+                            crashLocation: 'APP_NAVIGATION_MAINTABS_RENDER'
+                          });
+                        }
+                      } catch (logErr) {
+                        console.warn('Failed to log critical error:', logErr);
+                      }
+                    };
+                    logCriticalError();
+                    
+                    // iOS-specific error recovery
+                    if (Platform.OS === 'ios') {
+                      console.log('[APP NAVIGATION] [iOS] Attempting MainTabs recovery');
+                      // Clear any potentially problematic state
+                      clearProfileCache();
+                      
+                      // Log additional iOS debugging info
+                      console.log('[APP NAVIGATION] [iOS] Current state at crash:', {
+                        user: !!user,
+                        hasCompletedQuiz,
+                        isDietician,
+                        isFreeUser,
+                        isLoginInProgress,
+                        checkingProfile
+                      });
+                      
+                      // Return a simplified view for iOS
+                      return (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+                          <ActivityIndicator size="large" color={COLORS.primary} />
+                          <Text style={{ color: COLORS.text, fontSize: 16, marginTop: 10 }}>Initializing app...</Text>
+                          <Text style={{ color: COLORS.placeholder, fontSize: 12, marginTop: 5 }}>iOS Error Recovery Mode</Text>
+                        </View>
+                      );
+                    }
+                    
                     return (
                       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
                         <Text style={{ color: COLORS.text, fontSize: 16 }}>Loading app...</Text>

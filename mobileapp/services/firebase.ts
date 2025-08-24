@@ -1,6 +1,7 @@
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
+import { Platform } from 'react-native';
 import { 
   API_KEY, 
   AUTH_DOMAIN, 
@@ -70,6 +71,16 @@ if (!API_KEY || !AUTH_DOMAIN || !PROJECT_ID || !STORAGE_BUCKET || !MESSAGING_SEN
       console.log('Initializing Firebase app...');
       firebaseApp = firebase.initializeApp(firebaseConfig);
       console.log('Firebase initialized successfully');
+      
+      // iOS-specific Firebase optimization
+      if (Platform.OS === 'ios') {
+        console.log('[iOS] Applying Firebase performance optimizations');
+        // Configure Firebase for iOS stability
+        firebase.firestore().settings({
+          cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+          experimentalForceLongPolling: false, // Use WebSocket for better performance on iOS
+        });
+      }
     } else {
       firebaseApp = firebase.apps[0];
       console.log('Firebase already initialized');

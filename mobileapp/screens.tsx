@@ -980,7 +980,7 @@ const LoginSignupScreen = () => {
   );
 };
 
-// --- Circular Progress with Consumed / Target and Burned Overlay ---
+// --- Circular Progress with iOS-safe fallback ---
 const CircularProgress = ({ 
   value, 
   maxValue, 
@@ -1000,6 +1000,34 @@ const CircularProgress = ({
   unit: string;
   color: string;
 }) => {
+  // For iOS EAS builds, use simplified progress indicator to prevent SVG crashes
+  if (Platform.OS === 'ios' && !__DEV__) {
+    const progress = Math.min(value / maxValue, 1) * 100;
+    return (
+      <View style={[styles.circularProgressContainer, { width: size, height: size }]}>
+        <View style={{
+          width: size - 20,
+          height: size - 20,
+          borderRadius: (size - 20) / 2,
+          borderWidth: strokeWidth,
+          borderColor: `${color}40`,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: COLORS.background
+        }}>
+          <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' }}>
+            {Math.round(value)} / {Math.round(maxValue)}
+          </Text>
+          <Text style={{ fontSize: 10, color: COLORS.placeholder, textAlign: 'center' }}>
+            {unit}
+          </Text>
+        </View>
+        <Text style={[styles.circularProgressTitle, { color, fontSize: 12 }]}>{title}</Text>
+      </View>
+    );
+  }
+
+  // Standard SVG rendering for other platforms
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const progress = Math.min(value / maxValue, 1);
@@ -1112,27 +1140,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [dietError, setDietError] = useState('');
   const [showDietPdf, setShowDietPdf] = useState(false);
 
-  useEffect(() => {
-    const userId = firebase.auth().currentUser?.uid;
-    if (userId) {
-      console.log('[Dashboard Debug] Setting up profile fetch for userId:', userId);
-      
-      // Fetch profile from backend instead of direct Firestore
-      const fetchProfile = async () => {
-        try {
-          const profile = await getUserProfileSafe(userId);
-          if (profile) {
-            console.log('[Dashboard Debug] Profile fetched - dietPdfUrl:', profile.dietPdfUrl);
-            setDietPdfUrl(profile.dietPdfUrl || null);
-          }
-        } catch (error) {
-          console.error('[Dashboard Debug] Error fetching profile:', error);
-        }
-      };
-      
-      fetchProfile();
-    }
-  }, []);
+  // Consolidated profile fetch - removed duplicate to prevent iOS crashes
+  // Profile fetching is now handled by the main useEffect below
 
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
@@ -1298,17 +1307,33 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, [scanResult]);
 
-  // Fetch user profile for targets whenever focused
+  // Fetch user profile for targets whenever focused - FIXED: removed problematic refresh dependency
   useEffect(() => {
-    const fetchProfile = async () => {
-      if (!userId) return;
+    if (!userId || !isFocused) return;
+    
+    // Add debounce delay for iOS stability
+    const delay = Platform.OS === 'ios' ? 300 : 0;
+    
+    const delayedFetch = setTimeout(async () => {
       try {
         const profile = await getUserProfileSafe(userId);
         setUserProfile(profile);
-      } catch {}
-    };
-    if (isFocused) fetchProfile();
-  }, [userId, isFocused, route?.params?.refresh]);
+        // Also set diet PDF URL to consolidate profile fetching
+        if (profile) {
+          console.log('[Dashboard Debug] Profile fetched - dietPdfUrl:', profile.dietPdfUrl);
+          setDietPdfUrl(profile.dietPdfUrl || null);
+        }
+      } catch (error) {
+        console.error('[Dashboard Debug] Error fetching profile:', error);
+        // For iOS, don't crash on profile fetch errors
+        if (Platform.OS === 'ios') {
+          console.warn('[iOS Safety] Profile fetch failed, continuing with cached data');
+        }
+      }
+    }, delay);
+
+    return () => clearTimeout(delayedFetch);
+  }, [userId, isFocused]);
 
   // --- Persist calories burned and steps for the current day ---
   const getTodayKey = () => {
@@ -5139,6 +5164,29 @@ const SummaryWidget = ({ todayData, targets, stepsToday, burnedToday, onPress }:
     { label: 'Steps', value: stepsToday, target: targets.steps, color: COLORS.primaryDark, labelColor: labelColors.Steps },
     { label: 'Burned', value: safeNumber(burnedToday), target: targets.burned, color: COLORS.streakActive, labelColor: labelColors.Burned },
   ];
+  
+  // iOS EAS builds have issues with LinearGradient - use safe fallback
+  if (Platform.OS === 'ios' && !__DEV__) {
+    return (
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.summaryWidgetContainer}>
+        <View style={[styles.summaryWidgetBg, { backgroundColor: COLORS.lightGreen }]}>
+          {items.map((item, idx) => {
+            const progress = item.target ? Math.min(1, item.value / item.target) : 0;
+            return (
+              <View key={item.label} style={styles.summaryWidgetRow}>
+                <Text style={[styles.summaryWidgetLabel, { color: item.labelColor }]}>{item.label}</Text>
+                <View style={styles.summaryWidgetBarBg}>
+                  <View style={[styles.summaryWidgetBar, { backgroundColor: item.color, width: `${progress * 100}%` }]} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </TouchableOpacity>
+    );
+  }
+  
+  // Standard LinearGradient for other platforms
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.summaryWidgetContainer}>
       <LinearGradient
