@@ -69,7 +69,9 @@ service cloud.firestore {
     // Appointments - users can read all appointments (to see availability), write their own, dietician can access all
     match /appointments/{appointmentId} {
       allow read: if request.auth != null; // All authenticated users can read appointments
-      allow write: if request.auth != null && 
+      allow create: if request.auth != null && 
+        request.auth.uid == resource.data.userId; // Users can create appointments for themselves
+      allow update, delete: if request.auth != null && 
         (request.auth.uid == resource.data.userId || 
          get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true);

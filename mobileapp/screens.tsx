@@ -9487,6 +9487,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   const [showSuccess, setShowSuccess] = React.useState(false);
   const [successMessage, setSuccessMessage] = React.useState('');
   const [breaks, setBreaks] = React.useState<any[]>([]); // Add breaks state for users
+  const [breaksLoading, setBreaksLoading] = React.useState(true); // Add loading state for breaks
   const [showBreakConfirmation, setShowBreakConfirmation] = React.useState(false);
   const [breakConfirmationSlot, setBreakConfirmationSlot] = React.useState<{timeSlot: string, date: Date} | null>(null);
   const [isAppointmentCancelledByBreak, setIsAppointmentCancelledByBreak] = React.useState(false);
@@ -9647,8 +9648,10 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           }));
           console.log('[ScheduleAppointment] Breaks updated:', breaksData.length, 'breaks');
           setBreaks(breaksData);
+          setBreaksLoading(false); // Set loading to false when breaks are loaded
         }, error => {
           console.error('[ScheduleAppointment] Error listening to breaks:', error);
+          setBreaksLoading(false); // Set loading to false even on error
           // Don't throw error, just log it and continue
         });
     }, 100); // Reduced delay for faster loading
@@ -9934,6 +9937,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     });
     const isSelected = selectedDate.toDateString() === date.toDateString() && selectedTimeSlot === timeSlot;
     const isBreak = isTimeSlotInBreak(timeSlot, date);
+    const isBreaksLoading = breaksLoading; // Show loading state for breaks
     
     // Debug logging for time slot rendering
     console.log('[User Schedule] Rendering time slot:', {
@@ -9970,7 +9974,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           isBookedByMe && !isBreak && styles.bookedByMeTimeSlotText,
           isSelected && styles.selectedTimeSlotText
         ]}>
-          {isBreak ? 'Break' : isBooked ? (isBookedByMe ? 'Your Appt' : 'Booked') : timeSlot}
+          {isBreaksLoading ? '...' : isBreak ? 'Break' : isBooked ? (isBookedByMe ? 'Your Appt' : 'Booked') : timeSlot}
         </Text>
       </TouchableOpacity>
     );
