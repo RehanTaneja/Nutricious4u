@@ -66,19 +66,20 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true;
     }
     
-    // Appointments - users can read/write their own, dietician can access all
+    // Appointments - users can read all appointments (to see availability), write their own, dietician can access all
     match /appointments/{appointmentId} {
-      allow read, write: if request.auth != null && 
+      allow read: if request.auth != null; // All authenticated users can read appointments
+      allow write: if request.auth != null && 
         (request.auth.uid == resource.data.userId || 
          get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true);
     }
     
-    // Breaks - users can read/write their own, dietician can access all
+    // Breaks - users can read all breaks (to see dietician's schedule), only dietician can write
     match /breaks/{breakId} {
-      allow read, write: if request.auth != null && 
-        (request.auth.uid == resource.data.userId || 
-         get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true ||
+      allow read: if request.auth != null; // All authenticated users can read breaks
+      allow write: if request.auth != null && 
+        (get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDietician == true);
     }
   }

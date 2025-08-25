@@ -7769,8 +7769,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.placeholder + '40',
   },
   bookedTimeSlot: {
-    backgroundColor: COLORS.placeholder + '30',
-    borderColor: COLORS.placeholder + '50',
+    backgroundColor: '#9CA3AF', // Grey color for other users' appointments
+    borderColor: '#6B7280',
   },
   breakTimeSlot: {
     backgroundColor: '#D1D5DB', // Light grey color for breaks
@@ -7789,8 +7789,9 @@ const styles = StyleSheet.create({
     color: COLORS.placeholder,
   },
   bookedTimeSlotText: {
-    color: COLORS.placeholder,
+    color: '#374151', // Dark grey text for other users' appointments
     fontSize: 10,
+    fontWeight: '600',
   },
   breakTimeSlotText: {
     color: '#6B7280',
@@ -7829,8 +7830,8 @@ const styles = StyleSheet.create({
   },
   // 1. Add new style for user's own booked slot
   bookedByMeTimeSlot: {
-    backgroundColor: '#15803D', // dark green
-    borderColor: '#166534',
+    backgroundColor: '#10B981', // Bright green for user's own appointments
+    borderColor: '#059669',
   },
   bookedByMeTimeSlotText: {
     color: '#fff',
@@ -10274,6 +10275,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       breakConfirmationSlot.timeSlot === timeSlot && 
       breakConfirmationSlot.date.toDateString() === date.toDateString();
     
+    // Get user info for booked slots
+    const bookedUserInfo = isBooked ? getBookedUserInfo(timeSlot, date) : null;
+    
     return (
       <TouchableOpacity
         key={`${date.toDateString()}-${timeSlot}`}
@@ -10292,8 +10296,13 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           isBreak && styles.breakTimeSlotText,
           (isBooked && !isBreak) && styles.bookedTimeSlotText
         ]}>
-          {isProcessing ? '...' : isBreak ? 'Booked' : isBooked ? 'Booked' : timeSlot}
+          {isProcessing ? '...' : isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
         </Text>
+        {isBooked && !isBreak && bookedUserInfo && (
+          <Text style={styles.bookedUserText}>
+            {bookedUserInfo.userName || 'Unknown User'}
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
