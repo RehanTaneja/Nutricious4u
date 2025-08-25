@@ -2910,14 +2910,9 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={styles.mySubscriptionsButtonText}>My Subscriptions</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.settingsButtonRow}>
-              <StyledButton 
-                title="Test Notification (5 min)" 
-                onPress={() => sendTestNotification(300)}
-                style={[styles.settingsLogoutButton, { backgroundColor: COLORS.primary, marginBottom: 12 }]}
-              />
-              <StyledButton 
-                title="Logout" 
+                          <View style={styles.settingsButtonRow}>
+                <StyledButton 
+                  title="Logout"  
                 onPress={handleLogout}
                 style={styles.settingsLogoutButton}
               />
@@ -3753,6 +3748,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
   const { isFreeUser, setShowUpgradeModal } = useSubscription();
+  
+  // Import notification service
+  const notificationService = require('./services/notificationService').default;
 
   // Show upgrade modal for free users every time screen is focused
   useFocusEffect(
@@ -4056,42 +4054,109 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+
+
+  // Enhanced notification functions using the notification service
+  const handleSaveNotification = async () => {
+    if (!message.trim()) {
+      setError('Please enter a message');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      setError('Please select at least one day');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const timeString = time.toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+
+      if (modalMode === 'add') {
+        // Add new notification
+        const scheduledId = await notificationService.scheduleCustomNotification({
+          message: message.trim(),
+          time: timeString,
+          selectedDays,
+          type: 'custom',
+          userId: auth.currentUser?.uid || ''
+        });
+
+        const newNotification = {
+          id: Date.now().toString(),
+          message: message.trim(),
+          time: timeString,
+          selectedDays,
+          scheduledId,
+          type: 'custom',
+          createdAt: new Date().toISOString(),
+          userId: auth.currentUser?.uid || ''
+        };
+
+        const updatedNotifications = [...notifications, newNotification];
+        await saveNotifications(updatedNotifications);
+        
+        setSuccessMessage('Notification scheduled successfully!');
+        setShowSuccessModal(true);
+      } else {
+        // Edit existing notification
+        if (!currentId) return;
+
+        // Cancel existing notification
+        const existingNotification = notifications.find(n => n.id === currentId);
+        if (existingNotification?.scheduledId) {
+          await notificationService.cancelNotification(existingNotification.scheduledId);
+        }
+
+        // Schedule new notification
+        const scheduledId = await notificationService.scheduleCustomNotification({
+          message: message.trim(),
+          time: timeString,
+          selectedDays,
+          type: 'custom',
+          userId: auth.currentUser?.uid || ''
+        });
+
+        const updatedNotifications = notifications.map(n => 
+          n.id === currentId 
+            ? { ...n, message: message.trim(), time: timeString, selectedDays, scheduledId }
+            : n
+        );
+        
+        await saveNotifications(updatedNotifications);
+        
+        setSuccessMessage('Notification updated successfully!');
+        setShowSuccessModal(true);
+      }
+
+      setShowModal(false);
+      setMessage('');
+      setTime(new Date());
+      setSelectedDays([]);
+      setError('');
+    } catch (error) {
+      console.error('[Notifications] Error saving notification:', error);
+      setError('Failed to save notification. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Enhanced diet notification extraction
   const handleExtractDietNotifications = async () => {
     try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
-
-      // Prevent multiple rapid presses
-      if (loadingDietNotifications) {
-        console.log('[Diet Notifications] Extraction already in progress, ignoring button press');
-        return;
-      }
-
       setLoadingDietNotifications(true);
-
-      // First, cancel all existing diet notifications (both local and backend)
-      try {
-        // Cancel local notifications
-        await cancelAllDietNotifications();
-        console.log('[Diet Notifications] Cancelled existing local notifications');
-        
-        // Cancel backend notifications
-        await cancelDietNotifications(userId);
-        console.log('[Diet Notifications] Cancelled existing notifications on backend');
-        
-        // Small delay to ensure cancellation is complete
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (error) {
-        console.error('[Diet Notifications] Error cancelling notifications:', error);
-      }
-
-      const response = await extractDietNotifications(userId);
-      if (response.notifications && response.notifications.length > 0) {
-        // The backend automatically schedules notifications after extraction
-        setDietNotifications(response.notifications);
-        console.log('[Diet Notifications] Extracted and scheduled:', response.notifications.length);
-        // Show custom success modal
-        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} timed activities from your diet plan! 🎉`);
+      
+      // Extract and schedule diet notifications
+      const extractedNotifications = await notificationService.extractAndScheduleDietNotifications();
+      
+      if (extractedNotifications.length > 0) {
+        setDietNotifications(extractedNotifications);
+        setSuccessMessage(`Successfully extracted and scheduled ${extractedNotifications.length} diet notifications! 🎉`);
         setShowSuccessModal(true);
       } else {
         Alert.alert(
@@ -4103,11 +4168,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     } catch (error: any) {
       console.error('[Diet Notifications] Error extracting:', error);
       
-      // Check if it's a network error
-      if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-        setErrorMessage('Backend server is not available. Please check your internet connection and try again.');
-      } else if (error?.response?.data?.message) {
-        setErrorMessage(error.response.data.message);
+      if (error?.message === 'No diet found for user') {
+        setErrorMessage('No diet plan found. Please upload a diet plan first.');
+      } else if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED') {
+        setErrorMessage('Network error. Please check your connection and try again.');
       } else {
         setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
       }
@@ -4776,14 +4840,23 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                 {error ? <Text style={{ color: COLORS.error, marginTop: 8 }}>{error}</Text> : null}
                 <View style={styles.modalButtonRow}>
                   <TouchableOpacity
-                    style={[styles.modalButton, { backgroundColor: COLORS.primary }]}
-                    onPress={handleSave}
+                    style={[styles.modalButton, { backgroundColor: loading ? COLORS.placeholder : COLORS.primary }]}
+                    onPress={handleSaveNotification}
+                    disabled={loading}
                   >
-                    <Text style={styles.modalButtonText}>{modalMode === 'add' ? 'Add' : 'Save'}</Text>
+                    {loading ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <ActivityIndicator size="small" color="white" style={{ marginRight: 8 }} />
+                        <Text style={styles.modalButtonText}>Saving...</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.modalButtonText}>{modalMode === 'add' ? 'Add' : 'Save'}</Text>
+                    )}
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.modalButton, { backgroundColor: COLORS.error }]}
                     onPress={() => setShowModal(false)}
+                    disabled={loading}
                   >
                     <Text style={styles.modalButtonText}>Cancel</Text>
                   </TouchableOpacity>

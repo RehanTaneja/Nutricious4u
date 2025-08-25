@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-08-25T14:50:31.378944",
+  "tests": {
+    "notification_service_implementation": true,
+    "notification_settings_screen": true,
+    "ios_compatibility": true,
+    "eas_build_compatibility": true,
+    "app_logo_visibility": true,
+    "diet_notification_extraction": true
+  },
+  "overall_success": true,
+  "success_rate": "6/6 (100.0%)"
+}
