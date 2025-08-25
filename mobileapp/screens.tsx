@@ -9670,10 +9670,13 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleScheduleAppointment = async () => {
+    console.log('[Appointment Debug] === APPOINTMENT DEBUGGING START ===');
     console.log('[Appointment Debug] Starting appointment scheduling...');
     console.log('[Appointment Debug] Selected time slot:', selectedTimeSlot);
     console.log('[Appointment Debug] Selected date:', selectedDate);
     console.log('[Appointment Debug] Current user:', auth.currentUser?.uid);
+    console.log('[Appointment Debug] User authenticated:', !!auth.currentUser);
+    console.log('[Appointment Debug] User email:', auth.currentUser?.email);
     
     if (!selectedTimeSlot) {
       setSuccessMessage('Please select a time slot');
@@ -9732,6 +9735,21 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         createdAt: new Date().toISOString(),
       };
 
+      // Enhanced debugging for appointment data
+      console.log('[Appointment Debug] User name to use:', userName);
+      console.log('[Appointment Debug] Full appointment data:', appointmentData);
+      console.log('[Appointment Debug] Data types:', {
+        userId: typeof appointmentData.userId,
+        userName: typeof appointmentData.userName,
+        date: typeof appointmentData.date,
+        timeSlot: typeof appointmentData.timeSlot
+      });
+      console.log('[Appointment Debug] User ID match check:', {
+        userId: appointmentData.userId,
+        authUid: auth.currentUser?.uid,
+        match: appointmentData.userId === auth.currentUser?.uid
+      });
+
       // Save appointment using atomic transaction
       console.log('[Appointment Debug] Attempting to save appointment with atomic transaction:', appointmentData);
       
@@ -9769,6 +9787,10 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         }
         
         // If we get here, slot is available - create appointment
+        console.log('[Appointment Debug] About to save to Firestore...');
+        console.log('[Appointment Debug] Collection path: appointments');
+        console.log('[Appointment Debug] Data to save:', JSON.stringify(appointmentData, null, 2));
+        
         const appointmentRef = await firestore.collection('appointments').add(appointmentData);
         const result = appointmentRef.id;
         

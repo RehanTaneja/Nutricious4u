@@ -70,7 +70,7 @@ service cloud.firestore {
     match /appointments/{appointmentId} {
       allow read: if request.auth != null; // All authenticated users can read appointments
       allow create: if request.auth != null && 
-        request.auth.uid == resource.data.userId; // Users can create appointments for themselves
+        request.auth.uid == request.resource.data.userId; // Users can create appointments for themselves
       allow update, delete: if request.auth != null && 
         (request.auth.uid == resource.data.userId || 
          get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.isDietician == true ||
