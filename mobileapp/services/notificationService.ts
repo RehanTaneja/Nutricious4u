@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { auth, firestore } from './firebase';
 import { logger } from '../utils/logger';
 
-// Configure notification behavior for iOS compatibility
+// Configure notification behavior for iOS compatibility and proper icon display
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,

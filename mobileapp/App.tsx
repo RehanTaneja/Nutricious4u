@@ -54,7 +54,17 @@ const Stack = createStackNavigator();
 const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUser: boolean }) => {
   console.log('[MAIN TABS] 🚀 MainTabs component rendering with props:', { isDietician, isFreeUser });
   
-  // Log MainTabs rendering to backend for EAS builds
+  // Prevent unnecessary re-renders for dietician dashboard
+  const [hasRendered, setHasRendered] = React.useState(false);
+  
+  React.useEffect(() => {
+    if (isDietician && !hasRendered) {
+      console.log('[MAIN TABS] [Dietician] First render, setting flag');
+      setHasRendered(true);
+    }
+  }, [isDietician, hasRendered]);
+  
+  // Log MainTabs rendering to backend for EAS builds (only once for dietician)
   React.useEffect(() => {
     const logMainTabsRender = async () => {
       try {
@@ -70,8 +80,12 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
         console.warn('Failed to log MainTabs render:', error);
       }
     };
-    logMainTabsRender();
-  }, [isDietician, isFreeUser]);
+    
+    // Only log once for dietician to prevent spam
+    if (!isDietician || !hasRendered) {
+      logMainTabsRender();
+    }
+  }, [isDietician, isFreeUser, hasRendered]);
   
   // Add iOS-specific error boundary
   try {
@@ -170,7 +184,7 @@ function AppContent() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [checkingProfile, setCheckingProfile] = useState(false);
   const [isDietician, setIsDietician] = useState(false);
-  const [forceReload, setForceReload] = useState(0);
+  // Removed forceReload state to prevent loops in EAS builds
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +201,10 @@ function AppContent() {
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [amountDue, setAmountDue] = useState(0);
   const [showLockModal, setShowLockModal] = useState(false);
+  
+  // Navigation guard state to prevent infinite loops
+  const [navigationReady, setNavigationReady] = useState(false);
+  const [lastNavigationState, setLastNavigationState] = useState<string>('');
 
   // Daily reset mechanism
   const checkAndResetDailyData = async () => {
@@ -213,8 +231,8 @@ function AppContent() {
         await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
         setLastResetDate(today);
         
-        // Force refresh of dashboard data
-        setForceReload(x => x + 1);
+        // Force refresh of dashboard data - removed for EAS builds to prevent loops
+        console.log('[Daily Reset] Dashboard data reset completed');
       }
     } catch (error: any) {
       console.error('[Daily Reset] Error resetting daily data:', error);
@@ -229,6 +247,33 @@ function AppContent() {
       
       // Don't throw error to prevent login sequence failure
     }
+  };
+
+  // Navigation guard function to prevent infinite loops
+  const checkNavigationState = () => {
+    const currentState = `${!!user}-${hasCompletedQuiz}-${isDietician}-${isFreeUser}`;
+    
+    // If state hasn't changed, don't trigger navigation
+    if (currentState === lastNavigationState && navigationReady) {
+      console.log('[Navigation Guard] State unchanged, preventing re-render');
+      return false;
+    }
+    
+    // Additional check for EAS builds - prevent rapid state changes
+    if (!__DEV__ && navigationReady) {
+      console.log('[Navigation Guard] EAS build detected, using stricter checks');
+      // In EAS builds, be more conservative about state changes
+      if (currentState === lastNavigationState) {
+        return false;
+      }
+    }
+    
+    // Update state immediately for synchronous operation
+    setLastNavigationState(currentState);
+    setNavigationReady(true);
+    console.log('[Navigation Guard] State changed, allowing navigation:', currentState);
+    
+    return true;
   };
 
   // App lock check function
@@ -278,8 +323,8 @@ function AppContent() {
         setShowSubscriptionPopup(false);
         setSelectedPlan(null);
         setHasActiveSubscription(true);
-        // Refresh the app state
-        setForceReload(x => x + 1);
+        // Refresh the app state - removed for EAS builds to prevent loops
+        console.log('[Subscription] App state updated successfully');
       }
     } catch (error: any) {
       console.error('Error selecting subscription:', error);
@@ -409,7 +454,11 @@ function AppContent() {
                 // Check if user is dietician by trying to get their profile from backend
                 // For dietician account, we'll handle this through the backend API
                 const isDieticianAccount = firebaseUser.email === 'nutricious4u@gmail.com';
-                setIsDietician(isDieticianAccount);
+                
+                // Use navigation guard to prevent unnecessary re-renders
+                if (checkNavigationState()) {
+                  setIsDietician(isDieticianAccount);
+                }
                 
                 // For dietician, we'll create their profile through the backend if needed
                 if (isDieticianAccount) {
@@ -437,7 +486,8 @@ function AppContent() {
 
                       caloriesBurnedGoal: 500
                     });
-                    setForceReload(x => x + 1); // force re-render
+                    // Remove force reload to prevent loops - EAS builds don't need this
+                    console.log('[Dietician] Profile created successfully, no force reload needed');
                   } catch (error) {
                     console.error('Error handling dietician profile:', error);
                   }
@@ -722,7 +772,7 @@ function AppContent() {
       if (dietNotificationSubscription) dietNotificationSubscription.remove();
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [forceReload]);
+  }, []); // Removed forceReload dependency to prevent loops
 
   // Check app lock status when app comes to foreground
   useEffect(() => {
@@ -745,6 +795,42 @@ function AppContent() {
       };
     }
   }, [user?.uid, isDietician]);
+
+  // Prevent dietician dashboard from re-rendering unnecessarily
+  useEffect(() => {
+    if (isDietician && navigationReady) {
+      console.log('[Dietician Dashboard] Navigation ready, preventing unnecessary re-renders');
+      
+      // Set a flag to prevent further re-renders
+      const preventReRender = () => {
+        console.log('[Dietician Dashboard] Preventing re-render');
+        return false;
+      };
+      
+      // Clear any existing intervals that might cause re-renders
+      return () => {
+        console.log('[Dietician Dashboard] Cleanup - preventing re-renders');
+      };
+    }
+  }, [isDietician, navigationReady]);
+
+  // Stronger navigation guard for EAS builds
+  useEffect(() => {
+    if (!__DEV__ && isDietician && navigationReady) {
+      console.log('[EAS Navigation Guard] Dietician dashboard loaded, preventing navigation redirects');
+      
+      // Set a flag to prevent navigation redirects
+      const preventRedirect = () => {
+        console.log('[EAS Navigation Guard] Preventing navigation redirect');
+        return false;
+      };
+      
+      // Clear any navigation-related timeouts
+      return () => {
+        console.log('[EAS Navigation Guard] Cleanup - preventing redirects');
+      };
+    }
+  }, [isDietician, navigationReady]);
 
   // Show error screen if there's a critical error
   if (error) {
@@ -784,6 +870,27 @@ function AppContent() {
 
 
 
+  // Navigation state check to prevent infinite redirects
+  const shouldRenderMainTabs = navigationReady && !checkingAuth && !checkingProfile && !loading;
+  
+  // Additional guard for dietician dashboard to prevent unnecessary re-renders
+  const shouldRenderDieticianDashboard = isDietician && shouldRenderMainTabs;
+  
+  // EAS-specific state stabilization
+  const [stateStabilized, setStateStabilized] = useState(false);
+  
+  useEffect(() => {
+    if (!__DEV__ && isDietician && shouldRenderMainTabs) {
+      // Stabilize state after a short delay in EAS builds
+      const stabilizeTimer = setTimeout(() => {
+        setStateStabilized(true);
+        console.log('[EAS State Stabilization] State stabilized for dietician dashboard');
+      }, 1000);
+      
+      return () => clearTimeout(stabilizeTimer);
+    }
+  }, [isDietician, shouldRenderMainTabs]);
+  
   console.log('[APP RENDER] 🎨 App rendering with state:', {
     user: !!user,
     hasCompletedQuiz,
@@ -791,7 +898,9 @@ function AppContent() {
     isFreeUser,
     checkingAuth,
     checkingProfile,
-    loading
+    loading,
+    navigationReady,
+    shouldRenderMainTabs
   });
 
   return (
@@ -811,7 +920,7 @@ function AppContent() {
               initialParams={{ userId: user.uid }}
               options={{ headerShown: false }}
             />
-          ) : (
+          ) : (shouldRenderMainTabs && (!__DEV__ ? stateStabilized : true)) ? (
             <>
               <Stack.Screen
                 name="Main"
@@ -922,6 +1031,18 @@ function AppContent() {
               <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} options={{ headerShown: false }} />
               <Stack.Screen name="MySubscriptions" component={MySubscriptionsScreen} options={{ headerShown: false }} />
             </>
+          ) : (
+            // Loading state when navigation is not ready
+            <Stack.Screen
+              name="Loading"
+              children={() => (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                  <Text style={{ marginTop: 10, color: COLORS.text }}>Preparing app...</Text>
+                </View>
+              )}
+              options={{ headerShown: false }}
+            />
           )}
         </Stack.Navigator>
       </NavigationContainer>

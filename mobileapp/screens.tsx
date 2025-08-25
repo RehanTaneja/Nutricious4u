@@ -2062,7 +2062,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               onChangeText={setFoodName}
               placeholder="e.g. Apple"
             />
-            <Text style={styles.modalLabel}>Quantity</Text>
+            <Text style={styles.modalLabel}>Quantity (slices, pieces, grams, etc.)</Text>
             <TextInput
               style={styles.modalInput}
               value={foodQty}
@@ -10251,42 +10251,71 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   React.useEffect(() => {
     let isMounted = true;
     let unsubscribe: (() => void) | undefined;
+    let hasInitialized = false;
+    let retryCount = 0;
+    const maxRetries = 3;
 
     const setupAppointmentsListener = async () => {
+      // Prevent multiple initializations
+      if (hasInitialized) {
+        console.log('[DieticianDashboard] Appointments listener already initialized, skipping');
+        return;
+      }
+      
+      hasInitialized = true;
+      console.log('[DieticianDashboard] Setting up appointments listener');
+      
       try {
         // Only clean up past appointments once, not on every render
-        const now = new Date();
-        const pastAppointmentsSnapshot = await firestore
-          .collection('appointments')
-          .where('date', '<', now.toISOString())
-          .get();
+        // Skip cleanup in EAS builds to prevent listener re-triggers
+        if (__DEV__) {
+          const now = new Date();
+          const pastAppointmentsSnapshot = await firestore
+            .collection('appointments')
+            .where('date', '<', now.toISOString())
+            .get();
 
-        if (pastAppointmentsSnapshot.docs.length > 0) {
-        const batch = firestore.batch();
-        pastAppointmentsSnapshot.docs.forEach(doc => {
-          batch.delete(doc.ref);
-        });
-          await batch.commit();
-          console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
+          if (pastAppointmentsSnapshot.docs.length > 0) {
+            const batch = firestore.batch();
+            pastAppointmentsSnapshot.docs.forEach(doc => {
+              batch.delete(doc.ref);
+            });
+            await batch.commit();
+            console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
+          }
         }
 
         // Set up real-time listener only once
         if (isMounted) {
-      unsubscribe = firestore
-        .collection('appointments')
-        .onSnapshot(snapshot => {
+          unsubscribe = firestore
+            .collection('appointments')
+            .onSnapshot(snapshot => {
               if (isMounted) {
-          const appointmentsData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setAppointments(appointmentsData);
-          setLoading(false);
+                const appointmentsData = snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                }));
+                setAppointments(appointmentsData);
+                setLoading(false);
               }
-        }, error => {
-          console.error('Error listening to appointments:', error);
+            }, error => {
+              console.error('Error listening to appointments:', error);
               if (isMounted) {
-          setLoading(false);
+                setLoading(false);
+              }
+              
+              // Limited retry logic for EAS builds
+              if (retryCount < maxRetries && !__DEV__) {
+                retryCount++;
+                console.log(`[DieticianDashboard] Retry ${retryCount}/${maxRetries} after error`);
+                setTimeout(() => {
+                  if (isMounted) {
+                    hasInitialized = false; // Reset flag for retry
+                    setupAppointmentsListener();
+                  }
+                }, 5000);
+              } else {
+                console.log('[DieticianDashboard] Max retries reached or dev mode, stopping retries');
               }
             });
         }
@@ -10295,6 +10324,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         if (isMounted) {
           setLoading(false);
         }
+        hasInitialized = false; // Reset flag on error
       }
     };
 
@@ -10302,6 +10332,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
 
     return () => {
       isMounted = false;
+      hasInitialized = false;
+      retryCount = 0;
       if (unsubscribe) unsubscribe();
     };
   }, []); // Empty dependency array - runs only once
@@ -10309,24 +10341,58 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   // Real-time listener for breaks
   React.useEffect(() => {
     let isMounted = true;
+    let hasInitialized = false;
+    let retryCount = 0;
+    const maxRetries = 3;
     
-    const unsubscribe = firestore
-      .collection('breaks')
-      .onSnapshot(snapshot => {
-        if (isMounted) {
-        const breaksData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setBreaks(breaksData);
-        }
-      }, error => {
-        console.error('Error listening to breaks:', error);
-      });
+    const setupBreaksListener = () => {
+      // Prevent multiple initializations
+      if (hasInitialized) {
+        console.log('[DieticianDashboard] Breaks listener already initialized, skipping');
+        return;
+      }
+      
+      hasInitialized = true;
+      console.log('[DieticianDashboard] Setting up breaks listener');
+      
+      const unsubscribe = firestore
+        .collection('breaks')
+        .onSnapshot(snapshot => {
+          if (isMounted) {
+            const breaksData = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            setBreaks(breaksData);
+          }
+        }, error => {
+          console.error('Error listening to breaks:', error);
+          
+          // Limited retry logic for EAS builds
+          if (retryCount < maxRetries && !__DEV__) {
+            retryCount++;
+            console.log(`[DieticianDashboard] Breaks retry ${retryCount}/${maxRetries} after error`);
+            setTimeout(() => {
+              if (isMounted) {
+                hasInitialized = false; // Reset flag for retry
+                setupBreaksListener();
+              }
+            }, 5000);
+          } else {
+            console.log('[DieticianDashboard] Max breaks retries reached or dev mode, stopping retries');
+          }
+        });
+        
+      return unsubscribe;
+    };
+    
+    const unsubscribe = setupBreaksListener();
       
     return () => {
       isMounted = false;
-      unsubscribe();
+      hasInitialized = false;
+      retryCount = 0;
+      if (unsubscribe) unsubscribe();
     };
   }, []); // Empty dependency array - runs only once
 

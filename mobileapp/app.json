@@ -6,8 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "notification": {
-      "icon": "./assets/logo.png",
-      "color": "#ffffff",
+      "icon": "./assets/notification-icon.png",
+      "color": "#10B981",
       "androidMode": "default",
       "androidCollapsedTitle": "Nutricious4u"
     },
@@ -81,8 +81,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/logo.png",
-          "color": "#ffffff",
+          "icon": "./assets/notification-icon.png",
+          "color": "#10B981",
           "mode": "production"
         }
       ],
