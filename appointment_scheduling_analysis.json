@@ -1,0 +1,125 @@
+[
+  {
+    "test_name": "Backend Appointment Endpoints",
+    "success": false,
+    "error_message": "Missing appointment management endpoints: ['/api/appointments', '/api/users/{user_id}/appointments', '/api/breaks', '/api/appointments/validate']",
+    "details": {
+      "missing_endpoints": [
+        "/api/appointments",
+        "/api/users/{user_id}/appointments",
+        "/api/breaks",
+        "/api/appointments/validate"
+      ]
+    }
+  },
+  {
+    "test_name": "User Visibility Analysis",
+    "success": false,
+    "error_message": "User visibility issues found: 4",
+    "details": {
+      "visibility_issues": [
+        "Users only see their own appointments (line 9606: .where('userId', '==', userId))",
+        "Users don't fetch breaks collection (line 9625: setBreaks([]) - empty breaks array)",
+        "Users cannot see other users' appointments",
+        "No visual indication of breaks for users"
+      ]
+    }
+  },
+  {
+    "test_name": "Dietician Visibility Analysis",
+    "success": true,
+    "error_message": "Dietician visibility: 3 strengths, 2 issues",
+    "details": {
+      "strengths": [
+        "Dieticians can see all appointments (line 10120: no userId filter)",
+        "Dieticians can manage breaks (line 10130: breaks collection listener)",
+        "Dieticians can add/remove breaks"
+      ],
+      "issues": [
+        "No real-time sync with user booking attempts",
+        "Potential for race conditions when users book simultaneously"
+      ]
+    }
+  },
+  {
+    "test_name": "Booking Validation Analysis",
+    "success": false,
+    "error_message": "Booking validation issues: 5",
+    "details": {
+      "validation_issues": [
+        "No atomic booking validation - potential race conditions",
+        "Users cannot see breaks, so they may book during breaks",
+        "No server-side validation for overlapping appointments",
+        "Client-side validation only (isSlotBooked function)",
+        "No transaction-based booking in Firestore"
+      ]
+    }
+  },
+  {
+    "test_name": "Error Handling Analysis",
+    "success": false,
+    "error_message": "Error handling: 4 strengths, 4 weaknesses",
+    "details": {
+      "strengths": [
+        "Has Firestore fallback to backend API (line 9725)",
+        "Has local AsyncStorage fallback (line 9770)",
+        "Comprehensive error logging",
+        "Multiple fallback mechanisms"
+      ],
+      "weaknesses": [
+        "No retry mechanism for failed bookings",
+        "No rollback mechanism for partial failures",
+        "Error messages may not be user-friendly",
+        "No timeout handling for slow operations"
+      ]
+    }
+  },
+  {
+    "test_name": "Real-time Updates Analysis",
+    "success": false,
+    "error_message": "Real-time update issues: 5",
+    "details": {
+      "real_time_issues": [
+        "Users only listen to their own appointments (line 9606)",
+        "Users don't listen to breaks collection",
+        "No real-time sync of dietician's schedule changes",
+        "Break notifications work but may be delayed",
+        "No real-time UI updates for concurrent bookings"
+      ]
+    }
+  },
+  {
+    "test_name": "Break Management Analysis",
+    "success": false,
+    "error_message": "Break system: 4 strengths, 4 issues",
+    "details": {
+      "strengths": [
+        "Dieticians can add/remove breaks (line 10130)",
+        "Breaks automatically cancel overlapping appointments (functions/index.js)",
+        "Break notifications are sent to users",
+        "Firebase Functions handle break conflicts"
+      ],
+      "issues": [
+        "Users cannot see breaks in their schedule view (line 9625)",
+        "Users may book during breaks unknowingly",
+        "No visual indication of breaks for users",
+        "Break visibility is completely disabled for users"
+      ]
+    }
+  },
+  {
+    "test_name": "Data Consistency Analysis",
+    "success": false,
+    "error_message": "Data consistency issues: 6",
+    "details": {
+      "consistency_issues": [
+        "Users and dieticians see different data sets",
+        "No centralized appointment validation",
+        "Potential for orphaned appointments",
+        "No data integrity checks",
+        "Client-side validation only",
+        "No server-side booking validation"
+      ]
+    }
+  }
+]

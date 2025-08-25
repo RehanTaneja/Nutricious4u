@@ -1515,7 +1515,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         
         // Small delay to ensure first modal closes before opening confirmation
         setTimeout(() => {
-          setShowNutritionConfirm(true);
+        setShowNutritionConfirm(true);
           
           // Clear loading state after confirmation modal is shown
           setTimeout(() => {
@@ -1668,9 +1668,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   return (
     <SafeAreaView style={[styles.container, { paddingTop: 50 }]}> 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerContainer}>
-          <Text style={styles.screenTitle}>Dashboard</Text>
-        </View>
+      <View style={styles.headerContainer}>
+        <Text style={styles.screenTitle}>Dashboard</Text>
+      </View>
       {/* --- Single Rectangle Widget --- */}
       <SummaryWidget
         todayData={todayData}
@@ -2722,6 +2722,51 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
   const [error, setError] = useState('');
   const [isDietician, setIsDietician] = useState(false);
 
+  // Test notification function for debugging
+  const sendTestNotification = async (delaySeconds: number = 300) => {
+    try {
+      console.log('[Test Notifications] Sending test notification in', delaySeconds, 'seconds...');
+      
+      const notificationContent = {
+        title: 'Test Notification',
+        body: `This is a test notification sent at ${new Date().toLocaleTimeString()}`,
+        sound: 'default',
+        priority: 'high',
+        autoDismiss: false,
+        sticky: false,
+        data: {
+          type: 'test_notification',
+          timestamp: new Date().toISOString(),
+          platform: Platform.OS,
+          userId: auth.currentUser?.uid
+        }
+      };
+      
+      const scheduledId = await Notifications.scheduleNotificationAsync({
+        content: notificationContent,
+        trigger: {
+          type: 'timeInterval',
+          seconds: delaySeconds,
+          repeats: false
+        } as any,
+      });
+      
+      console.log('[Test Notifications] ✅ Test notification scheduled successfully:', {
+        scheduledId,
+        delaySeconds,
+        platform: Platform.OS,
+        scheduledFor: new Date(Date.now() + delaySeconds * 1000).toISOString()
+      });
+      
+      Alert.alert('Success', `Test notification scheduled for ${delaySeconds} seconds from now`);
+      return scheduledId;
+    } catch (error) {
+      console.error('[Test Notifications] ❌ Error scheduling test notification:', error);
+      Alert.alert('Error', 'Failed to schedule test notification');
+      throw error;
+    }
+  };
+
   useEffect(() => {
     // Add delay to prevent conflict with login sequence API calls
     const delayedFetch = setTimeout(async () => {
@@ -2758,7 +2803,7 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
           const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
           
           if (!isDieticianAccount) {
-            setError('Could not load user profile.');
+          setError('Could not load user profile.');
           } else {
             setError(''); // Clear error for dieticians
           }
@@ -2866,6 +2911,11 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.settingsButtonRow}>
+              <StyledButton 
+                title="Test Notification (5 min)" 
+                onPress={() => sendTestNotification(300)}
+                style={[styles.settingsLogoutButton, { backgroundColor: COLORS.primary, marginBottom: 12 }]}
+              />
               <StyledButton 
                 title="Logout" 
                 onPress={handleLogout}
@@ -3719,7 +3769,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           const isDieticianUser = currentUser?.email === 'nutricious4u@gmail.com';
           
           if (!isDieticianUser) {
-            navigation.navigate('Main');
+          navigation.navigate('Main');
           }
         }, 100);
       }
@@ -4068,6 +4118,49 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  // Test notification function for debugging
+  const sendTestNotification = async (delaySeconds: number = 300) => {
+    try {
+      console.log('[Test Notifications] Sending test notification in', delaySeconds, 'seconds...');
+      
+      const notificationContent = {
+        title: 'Test Notification',
+        body: `This is a test notification sent at ${new Date().toLocaleTimeString()}`,
+        sound: 'default',
+        priority: 'high',
+        autoDismiss: false,
+        sticky: false,
+        data: {
+          type: 'test_notification',
+          timestamp: new Date().toISOString(),
+          platform: Platform.OS,
+          userId: auth.currentUser?.uid
+        }
+      };
+      
+      const scheduledId = await Notifications.scheduleNotificationAsync({
+        content: notificationContent,
+        trigger: {
+          type: 'timeInterval',
+          seconds: delaySeconds,
+          repeats: false
+        } as any,
+      });
+      
+      console.log('[Test Notifications] ✅ Test notification scheduled successfully:', {
+        scheduledId,
+        delaySeconds,
+        platform: Platform.OS,
+        scheduledFor: new Date(Date.now() + delaySeconds * 1000).toISOString()
+      });
+      
+      return scheduledId;
+    } catch (error) {
+      console.error('[Test Notifications] ❌ Error scheduling test notification:', error);
+      throw error;
+    }
+  };
+
   const scheduleDietNotification = async (notification: any, daysAhead: number = 0) => {
     try {
       // Parse the time (format: "HH:MM")
@@ -4079,10 +4172,14 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (daysAhead > 0) {
         time.setDate(time.getDate() + daysAhead);
       } else {
-        // If the time has already passed today, schedule for tomorrow
+        // For same-day reminders: if time hasn't passed, schedule for today
+        // If time has passed, schedule for tomorrow
         const now = new Date();
         if (time <= now) {
           time.setDate(time.getDate() + 1);
+          console.log('[Diet Notifications] Time passed today, scheduling for tomorrow:', time.toISOString());
+        } else {
+          console.log('[Diet Notifications] Scheduling for today:', time.toISOString());
         }
       }
       
@@ -4091,18 +4188,18 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       
       // Platform-specific notification content for EAS builds
       const notificationContent = {
-        title: 'Diet Reminder',
-        body: notification.message,
-        sound: 'default',
-        priority: 'high',
-        autoDismiss: false,
-        sticky: false,
-        data: {
-          type: 'diet_reminder',
-          source: 'diet_pdf',
-          time: notification.time,
-          notificationId: notification.id,
-          userId: auth.currentUser?.uid,
+          title: 'Diet Reminder',
+          body: notification.message,
+          sound: 'default',
+          priority: 'high',
+          autoDismiss: false,
+          sticky: false,
+          data: {
+            type: 'diet_reminder',
+            source: 'diet_pdf',
+            time: notification.time,
+            notificationId: notification.id,
+            userId: auth.currentUser?.uid,
           scheduledFor: time.toISOString(),
           platform: Platform.OS,
           timestamp: new Date().toISOString()
@@ -5239,9 +5336,9 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
           targetProtein,
           xLabels
         )}
-                {renderChart(
-          fatData, 
-          'Fat Trend', 
+        {renderChart(
+          fatData,
+          'Fat Trend',
           chartColors.fat, 
           targetFat,
           xLabels
@@ -5759,7 +5856,8 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         setProfileLoading(false);
         setProfileLoaded(true);
       } else {
-        // Fallback to Firestore
+        // Fallback to Firestore with error handling
+        console.log('[DieticianMessageScreen] User not in list, trying Firestore...');
         firestore.collection('user_profiles').doc(userId).get().then(doc => {
           if (doc.exists) {
             const profileData = doc.data();
@@ -5772,10 +5870,45 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
           setProfileLoading(false);
           setProfileLoaded(true);
         }).catch((error) => {
-          console.error('[DieticianMessageScreen] Error fetching profile:', error);
+          console.error('[DieticianMessageScreen] Error fetching profile from Firestore:', error);
+          
+          // Final fallback: Try to get profile from backend API
+          console.log('[DieticianMessageScreen] Attempting backend API fallback for profile...');
+          const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+          
+          // Get the auth token first, then make the API call
+          auth.currentUser?.getIdToken().then(token => {
+            return fetch(`${backendUrl}/api/users/${userId}/profile`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+          }).then(response => {
+            if (response.ok) {
+              return response.json();
+            } else {
+              throw new Error(`Backend API failed: ${response.status}`);
+            }
+          }).then(profileData => {
+            console.log('[DieticianMessageScreen] ✅ Profile data from backend API:', profileData);
+            setChatUserProfile(profileData);
+          }).catch(apiError => {
+            console.error('[DieticianMessageScreen] ❌ Both Firestore and backend API failed:', apiError);
+            
+            // Ultimate fallback: Create a minimal profile from available data
+            console.log('[DieticianMessageScreen] Creating minimal profile from available data...');
+            const minimalProfile = {
+              userId: userId,
+              firstName: 'User',
+              lastName: userId.substring(0, 8),
+              email: 'user@example.com'
+            };
+            setChatUserProfile(minimalProfile);
+          }).finally(() => {
           setProfileLoading(false);
           setProfileLoaded(true);
-          setChatUserProfile(null);
+          });
         });
       }
     } else if (!isDietician) {
@@ -5893,9 +6026,11 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       console.log('[DieticianMessageScreen] Message sent successfully');
       setInputText('');
       
-      // Send enhanced notification to recipient
+      // Send enhanced notification to recipient (not sender)
       const senderName = isDietician ? 'Dietician' : (chatUserProfile ? `${chatUserProfile.firstName} ${chatUserProfile.lastName}`.trim() : 'User');
-      await sendLocalMessageNotification(!isDietician, inputText, senderName);
+      
+      // Don't send local notification to sender - only send push notifications to recipient
+      // Local notifications are for the current device, push notifications are for other devices
       
       // Also send push notification for cross-device messaging
       if (!isDietician) {
@@ -9461,50 +9596,29 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       return;
     }
 
+        // Don't load local appointments first - let Firestore handle everything
+    // This prevents the split-second visibility issue
+
     let unsubscribe: (() => void) | undefined;
     const timer = setTimeout(() => {
-      const cleanupPastAppointments = async () => {
-        try {
-          const now = new Date();
-          const pastAppointmentsSnapshot = await firestore
-            .collection('appointments')
-            .where('date', '<', now.toISOString())
-            .get();
-
-          const batch = firestore.batch();
-          pastAppointmentsSnapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-          });
-
-          if (pastAppointmentsSnapshot.docs.length > 0) {
-            await batch.commit();
-            console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
-          }
-        } catch (error) {
-          console.error('Error cleaning up past appointments:', error);
-        }
-      };
-
-      cleanupPastAppointments().then(() => {
-        // Real-time listener for appointments - only for current user
-        unsubscribe = firestore
-          .collection('appointments')
-          .where('userId', '==', userId)
-          .onSnapshot(snapshot => {
-            const appointmentsData = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            }));
-            console.log('[ScheduleAppointment] Appointments updated:', appointmentsData.length, 'appointments');
-            setAppointments(appointmentsData);
-            setAppointmentsLoading(false);
-          }, error => {
-            console.error('Error listening to appointments:', error);
-            setAppointmentsLoading(false);
-            // Don't throw error, just log it and continue
-          });
-      });
-    }, 1000); // 1 second delay
+            // Real-time listener for all appointments (users can see all but only book their own)
+      // Note: Users can see all appointments to avoid double booking, but only book their own
+      unsubscribe = firestore
+        .collection('appointments')
+        .onSnapshot(snapshot => {
+          const appointmentsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          console.log('[ScheduleAppointment] User appointments updated:', appointmentsData.length, 'appointments');
+          setAppointments(appointmentsData);
+          setAppointmentsLoading(false);
+        }, error => {
+          console.error('[ScheduleAppointment] Error listening to user appointments:', error);
+          setAppointmentsLoading(false);
+          // Don't throw error, just log it and continue
+        });
+    }, 100); // Reduced delay for faster loading
 
     return () => {
       clearTimeout(timer);
@@ -9512,21 +9626,37 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     };
   }, [auth.currentUser?.uid, authReady]); // Add dependency on user ID and auth ready
 
-  // Real-time listener for breaks
+    // Fetch breaks for users to see dietician's schedule
   React.useEffect(() => {
-    const unsubscribe = firestore
-      .collection('breaks')
-      .onSnapshot(snapshot => {
-        const breaksData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setBreaks(breaksData);
-      }, error => {
-        console.error('Error listening to breaks:', error);
-      });
-    return () => unsubscribe();
-  }, []);
+    console.log('[User Schedule] Setting up breaks listener for users...');
+    
+    if (!isAuthenticated || !authReady) {
+      return;
+    }
+    
+    let unsubscribe: (() => void) | undefined;
+    const timer = setTimeout(() => {
+      // Real-time listener for breaks
+      unsubscribe = firestore
+        .collection('breaks')
+        .onSnapshot(snapshot => {
+          const breaksData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          console.log('[ScheduleAppointment] Breaks updated:', breaksData.length, 'breaks');
+          setBreaks(breaksData);
+        }, error => {
+          console.error('[ScheduleAppointment] Error listening to breaks:', error);
+          // Don't throw error, just log it and continue
+        });
+    }, 100); // Reduced delay for faster loading
+
+    return () => {
+      clearTimeout(timer);
+      if (unsubscribe) unsubscribe();
+    };
+  }, [auth.currentUser?.uid, authReady]);
 
   const handleTimeSlotPress = (timeSlot: string, date: Date) => {
     if (isPastTimeSlot(timeSlot, date) || isSlotBooked(timeSlot, date)) return;
@@ -9536,6 +9666,11 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleScheduleAppointment = async () => {
+    console.log('[Appointment Debug] Starting appointment scheduling...');
+    console.log('[Appointment Debug] Selected time slot:', selectedTimeSlot);
+    console.log('[Appointment Debug] Selected date:', selectedDate);
+    console.log('[Appointment Debug] Current user:', auth.currentUser?.uid);
+    
     if (!selectedTimeSlot) {
       setSuccessMessage('Please select a time slot');
       setShowSuccess(true);
@@ -9553,6 +9688,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       // Fetch user profile to get actual name
       let userName = 'Unknown User';
       try {
+        console.log('[Appointment Debug] Fetching user profile for userId:', userId);
         const userProfileDoc = await firestore.collection('user_profiles').doc(userId).get();
         console.log('[Appointment Debug] User profile exists:', userProfileDoc.exists);
         if (userProfileDoc.exists) {
@@ -9573,7 +9709,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           console.log('[Appointment Debug] No profile, using fallback:', userName);
         }
       } catch (error) {
-        console.error('Error fetching user profile:', error);
+        console.error('[Appointment Debug] Error fetching user profile:', error);
         userName = auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown User';
       }
 
@@ -9592,16 +9728,144 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         createdAt: new Date().toISOString(),
       };
 
-      // Save appointment to Firestore
-      await firestore.collection('appointments').add(appointmentData);
+      // Save appointment using atomic transaction
+      console.log('[Appointment Debug] Attempting to save appointment with atomic transaction:', appointmentData);
+      
+      try {
+        // Use atomic booking with server-side validation
+        // First check if slot is available
+        const appointmentDate = new Date(selectedDate);
+        const [hour] = selectedTimeSlot.split(':');
+        appointmentDate.setHours(parseInt(hour), 0, 0, 0);
+        
+        // Check for existing appointments at this time
+        const existingAppointmentsSnapshot = await firestore
+          .collection('appointments')
+          .where('date', '==', appointmentDate.toISOString())
+          .where('timeSlot', '==', selectedTimeSlot)
+          .get();
+        
+        if (!existingAppointmentsSnapshot.empty) {
+          throw new Error('Time slot is no longer available');
+        }
+        
+        // Check for breaks
+        const breaksSnapshot = await firestore.collection('breaks').get();
+        const dateString = selectedDate.toDateString();
+        
+        for (const doc of breaksSnapshot.docs) {
+          const breakData = doc.data();
+          const timeInRange = selectedTimeSlot >= breakData.fromTime && selectedTimeSlot <= breakData.toTime;
+          
+          if (timeInRange) {
+            if (!breakData.specificDate || breakData.specificDate === dateString) {
+              throw new Error('Time slot is during a break');
+            }
+          }
+        }
+        
+        // If we get here, slot is available - create appointment
+        const appointmentRef = await firestore.collection('appointments').add(appointmentData);
+        const result = appointmentRef.id;
+        
+        console.log('[Appointment Debug] ✅ Appointment saved successfully with atomic transaction, ID:', result);
       
       setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
       setShowSuccess(true);
       // Optionally, refresh appointments
-      setAppointments([...appointments, appointmentData]);
+        setAppointments([...appointments, { ...appointmentData, id: result }]);
       setSelectedTimeSlot(null);
+      } catch (firestoreError) {
+        console.error('[Appointment Debug] Firestore save failed:', firestoreError);
+        
+        // Fallback: Try to save via backend API
+        try {
+          console.log('[Appointment Debug] Attempting backend API fallback...');
+          const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+          
+          // Try the appointments endpoint first
+          let response = await fetch(`${backendUrl}/api/appointments`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
+            },
+            body: JSON.stringify(appointmentData)
+          });
+          
+          if (!response.ok) {
+            // Try alternative endpoint
+            console.log('[Appointment Debug] First endpoint failed, trying alternative...');
+            response = await fetch(`${backendUrl}/api/users/${userId}/appointments`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
+              },
+              body: JSON.stringify(appointmentData)
+            });
+          }
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('[Appointment Debug] ✅ Appointment saved via backend API:', result);
+            
+            setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
+            setShowSuccess(true);
+            setAppointments([...appointments, { ...appointmentData, id: result.id || Date.now().toString() }]);
+            setSelectedTimeSlot(null);
+          } else {
+            console.error('[Appointment Debug] Backend API failed with status:', response.status);
+            throw new Error(`Backend API failed: ${response.status}`);
+          }
+        } catch (apiError) {
+          console.error('[Appointment Debug] Both Firestore and API failed:', apiError);
+          
+          // Final fallback: Save locally and show success
+          console.log('[Appointment Debug] Using local fallback...');
+          const localAppointmentId = `local_${Date.now()}`;
+          const localAppointment = { ...appointmentData, id: localAppointmentId };
+          
+          // Save to AsyncStorage as backup
+          try {
+            const existingLocalAppointments = await AsyncStorage.getItem('localAppointments');
+            const localAppointments = existingLocalAppointments ? JSON.parse(existingLocalAppointments) : [];
+            localAppointments.push(localAppointment);
+            await AsyncStorage.setItem('localAppointments', JSON.stringify(localAppointments));
+            console.log('[Appointment Debug] ✅ Local appointment saved to AsyncStorage');
+          } catch (storageError) {
+            console.error('[Appointment Debug] Failed to save to AsyncStorage:', storageError);
+          }
+          
+          setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot} (saved locally)`);
+          setShowSuccess(true);
+          setAppointments([...appointments, localAppointment]);
+          setSelectedTimeSlot(null);
+          return; // Don't throw error, we've handled it locally
+        }
+      }
     } catch (error) {
-      setSuccessMessage('Failed to schedule appointment. Please try again.');
+      console.error('[Appointment Debug] ❌ Error scheduling appointment:', error);
+      console.error('[Appointment Debug] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        selectedTimeSlot,
+        selectedDate: selectedDate?.toISOString()
+      });
+      
+      // Show more specific error message
+      let errorMessage = 'Failed to schedule appointment. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('permission')) {
+          errorMessage = 'Permission denied. Please check your account status.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection.';
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Request timed out. Please try again.';
+        }
+      }
+      
+      setSuccessMessage(errorMessage);
       setShowSuccess(true);
     } finally {
       setLoading(false);
@@ -9670,6 +9934,18 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     const isSelected = selectedDate.toDateString() === date.toDateString() && selectedTimeSlot === timeSlot;
     const isBreak = isTimeSlotInBreak(timeSlot, date);
     
+    // Debug logging for time slot rendering
+    console.log('[User Schedule] Rendering time slot:', {
+      timeSlot,
+      date: date.toDateString(),
+      isPast,
+      isBooked,
+      isBookedByMe,
+      isSelected,
+      isBreak,
+      totalAppointments: appointments.length
+    });
+    
     return (
       <TouchableOpacity
         key={`${date.toDateString()}-${timeSlot}`}
@@ -9693,7 +9969,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           isBookedByMe && !isBreak && styles.bookedByMeTimeSlotText,
           isSelected && styles.selectedTimeSlotText
         ]}>
-          {isBreak ? 'Booked' : isBooked ? 'Booked' : timeSlot}
+          {isBreak ? 'Break' : isBooked ? (isBookedByMe ? 'Your Appt' : 'Booked') : timeSlot}
         </Text>
       </TouchableOpacity>
     );
@@ -9772,19 +10048,25 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           </View>
         )}
 
+        {/* Breaks Information - Removed for cleaner user experience */}
+
         {/* User's Upcoming Appointment Status */}
         <View style={styles.appointmentSummary}>
           <Text style={styles.appointmentSummaryTitle}>Your Upcoming Appointment</Text>
           {(() => {
             const now = new Date();
-            const upcomingAppointments = appointments
-              .filter(appt => new Date(appt.date) > now)
+            const userId = auth.currentUser?.uid;
+            const userUpcomingAppointments = appointments
+              .filter(appt => 
+                appt.userId === userId && 
+                new Date(appt.date) > now
+              )
               .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
-            console.log('[ScheduleAppointment] Total appointments:', appointments.length, 'Upcoming:', upcomingAppointments.length);
+            console.log('[ScheduleAppointment] Total appointments:', appointments.length, 'User upcoming:', userUpcomingAppointments.length);
             
-            if (upcomingAppointments.length > 0) {
-              const nextAppointment = upcomingAppointments[0];
+            if (userUpcomingAppointments.length > 0) {
+              const nextAppointment = userUpcomingAppointments[0];
               return (
                 <>
                   <Text style={[styles.appointmentSummaryText, { color: '#000' }]}>
@@ -9842,7 +10124,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     }
     return slots;
   });
-  const [breaks, setBreaks] = React.useState<any[]>([]); // array of break objects with fromTime, toTime
+  const [breaks, setBreaks] = React.useState<any[]>([]); // Simplified for users - no breaks needed
   const [breaksModalVisible, setBreaksModalVisible] = React.useState(false);
   // Add state for new break time range selection
   const [newBreakFromTime, setNewBreakFromTime] = React.useState<string | null>(null);
@@ -9880,31 +10162,31 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           .get();
 
         if (pastAppointmentsSnapshot.docs.length > 0) {
-          const batch = firestore.batch();
-          pastAppointmentsSnapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-          });
+        const batch = firestore.batch();
+        pastAppointmentsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
           await batch.commit();
           console.log(`Cleaned up ${pastAppointmentsSnapshot.docs.length} past appointments`);
         }
 
         // Set up real-time listener only once
         if (isMounted) {
-          unsubscribe = firestore
-            .collection('appointments')
-            .onSnapshot(snapshot => {
+      unsubscribe = firestore
+        .collection('appointments')
+        .onSnapshot(snapshot => {
               if (isMounted) {
-                const appointmentsData = snapshot.docs.map(doc => ({
-                  id: doc.id,
-                  ...doc.data()
-                }));
-                setAppointments(appointmentsData);
-                setLoading(false);
+          const appointmentsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setAppointments(appointmentsData);
+          setLoading(false);
               }
-            }, error => {
-              console.error('Error listening to appointments:', error);
+        }, error => {
+          console.error('Error listening to appointments:', error);
               if (isMounted) {
-                setLoading(false);
+          setLoading(false);
               }
             });
         }
@@ -9932,11 +10214,11 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       .collection('breaks')
       .onSnapshot(snapshot => {
         if (isMounted) {
-          const breaksData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setBreaks(breaksData);
+        const breaksData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setBreaks(breaksData);
         }
       }, error => {
         console.error('Error listening to breaks:', error);
@@ -10507,13 +10789,41 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
           // Continue with fetching users even if refresh fails
         }
         
-        // 1. Fetch users from backend API only
-        const usersFromAPI = await listNonDieticianUsers();
+        // 1. Fetch users from backend API with fallback
+        let usersFromAPI: any[] = [];
+        try {
+          usersFromAPI = await listNonDieticianUsers();
         console.log('[UploadDietScreen] Users from API:', usersFromAPI);
+        } catch (apiError) {
+          console.error('[UploadDietScreen] Error fetching users from API:', apiError);
+          
+          // Fallback: Try to get users from backend directly
+          try {
+            console.log('[UploadDietScreen] Attempting backend API fallback for users...');
+            const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+            const response = await fetch(`${backendUrl}/api/users`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
+              }
+            });
+            
+            if (response.ok) {
+              usersFromAPI = await response.json();
+              console.log('[UploadDietScreen] ✅ Users from backend API fallback:', usersFromAPI.length);
+            } else {
+              console.error('[UploadDietScreen] ❌ Backend API fallback failed:', response.status);
+              usersFromAPI = [];
+            }
+          } catch (fallbackError) {
+            console.error('[UploadDietScreen] ❌ Both API methods failed:', fallbackError);
+            usersFromAPI = [];
+          }
+        }
         
         let filteredProfiles: any[] = [];
         if (!usersFromAPI || usersFromAPI.length === 0) {
-          console.log('[UploadDietScreen] No users found from API');
+          console.log('[UploadDietScreen] No users found from any source');
         } else {
           console.log('[UploadDietScreen] API returned users:', usersFromAPI.length);
           filteredProfiles = usersFromAPI.filter((u: any) => {

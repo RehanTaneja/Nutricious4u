@@ -202,6 +202,30 @@ class SubscriptionStatus(BaseModel):
     totalAmountPaid: float = 0.0
     isSubscriptionActive: bool = False
 
+# --- Appointment Models ---
+class AppointmentRequest(BaseModel):
+    userId: str
+    userName: str
+    userEmail: str
+    date: str
+    timeSlot: str
+    status: str = "confirmed"
+
+class AppointmentResponse(BaseModel):
+    id: str
+    userId: str
+    userName: str
+    userEmail: str
+    date: str
+    timeSlot: str
+    status: str
+    createdAt: str
+
+class BreakRequest(BaseModel):
+    fromTime: str
+    toTime: str
+    specificDate: Optional[str] = None  # null for daily breaks, date string for specific date breaks
+
 # Define app before any usage
 app = FastAPI(title="Fitness Tracker API", version="1.0.0")
 
@@ -1571,6 +1595,135 @@ async def get_user_diet(user_id: str):
     except Exception as e:
         logger.error(f"Error getting diet for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve diet information. Please try again.")
+
+# --- Appointment Management Endpoints ---
+@api_router.post("/appointments", response_model=AppointmentResponse)
+async def create_appointment(appointment: AppointmentRequest):
+    """Create a new appointment"""
+    try:
+        # Validate appointment data
+        if not appointment.userId or not appointment.date or not appointment.timeSlot:
+            raise HTTPException(status_code=400, detail="Missing required appointment fields")
+        
+        # Check for overlapping appointments
+        appointment_date = appointment.date.split('T')[0]  # Get date part only
+        existing_appointments = firestore_db.collection("appointments").where("date", ">=", appointment.date).where("date", "<", appointment.date + "T23:59:59").stream()
+        
+        for doc in existing_appointments:
+            existing_appt = doc.to_dict()
+            if existing_appt.get("timeSlot") == appointment.timeSlot:
+                raise HTTPException(status_code=409, detail="Time slot already booked")
+        
+        # Check for breaks
+        breaks = firestore_db.collection("breaks").stream()
+        for doc in breaks:
+            break_data = doc.to_dict()
+            if (break_data.get("fromTime") <= appointment.timeSlot <= break_data.get("toTime") and
+                (not break_data.get("specificDate") or break_data.get("specificDate") == appointment_date)):
+                raise HTTPException(status_code=409, detail="Time slot is during a break")
+        
+        # Create appointment
+        appointment_data = appointment.dict()
+        appointment_data["createdAt"] = datetime.utcnow().isoformat()
+        
+        doc_ref = firestore_db.collection("appointments").add(appointment_data)
+        
+        return AppointmentResponse(
+            id=doc_ref[1].id,
+            **appointment_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating appointment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create appointment")
+
+@api_router.get("/appointments", response_model=List[AppointmentResponse])
+async def get_appointments(user_id: Optional[str] = None):
+    """Get all appointments or appointments for a specific user"""
+    try:
+        if user_id:
+            # Get appointments for specific user
+            docs = firestore_db.collection("appointments").where("userId", "==", user_id).stream()
+        else:
+            # Get all appointments
+            docs = firestore_db.collection("appointments").stream()
+        
+        appointments = []
+        for doc in docs:
+            data = doc.to_dict()
+            appointments.append(AppointmentResponse(id=doc.id, **data))
+        
+        return appointments
+        
+    except Exception as e:
+        logger.error(f"Error fetching appointments: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch appointments")
+
+@api_router.delete("/appointments/{appointment_id}")
+async def delete_appointment(appointment_id: str):
+    """Delete an appointment"""
+    try:
+        doc_ref = firestore_db.collection("appointments").document(appointment_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        
+        doc_ref.delete()
+        return {"success": True, "message": "Appointment deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting appointment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete appointment")
+
+@api_router.get("/breaks", response_model=List[dict])
+async def get_breaks():
+    """Get all breaks"""
+    try:
+        docs = firestore_db.collection("breaks").stream()
+        breaks = []
+        for doc in docs:
+            data = doc.to_dict()
+            breaks.append({"id": doc.id, **data})
+        
+        return breaks
+        
+    except Exception as e:
+        logger.error(f"Error fetching breaks: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch breaks")
+
+@api_router.post("/breaks", response_model=dict)
+async def create_break(break_request: BreakRequest):
+    """Create a new break"""
+    try:
+        # Validate break data
+        if not break_request.fromTime or not break_request.toTime:
+            raise HTTPException(status_code=400, detail="Missing required break fields")
+        
+        # Check for overlapping breaks
+        existing_breaks = firestore_db.collection("breaks").stream()
+        for doc in existing_breaks:
+            existing_break = doc.to_dict()
+            if (existing_break.get("fromTime") <= break_request.toTime and 
+                existing_break.get("toTime") >= break_request.fromTime and
+                existing_break.get("specificDate") == break_request.specificDate):
+                raise HTTPException(status_code=409, detail="Break time overlaps with existing break")
+        
+        # Create break
+        break_data = break_request.dict()
+        doc_ref = firestore_db.collection("breaks").add(break_data)
+        
+        return {"id": doc_ref[1].id, **break_data}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating break: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create break")
 
 # --- Serve PDF from Firestore ---
 @api_router.get("/users/{user_id}/diet/pdf")
