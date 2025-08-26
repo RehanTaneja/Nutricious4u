@@ -170,7 +170,6 @@ function AppContent() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [checkingProfile, setCheckingProfile] = useState(false);
   const [isDietician, setIsDietician] = useState(false);
-  const [forceReload, setForceReload] = useState(0);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -213,8 +212,8 @@ function AppContent() {
         await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
         setLastResetDate(today);
         
-        // Force refresh of dashboard data
-        setForceReload(x => x + 1);
+        // Dashboard data reset completed
+        console.log('[Daily Reset] Dashboard data reset completed');
       }
     } catch (error: any) {
       console.error('[Daily Reset] Error resetting daily data:', error);
@@ -278,8 +277,8 @@ function AppContent() {
         setShowSubscriptionPopup(false);
         setSelectedPlan(null);
         setHasActiveSubscription(true);
-        // Refresh the app state
-        setForceReload(x => x + 1);
+        // App state updated successfully
+        console.log('[Subscription] App state updated successfully');
       }
     } catch (error: any) {
       console.error('Error selecting subscription:', error);
@@ -437,7 +436,7 @@ function AppContent() {
 
                       caloriesBurnedGoal: 500
                     });
-                    setForceReload(x => x + 1); // force re-render
+                    console.log('[Dietician Profile] Profile created successfully');
                   } catch (error) {
                     console.error('Error handling dietician profile:', error);
                   }
@@ -722,7 +721,7 @@ function AppContent() {
       if (dietNotificationSubscription) dietNotificationSubscription.remove();
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [forceReload]);
+  }, []); // Removed forceReload dependency to prevent unnecessary re-renders
 
   // Check app lock status when app comes to foreground
   useEffect(() => {

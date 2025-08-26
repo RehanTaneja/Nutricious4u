@@ -5901,15 +5901,48 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     if (isDietician) {
       const fetchUserList = async () => {
         try {
-          const usersFromAPI = await listNonDieticianUsers();
+          // Use getAllUserProfiles for consistency with messages list screen
+          // This ensures both screens use the same data source
+          const usersFromAPI = await getAllUserProfiles();
           console.log('[DieticianMessageScreen] Fetched user list:', usersFromAPI?.length, 'users');
+          
+          // Add platform-specific logging for EAS builds
+          if (!__DEV__) {
+            console.log('[EAS Build] User list fetch completed, users:', usersFromAPI?.map((u: any) => ({ 
+              userId: u.userId, 
+              firstName: u.firstName, 
+              lastName: u.lastName,
+              email: u.email 
+            })));
+          }
+          
           setUserList(usersFromAPI || []);
         } catch (error) {
           console.error('[DieticianMessageScreen] Error fetching user list:', error);
-          setUserList([]);
+          
+          // Platform-specific error handling for EAS builds
+          if (!__DEV__) {
+            console.log('[EAS Build] Using fallback user list handling');
+            // For EAS builds, try to get users from a different approach
+            try {
+              const fallbackUsers = await listNonDieticianUsers();
+              console.log('[EAS Build] Fallback user list successful:', fallbackUsers?.length, 'users');
+              setUserList(fallbackUsers || []);
+            } catch (fallbackError) {
+              console.error('[EAS Build] Fallback also failed:', fallbackError);
+              setUserList([]);
+            }
+          } else {
+            setUserList([]);
+          }
         }
       };
-      fetchUserList();
+      
+      // Add delay for EAS builds to prevent race conditions
+      const delay = !__DEV__ ? 500 : 0;
+      setTimeout(() => {
+        fetchUserList();
+      }, delay);
     }
   }, [isDietician]);
 
@@ -5920,57 +5953,107 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       setProfileLoaded(false);
       console.log('[DieticianMessageScreen] Fetching profile for userId:', userId);
       
-      // Try to get profile from the user list first (which comes from backend API)
-      // This avoids the placeholder profile issue
-      const userFromList = userList?.find((u: any) => u.userId === userId);
-      if (userFromList) {
-        console.log('[DieticianMessageScreen] Found user in list:', userFromList);
-        setChatUserProfile(userFromList);
-        setProfileLoading(false);
-        setProfileLoaded(true);
-      } else {
-        // Fallback to Firestore with error handling
-        console.log('[DieticianMessageScreen] User not in list, trying Firestore...');
-        firestore.collection('user_profiles').doc(userId).get().then(doc => {
+      // Platform-specific profile fetching for EAS builds
+      const fetchProfile = async () => {
+        try {
+          // Try to get profile from the user list first (which comes from backend API)
+          // This avoids the placeholder profile issue
+          const userFromList = userList?.find((u: any) => u.userId === userId);
+          if (userFromList) {
+            console.log('[DieticianMessageScreen] Found user in list:', userFromList);
+            setChatUserProfile(userFromList);
+            setProfileLoading(false);
+            setProfileLoaded(true);
+            return;
+          }
+          
+          // For EAS builds, add additional logging
+          if (!__DEV__) {
+            console.log('[EAS Build] User not found in list, available users:', userList?.map((u: any) => u.userId));
+          }
+          
+          // Fallback to Firestore with enhanced error handling
+          console.log('[DieticianMessageScreen] User not in list, trying Firestore...');
+          const doc = await firestore.collection('user_profiles').doc(userId).get();
+          
           if (doc.exists) {
             const profileData = doc.data();
             console.log('[DieticianMessageScreen] Profile data from Firestore:', profileData);
             setChatUserProfile(profileData);
           } else {
             console.log('[DieticianMessageScreen] Profile not found for userId:', userId);
+            
+            // For EAS builds, try a more aggressive fallback
+            if (!__DEV__) {
+              console.log('[EAS Build] Attempting enhanced fallback for profile...');
+              try {
+                // Try to get user from getAllUserProfiles directly
+                const allUsers = await getAllUserProfiles();
+                const directUser = allUsers?.find((u: any) => u.userId === userId);
+                if (directUser) {
+                  console.log('[EAS Build] Found user in direct API call:', directUser);
+                  setChatUserProfile(directUser);
+                  setProfileLoading(false);
+                  setProfileLoaded(true);
+                  return;
+                }
+              } catch (directError) {
+                console.error('[EAS Build] Direct API call failed:', directError);
+              }
+            }
+            
             setChatUserProfile(null);
           }
+          
           setProfileLoading(false);
           setProfileLoaded(true);
-        }).catch((error) => {
-          console.error('[DieticianMessageScreen] Error fetching profile from Firestore:', error);
           
-          // Final fallback: Try to get profile from backend API
-          console.log('[DieticianMessageScreen] Attempting backend API fallback for profile...');
-          const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+        } catch (error) {
+          console.error('[DieticianMessageScreen] Error fetching profile:', error);
           
-          // Get the auth token first, then make the API call
-          auth.currentUser?.getIdToken().then(token => {
-            return fetch(`${backendUrl}/api/users/${userId}/profile`, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${token}`
+          // Enhanced fallback for EAS builds
+          if (!__DEV__) {
+            console.log('[EAS Build] Using enhanced fallback for profile...');
+            try {
+              // Try backend API with timeout
+              const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
+              const token = await auth.currentUser?.getIdToken();
+              
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+              
+              const response = await fetch(`${backendUrl}/api/users/${userId}/profile`, {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                },
+                signal: controller.signal
+              });
+              
+              clearTimeout(timeoutId);
+              
+              if (response.ok) {
+                const profileData = await response.json();
+                console.log('[EAS Build] ✅ Profile data from backend API:', profileData);
+                setChatUserProfile(profileData);
+              } else {
+                throw new Error(`Backend API failed: ${response.status}`);
               }
-            });
-          }).then(response => {
-            if (response.ok) {
-              return response.json();
-            } else {
-              throw new Error(`Backend API failed: ${response.status}`);
+            } catch (apiError) {
+              console.error('[EAS Build] ❌ All profile fetching methods failed:', apiError);
+              
+              // Ultimate fallback: Create a minimal profile from available data
+              console.log('[EAS Build] Creating minimal profile from available data...');
+              const minimalProfile = {
+                userId: userId,
+                firstName: 'User',
+                lastName: userId.substring(0, 8),
+                email: 'user@example.com'
+              };
+              setChatUserProfile(minimalProfile);
             }
-          }).then(profileData => {
-            console.log('[DieticianMessageScreen] ✅ Profile data from backend API:', profileData);
-            setChatUserProfile(profileData);
-          }).catch(apiError => {
-            console.error('[DieticianMessageScreen] ❌ Both Firestore and backend API failed:', apiError);
-            
-            // Ultimate fallback: Create a minimal profile from available data
-            console.log('[DieticianMessageScreen] Creating minimal profile from available data...');
+          } else {
+            // For Expo Go, use simpler fallback
             const minimalProfile = {
               userId: userId,
               firstName: 'User',
@@ -5978,12 +6061,19 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
               email: 'user@example.com'
             };
             setChatUserProfile(minimalProfile);
-          }).finally(() => {
+          }
+          
           setProfileLoading(false);
           setProfileLoaded(true);
-          });
-        });
-      }
+        }
+      };
+      
+      // Add delay for EAS builds to ensure userList is loaded
+      const delay = !__DEV__ ? 1000 : 0;
+      setTimeout(() => {
+        fetchProfile();
+      }, delay);
+      
     } else if (!isDietician) {
       // For regular users, we don't need to fetch any profile since they're messaging the dietician
       setProfileLoading(false);
@@ -6261,7 +6351,7 @@ const dieticianMessageStyles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#222',
+    color: '#000',
     flex: 1,
     textAlign: 'center',
     marginRight: 32,
@@ -6338,9 +6428,26 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
         const usersFromAPI = await getAllUserProfiles();
         console.log('[DieticianMessagesListScreen] All users from API:', usersFromAPI);
         
+        // Platform-specific logging for EAS builds
+        if (!__DEV__) {
+          console.log('[EAS Build] Messages list - API response received:', usersFromAPI?.length, 'users');
+        }
+        
         let filteredProfiles: any[] = [];
         if (!usersFromAPI || usersFromAPI.length === 0) {
           console.log('[DieticianMessagesListScreen] No users found from API');
+          
+          // For EAS builds, try fallback
+          if (!__DEV__) {
+            console.log('[EAS Build] Attempting fallback for messages list...');
+            try {
+              const fallbackUsers = await listNonDieticianUsers();
+              console.log('[EAS Build] Fallback successful:', fallbackUsers?.length, 'users');
+              filteredProfiles = fallbackUsers || [];
+            } catch (fallbackError) {
+              console.error('[EAS Build] Fallback failed:', fallbackError);
+            }
+          }
         } else {
           console.log('[DieticianMessagesListScreen] API returned users:', usersFromAPI.length);
           filteredProfiles = usersFromAPI.filter((u: any) => {
@@ -6367,6 +6474,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
           });
           console.log('[DieticianMessagesListScreen] After filtering:', filteredProfiles.length, 'users');
         }
+        
         // Set users immediately after filtering (like Upload Diet screen)
         console.log('[DieticianMessagesListScreen] Found users:', filteredProfiles.length);
         console.log('[DieticianMessagesListScreen] Users:', filteredProfiles.map((u: any) => ({ userId: u.userId, email: u.email, firstName: u.firstName, lastName: u.lastName, isDietician: u.isDietician })));
@@ -6435,7 +6543,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
       style={{ padding: 18, borderBottomWidth: 1, borderColor: '#eee', backgroundColor: '#fff' }}
       onPress={() => navigation.navigate('DieticianMessage', { userId: item.userId })}
     >
-      <Text style={{ fontWeight: 'bold', fontSize: 18 }}>
+      <Text style={{ fontWeight: 'bold', fontSize: 18, color: '#000' }}>
         {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : (item.email || 'Unknown User')}
       </Text>
       <Text style={{ color: '#888', marginTop: 4 }} numberOfLines={1}>
@@ -6450,7 +6558,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F0FFF4' }}>
       <View style={{ paddingTop: 50, paddingHorizontal: 16, flex: 1 }}>
-        <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' }}>Messages</Text>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' }}>Messages</Text>
         {loading ? (
           <ActivityIndicator size="large" color="#6EE7B7" style={{ marginTop: 40 }} />
         ) : (
@@ -7672,7 +7780,9 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     backgroundColor: COLORS.white,
-    transform: [{ scale: 1.58 }, { translateY: 28 }], // Use Android settings for both platforms
+    transform: Platform.OS === 'ios' 
+      ? [{ scale: 1.58 }, { translateY: 20 }]  // iOS: less down to show full face
+      : [{ scale: 1.58 }, { translateY: 28 }], // Android: keep as is
   },
   dieticianName: {
     fontSize: 28,
@@ -7937,7 +8047,7 @@ const styles = StyleSheet.create({
   uploadScreenTitle: {
     fontSize: 34,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#000',
     textAlign: 'center',
   },
   uploadErrorContainer: {
@@ -10235,6 +10345,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   const [showSuccessMessage, setShowSuccessMessage] = React.useState(false);
   const [successMessage, setSuccessMessage] = React.useState('');
 
+  // Add focus detection like user dashboard
+  const isFocused = useIsFocused();
+
   React.useEffect(() => {
     // Generate week dates (7 days starting from today)
     const dates = [];
@@ -10249,6 +10362,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   }, []);
 
   React.useEffect(() => {
+    // Only set up listeners when screen is focused
+    if (!isFocused) return;
+    
     let isMounted = true;
     let unsubscribe: (() => void) | undefined;
 
@@ -10304,10 +10420,13 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, []); // Empty dependency array - runs only once
+  }, [isFocused]); // Add isFocused dependency like user dashboard
 
   // Real-time listener for breaks
   React.useEffect(() => {
+    // Only set up listeners when screen is focused
+    if (!isFocused) return;
+    
     let isMounted = true;
     
     const unsubscribe = firestore
@@ -10328,7 +10447,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       isMounted = false;
       unsubscribe();
     };
-  }, []); // Empty dependency array - runs only once
+  }, [isFocused]); // Add isFocused dependency like user dashboard
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', { 
@@ -11360,7 +11479,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               onPress={() => handleUserSelect(item)}
             >
                           <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 18 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 18, color: '#000' }}>
                 {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : 'Unknown User'}
               </Text>
               <Text style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
