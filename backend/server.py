@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timedelta
 import asyncio
 import json
+import time
 from services.health_platform import HealthPlatformFactory
 
 # Import Firebase with error handling
@@ -1943,8 +1944,12 @@ async def extract_diet_notifications(user_id: str):
     """
     Extract timed activities from user's diet PDF and create notifications.
     """
+    start_time = time.time()
+    logger.info(f"[DIET EXTRACTION] Starting extraction for user {user_id}")
+    
     try:
         # Get user profile to find diet PDF URL
+        logger.info(f"[DIET EXTRACTION] Getting user profile for {user_id}")
         user_doc = firestore_db.collection("user_profiles").document(user_id).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
@@ -1955,27 +1960,36 @@ async def extract_diet_notifications(user_id: str):
         if not diet_pdf_url:
             raise HTTPException(status_code=404, detail="No diet PDF found for this user")
         
+        logger.info(f"[DIET EXTRACTION] Found diet PDF URL: {diet_pdf_url}")
+        
         # First, cancel all existing scheduled notifications for this user
         try:
+            logger.info(f"[DIET EXTRACTION] Cancelling existing notifications for {user_id}")
             scheduler = get_notification_scheduler(firestore_db)
             cancelled_count = await scheduler.cancel_user_notifications(user_id)
-            logger.info(f"Cancelled {cancelled_count} existing notifications for user {user_id}")
+            logger.info(f"[DIET EXTRACTION] Cancelled {cancelled_count} existing notifications for user {user_id}")
         except Exception as cancel_error:
-            logger.error(f"Error cancelling existing notifications for user {user_id}: {cancel_error}")
+            logger.error(f"[DIET EXTRACTION] Error cancelling existing notifications for user {user_id}: {cancel_error}")
             # Continue with extraction even if cancellation fails
         
         # Extract notifications from diet PDF
+        logger.info(f"[DIET EXTRACTION] Starting PDF text extraction for {user_id}")
+        extraction_start = time.time()
         notifications = diet_notification_service.extract_and_create_notifications(
             user_id, diet_pdf_url, firestore_db
         )
+        extraction_time = time.time() - extraction_start
+        logger.info(f"[DIET EXTRACTION] PDF extraction completed in {extraction_time:.2f}s for user {user_id}")
         
         if not notifications:
+            logger.info(f"[DIET EXTRACTION] No notifications found for user {user_id}")
             return {
                 "message": "No timed activities found in diet PDF",
                 "notifications": []
             }
         
         # Store notifications in Firestore for the user
+        logger.info(f"[DIET EXTRACTION] Storing {len(notifications)} notifications in Firestore for {user_id}")
         user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
         user_notifications_ref.set({
             "diet_notifications": notifications,
@@ -1985,12 +1999,14 @@ async def extract_diet_notifications(user_id: str):
         
         # Schedule the notifications on the backend
         try:
+            logger.info(f"[DIET EXTRACTION] Scheduling notifications for {user_id}")
             scheduled_count = await scheduler.schedule_user_notifications(user_id)
-            logger.info(f"Successfully scheduled {scheduled_count} notifications for user {user_id}")
+            logger.info(f"[DIET EXTRACTION] Successfully scheduled {scheduled_count} notifications for user {user_id}")
         except Exception as e:
-            logger.error(f"Failed to schedule notifications for user {user_id}: {e}")
+            logger.error(f"[DIET EXTRACTION] Failed to schedule notifications for user {user_id}: {e}")
         
-        logger.info(f"Extracted {len(notifications)} notifications from diet PDF for user {user_id}")
+        total_time = time.time() - start_time
+        logger.info(f"[DIET EXTRACTION] Completed extraction in {total_time:.2f}s for user {user_id}: {len(notifications)} notifications")
         
         return {
             "message": f"Successfully extracted and scheduled {len(notifications)} timed activities from diet PDF",
@@ -1998,7 +2014,8 @@ async def extract_diet_notifications(user_id: str):
         }
         
     except Exception as e:
-        logger.error(f"Error extracting diet notifications for user {user_id}: {e}")
+        total_time = time.time() - start_time
+        logger.error(f"[DIET EXTRACTION] Error extracting diet notifications for user {user_id} after {total_time:.2f}s: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {e}")
 
 @api_router.get("/users/{user_id}/diet/notifications")

@@ -909,7 +909,10 @@ export const getUserDiet = async (userId: string) => {
 
 // --- Diet Notification Management ---
 export const extractDietNotifications = async (userId: string) => {
-  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/extract`);
+  // Use a longer timeout for PDF extraction which can take time
+  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/extract`, {}, {
+    timeout: 60000 // 60 seconds timeout for PDF extraction
+  });
   return response.data;
 };
 

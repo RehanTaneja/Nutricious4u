@@ -4786,6 +4786,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
               <Text style={{ fontSize: 16, color: COLORS.placeholder, marginBottom: 12 }}>
                 Extract timed activities from your diet PDF
               </Text>
+              <Text style={{ fontSize: 14, color: COLORS.placeholder, marginBottom: 12, fontStyle: 'italic' }}>
+                This may take up to 60 seconds for large PDFs
+              </Text>
               <TouchableOpacity 
                 style={[
                   styles.addNotificationButton, 
@@ -4797,9 +4800,14 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                 onPress={handleExtractDietNotifications}
                 disabled={loadingDietNotifications}
               >
-                <Text style={styles.addNotificationButtonText}>
-                  {loadingDietNotifications ? 'Extracting...' : 'Extract from Diet PDF'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                  {loadingDietNotifications && (
+                    <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                  )}
+                  <Text style={styles.addNotificationButtonText}>
+                    {loadingDietNotifications ? 'Extracting PDF...' : 'Extract from Diet PDF'}
+                  </Text>
+                </View>
               </TouchableOpacity>
             </View>
 
