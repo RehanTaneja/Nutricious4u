@@ -1429,7 +1429,8 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         diet_info = {
             "dietPdfUrl": file.filename,  # Store filename, not signed URL
             "lastDietUpload": datetime.now(timezone.utc).isoformat(),
-            "dieticianId": dietician_id
+            "dieticianId": dietician_id,
+            "dietCacheVersion": datetime.now(timezone.utc).timestamp()  # Cache busting flag
         }
         
         print(f"Updating Firestore with diet info: {diet_info}")

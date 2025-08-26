@@ -1178,16 +1178,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             }
             
             setDietPdfUrl(dietData.dietPdfUrl || null);
-                  } catch (error) {
-          console.error('[Dashboard Debug] Error fetching diet countdown:', error);
-          // Don't show error to user, just log it and continue
-          setDietError('');
-          // Set default values to prevent crashes
-          setDaysLeft(null);
-          setDietPdfUrl(null);
-        } finally {
-          setDietLoading(false);
-        }
+          } catch (error) {
+            console.error('[Dashboard Debug] Error fetching diet countdown:', error);
+            // Don't show error to user, just log it and continue
+            setDietError('');
+            // Set default values to prevent crashes
+            setDaysLeft(null);
+            setDietPdfUrl(null);
+          } finally {
+            setDietLoading(false);
+          }
         };
         
         fetchDietCountdown();
@@ -1210,6 +1210,48 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       };
     }
   }, []);
+
+  // Listen for new diet notifications and refresh diet data
+  useEffect(() => {
+    if (!userId) return; // Don't set up listener if no user ID
+    
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data;
+      
+      // Handle new diet notifications - refresh diet data immediately
+      if (data?.type === 'new_diet' && data?.userId === userId) {
+        console.log('[Dashboard] Received new diet notification, refreshing diet data...');
+        try {
+          setDietLoading(true);
+          const dietData = await getUserDiet(userId);
+          console.log('[Dashboard] Refreshed diet data after new diet:', dietData);
+          
+          if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
+            const daysRemaining = Math.max(0, dietData.daysLeft);
+            const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
+              ? Math.max(0, dietData.hoursLeft) 
+              : 0;
+            
+            setDaysLeft({
+              days: daysRemaining,
+              hours: hoursRemaining
+            });
+          } else {
+            setDaysLeft(null);
+          }
+          
+          setDietPdfUrl(dietData.dietPdfUrl || null);
+          console.log('[Dashboard] ✅ Diet data refreshed successfully after new diet upload');
+        } catch (error) {
+          console.error('[Dashboard] Error refreshing diet data after new diet:', error);
+        } finally {
+          setDietLoading(false);
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [userId]);
 
   const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
@@ -4146,36 +4188,63 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Enhanced diet notification extraction
+  // Enhanced diet notification extraction using backend API
   const handleExtractDietNotifications = async () => {
     try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        setErrorMessage('User not authenticated. Please log in again.');
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Prevent multiple rapid presses
+      if (loadingDietNotifications) {
+        console.log('[Diet Notifications] Extraction already in progress, ignoring button press');
+        return;
+      }
+
       setLoadingDietNotifications(true);
+      console.log('[Diet Notifications] Starting extraction from backend API...');
       
-      // Extract and schedule diet notifications
-      const extractedNotifications = await notificationService.extractAndScheduleDietNotifications();
+      // Call backend API for extraction
+      const response = await extractDietNotifications(userId);
       
-      if (extractedNotifications.length > 0) {
-        setDietNotifications(extractedNotifications);
-        setSuccessMessage(`Successfully extracted and scheduled ${extractedNotifications.length} diet notifications! 🎉`);
+      console.log('[Diet Notifications] Backend response:', response);
+      
+      if (response.notifications && response.notifications.length > 0) {
+        setDietNotifications(response.notifications);
+        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications! 🎉`);
         setShowSuccessModal(true);
+        console.log('[Diet Notifications] ✅ Extraction successful:', response.notifications.length, 'notifications');
       } else {
         Alert.alert(
           'No Activities Found', 
           'No timed activities were found in your diet plan. Make sure your diet plan includes specific times for activities.',
           [{ text: 'OK', style: 'default' }]
         );
+        console.log('[Diet Notifications] ⚠️ No activities found in diet plan');
       }
     } catch (error: any) {
       console.error('[Diet Notifications] Error extracting:', error);
       
-      if (error?.message === 'No diet found for user') {
-        setErrorMessage('No diet plan found. Please upload a diet plan first.');
-      } else if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED') {
-        setErrorMessage('Network error. Please check your connection and try again.');
-      } else {
-        setErrorMessage('Failed to extract notifications from your diet plan. Please try again.');
+      let errorMsg = 'Failed to extract notifications from your diet plan. Please try again.';
+      
+      if (error?.response?.status === 404) {
+        if (error?.response?.data?.detail === 'No diet PDF found for this user') {
+          errorMsg = 'No diet plan found. Please upload a diet plan first.';
+        } else if (error?.response?.data?.detail === 'User not found') {
+          errorMsg = 'User not found. Please log in again.';
+        }
+      } else if (error?.response?.status === 500) {
+        errorMsg = 'Server error. Please try again later.';
+      } else if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'NETWORK_ERROR') {
+        errorMsg = 'Network error. Please check your connection and try again.';
+      } else if (error?.message?.includes('timeout')) {
+        errorMsg = 'Request timed out. Please try again.';
       }
       
+      setErrorMessage(errorMsg);
       setShowErrorModal(true);
     } finally {
       setLoadingDietNotifications(false);
