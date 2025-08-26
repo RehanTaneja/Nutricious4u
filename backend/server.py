@@ -168,6 +168,11 @@ class UpdateUserProfile(BaseModel):
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = None
     isSubscriptionActive: Optional[bool] = None
+    # Diet fields
+    dietPdfUrl: Optional[str] = None
+    lastDietUpload: Optional[str] = None
+    dieticianId: Optional[str] = None
+    dietCacheVersion: Optional[float] = None
 
 class ChatMessageRequest(BaseModel):
     userId: str
@@ -1436,6 +1441,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         
         print(f"Updating Firestore with diet info: {diet_info}")
         print(f"[Upload Debug] lastDietUpload timestamp: {diet_info['lastDietUpload']}")
+        print(f"[Upload Debug] cache version: {diet_info['dietCacheVersion']}")
         try:
             # Use executor for Firestore operations
             loop = asyncio.get_event_loop()
@@ -1444,33 +1450,63 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).update(diet_info))
                 print(f"Successfully updated Firestore for user {user_id}")
                 
-                # Verify the update
-                updated_doc = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).get())
-                if updated_doc.exists:
-                    updated_data = updated_doc.to_dict()
-                    print(f"Verified Firestore update - dietPdfUrl: {updated_data.get('dietPdfUrl')}")
-                else:
-                    print(f"ERROR: User document {user_id} not found after update")
+                # Verify the update with retry mechanism
+                max_retries = 3
+                for attempt in range(max_retries):
+                    await asyncio.sleep(0.5)  # Wait for update to propagate
+                    updated_doc = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).get())
+                    if updated_doc.exists:
+                        updated_data = updated_doc.to_dict()
+                        diet_pdf_url = updated_data.get('dietPdfUrl')
+                        cache_version = updated_data.get('dietCacheVersion')
+                        last_upload = updated_data.get('lastDietUpload')
+                        
+                        print(f"Verified Firestore update (attempt {attempt + 1}):")
+                        print(f"  - dietPdfUrl: {diet_pdf_url}")
+                        print(f"  - dietCacheVersion: {cache_version}")
+                        print(f"  - lastDietUpload: {last_upload}")
+                        
+                        # Check if all fields were updated correctly
+                        if (diet_pdf_url == diet_info['dietPdfUrl'] and 
+                            cache_version == diet_info['dietCacheVersion'] and
+                            last_upload == diet_info['lastDietUpload']):
+                            print(f"✅ All fields updated correctly on attempt {attempt + 1}")
+                            break
+                        else:
+                            print(f"⚠️ Some fields not updated correctly on attempt {attempt + 1}")
+                            if attempt == max_retries - 1:
+                                print("❌ Failed to update all fields after all retries")
+                                # Try one more direct update
+                                await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id).update({
+                                    "dietCacheVersion": diet_info['dietCacheVersion']
+                                }))
+                                print("🔄 Attempted direct cache version update")
+                    else:
+                        print(f"ERROR: User document {user_id} not found after update (attempt {attempt + 1})")
+                        if attempt == max_retries - 1:
+                            raise Exception(f"User document {user_id} not found after update")
         except Exception as firestore_error:
             print(f"ERROR updating Firestore: {firestore_error}")
             raise firestore_error
         
         # Extract notifications from the new diet PDF
         try:
+            print(f"Starting notification extraction from new diet PDF: {file.filename}")
             notifications = diet_notification_service.extract_and_create_notifications(
                 user_id, file.filename, firestore_db
             )
             
             if notifications:
-                # Store notifications in Firestore
+                # Store notifications in Firestore with the new PDF URL
                 user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
                 await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
                     "diet_notifications": notifications,
                     "extracted_at": datetime.now().isoformat(),
-                    "diet_pdf_url": file.filename
+                    "diet_pdf_url": file.filename  # Use the new PDF filename
                 }, merge=True))
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
+                print(f"Stored notifications with new PDF URL: {file.filename}")
                 
                 # Automatically schedule the notifications
                 try:
@@ -1490,17 +1526,41 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 
         except Exception as e:
             print(f"Error extracting notifications from new diet PDF: {e}")
+            import traceback
+            traceback.print_exc()
         
-        # Send push notification to user
+        # Send push notification to user with enhanced data
         user_token = get_user_notification_token(user_id)
         if user_token:
             send_push_notification(
                 user_token,
                 "New Diet Has Arrived!",
                 "Your dietician has uploaded a new diet plan for you.",
-                {"type": "new_diet", "userId": user_id}
+                {
+                    "type": "new_diet", 
+                    "userId": user_id,
+                    "dietPdfUrl": file.filename,
+                    "cacheVersion": diet_info["dietCacheVersion"],
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
             )
-            print(f"Sent new diet notification to user {user_id}")
+            print(f"Sent new diet notification to user {user_id} with cache version {diet_info['dietCacheVersion']}")
+        
+        # Send notification to dietician about successful upload
+        dietician_token = get_dietician_notification_token()
+        if dietician_token:
+            send_push_notification(
+                dietician_token,
+                "Diet Upload Successful",
+                f"Successfully uploaded new diet for user {user_id}",
+                {
+                    "type": "diet_upload_success",
+                    "userId": user_id,
+                    "dietPdfUrl": file.filename,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            print(f"Sent diet upload success notification to dietician")
         
         return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
         
