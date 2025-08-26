@@ -1031,6 +1031,11 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
             "targetFat": update_dict.get("targetFat", 60),
             "stepGoal": update_dict.get("stepGoal", 10000),
             "caloriesBurnedGoal": update_dict.get("caloriesBurnedGoal", 2000),
+            # Diet fields with defaults
+            "dietPdfUrl": update_dict.get("dietPdfUrl"),
+            "lastDietUpload": update_dict.get("lastDietUpload"),
+            "dieticianId": update_dict.get("dieticianId"),
+            "dietCacheVersion": update_dict.get("dietCacheVersion"),
         }
         if not doc.exists:
             # Create new profile with defaults and any provided updates
@@ -1043,10 +1048,20 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
         profile = updated_doc.to_dict()
         if profile is None:
             profile = {}
-        # Fill any missing required fields with defaults
+        # Fill any missing required fields with defaults (but preserve diet fields)
         for k, v in defaults.items():
             if profile.get(k) is None:
                 profile[k] = v
+        
+        # Ensure diet fields are preserved from the update
+        if "dietPdfUrl" in update_dict:
+            profile["dietPdfUrl"] = update_dict["dietPdfUrl"]
+        if "lastDietUpload" in update_dict:
+            profile["lastDietUpload"] = update_dict["lastDietUpload"]
+        if "dieticianId" in update_dict:
+            profile["dieticianId"] = update_dict["dieticianId"]
+        if "dietCacheVersion" in update_dict:
+            profile["dietCacheVersion"] = update_dict["dietCacheVersion"]
         return profile
     except Exception as e:
         logger.error(f"Error updating user profile: {e}")
