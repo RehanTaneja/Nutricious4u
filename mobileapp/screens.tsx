@@ -1211,47 +1211,69 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   }, []);
 
-  // Listen for new diet notifications and refresh diet data
-  useEffect(() => {
-    if (!userId) return; // Don't set up listener if no user ID
-    
-    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
-      const data = notification.request.content.data;
+      // Listen for new diet notifications and refresh diet data
+    useEffect(() => {
+      if (!userId) return; // Don't set up listener if no user ID
       
-      // Handle new diet notifications - refresh diet data immediately
-      if (data?.type === 'new_diet' && data?.userId === userId) {
-        console.log('[Dashboard] Received new diet notification, refreshing diet data...');
-        try {
-          setDietLoading(true);
-          const dietData = await getUserDiet(userId);
-          console.log('[Dashboard] Refreshed diet data after new diet:', dietData);
+      const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+        const data = notification.request.content.data;
+        
+        // Handle new diet notifications - refresh diet data immediately
+        if (data?.type === 'new_diet' && data?.userId === userId) {
+          console.log('[Dashboard] Received new diet notification, refreshing diet data...');
+          console.log('[Dashboard] Notification data:', data);
           
-          if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
-            const daysRemaining = Math.max(0, dietData.daysLeft);
-            const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
-              ? Math.max(0, dietData.hoursLeft) 
-              : 0;
+          try {
+            setDietLoading(true);
             
-            setDaysLeft({
-              days: daysRemaining,
-              hours: hoursRemaining
-            });
-          } else {
-            setDaysLeft(null);
+            // Check if we have cache version in notification data
+            if (data.cacheVersion) {
+              console.log('[Dashboard] Cache version in notification:', data.cacheVersion);
+            }
+            
+            const dietData = await getUserDiet(userId);
+            console.log('[Dashboard] Refreshed diet data after new diet:', dietData);
+            
+            if (dietData.daysLeft !== null && dietData.daysLeft !== undefined) {
+              const daysRemaining = Math.max(0, dietData.daysLeft);
+              const hoursRemaining = dietData.hoursLeft !== null && dietData.hoursLeft !== undefined 
+                ? Math.max(0, dietData.hoursLeft) 
+                : 0;
+              
+              setDaysLeft({
+                days: daysRemaining,
+                hours: hoursRemaining
+              });
+            } else {
+              setDaysLeft(null);
+            }
+            
+            setDietPdfUrl(dietData.dietPdfUrl || null);
+            console.log('[Dashboard] ✅ Diet data refreshed successfully after new diet upload');
+            
+            // Show success message to user
+            Alert.alert(
+              'New Diet Available!',
+              'Your dietician has uploaded a new diet plan. The diet has been refreshed automatically.',
+              [{ text: 'OK', style: 'default' }]
+            );
+          } catch (error) {
+            console.error('[Dashboard] Error refreshing diet data after new diet:', error);
+            
+            // Show error message to user
+            Alert.alert(
+              'Refresh Error',
+              'There was an issue refreshing your diet data. Please pull down to refresh manually.',
+              [{ text: 'OK', style: 'default' }]
+            );
+          } finally {
+            setDietLoading(false);
           }
-          
-          setDietPdfUrl(dietData.dietPdfUrl || null);
-          console.log('[Dashboard] ✅ Diet data refreshed successfully after new diet upload');
-        } catch (error) {
-          console.error('[Dashboard] Error refreshing diet data after new diet:', error);
-        } finally {
-          setDietLoading(false);
         }
-      }
-    });
+      });
 
-    return () => subscription.remove();
-  }, [userId]);
+      return () => subscription.remove();
+    }, [userId]);
 
   const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
@@ -1261,9 +1283,24 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       return;
     }
     
-    if (dietPdfUrl) {
-      try {
-        console.log('Opening diet PDF with URL:', dietPdfUrl);
+    try {
+      // Force refresh diet data before opening
+      console.log('[DashboardScreen] Refreshing diet data before opening PDF...');
+      if (!userId) {
+        Alert.alert('Error', 'User not authenticated. Please log in again.');
+        return;
+      }
+      const dietData = await getUserDiet(userId);
+      console.log('[DashboardScreen] Refreshed diet data:', dietData);
+      
+      // Update local state with fresh data
+      if (dietData.dietPdfUrl && dietData.dietPdfUrl !== dietPdfUrl) {
+        console.log('[DashboardScreen] Diet PDF URL changed, updating state...');
+        setDietPdfUrl(dietData.dietPdfUrl);
+      }
+      
+      if (dietData.dietPdfUrl) {
+        console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
         const pdfUrl = getPdfUrl();
         console.log('Final PDF URL for browser:', pdfUrl);
         
@@ -1280,10 +1317,12 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         } else {
           Alert.alert('Error', 'No PDF URL available.');
         }
-      } catch (e) {
-        console.error('Failed to open diet PDF:', e);
-        Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
+      } else {
+        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician.');
       }
+    } catch (e) {
+      console.error('Failed to open diet PDF:', e);
+      Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
     }
   };
 
@@ -6496,6 +6535,25 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
   const [loading, setLoading] = React.useState(true);
   const [userList, setUserList] = React.useState<any[]>([]);
 
+  // Add notification listener for dietician messages
+  React.useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data;
+      
+      // Handle user message notifications - refresh messages list
+      if (data?.type === 'message_notification' && data?.fromUser) {
+        console.log('[DieticianMessagesListScreen] Received message from user:', data.fromUser);
+        // Refresh the messages list to show new message
+        // The existing useEffect will handle the refresh
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   React.useEffect(() => {
     let isMounted = true;
     async function fetchData() {
@@ -10424,6 +10482,71 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
 
   // Add focus detection like user dashboard
   const isFocused = useIsFocused();
+
+  // Add notification listener for dietician
+  React.useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data;
+      
+      // Handle user message notifications
+      if (data?.type === 'message_notification' && data?.fromUser) {
+        console.log('[DieticianDashboard] Received message from user:', data.fromUser);
+        // Show notification to dietician about new message
+        Alert.alert(
+          'New Message',
+          `You have a new message from ${data.senderName || 'a user'}`,
+          [
+            { text: 'View Messages', onPress: () => navigation.navigate('Messages') },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+      }
+      
+      // Handle diet reminder notifications
+      if (data?.type === 'diet_reminder') {
+        console.log('[DieticianDashboard] User needs new diet:', data.userId);
+        // Show reminder to upload new diet
+        Alert.alert(
+          'Diet Reminder',
+          `User ${data.userName || 'needs a new diet plan'}. Their current diet is expiring soon.`,
+          [
+            { text: 'Upload Diet', onPress: () => navigation.navigate('Upload Diet') },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+      }
+      
+      // Handle diet upload success notifications
+      if (data?.type === 'diet_upload_success') {
+        console.log('[DieticianDashboard] Diet upload successful for user:', data.userId);
+        // Show success notification to dietician
+        Alert.alert(
+          'Diet Upload Successful',
+          `Successfully uploaded new diet for user ${data.userId}`,
+          [{ text: 'OK', style: 'default' }]
+        );
+      }
+      
+      // Handle multiple users needing new diets
+      if (data?.type === 'diet_reminder' && data?.users && Array.isArray(data.users)) {
+        console.log('[DieticianDashboard] Multiple users need new diets:', data.users.length);
+        const userNames = data.users.map((user: any) => user.name || user.userId).join(', ');
+        Alert.alert(
+          'Multiple Diet Reminders',
+          `${data.users.length} users need new diet plans: ${userNames}`,
+          [
+            { text: 'View All Users', onPress: () => navigation.navigate('Upload Diet') },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+      }
+    });
+
+    return () => subscription.remove();
+  }, [navigation]);
 
   React.useEffect(() => {
     // Generate week dates (7 days starting from today)

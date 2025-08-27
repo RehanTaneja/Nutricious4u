@@ -909,11 +909,27 @@ export const getUserDiet = async (userId: string) => {
 
 // --- Diet Notification Management ---
 export const extractDietNotifications = async (userId: string) => {
+  logger.log('[API] Starting diet extraction with 60-second timeout');
+  
   // Use a longer timeout for PDF extraction which can take time
-  const response = await enhancedApi.post(`/users/${userId}/diet/notifications/extract`, {}, {
-    timeout: 60000 // 60 seconds timeout for PDF extraction
+  // Create a custom axios instance with extended timeout for this specific request
+  const customAxios = axios.create({
+    baseURL: API_URL,
+    timeout: 60000, // 60 seconds timeout for PDF extraction
+    headers: {
+      'Content-Type': 'application/json',
+    },
   });
-  return response.data;
+  
+  try {
+    logger.log('[API] Making diet extraction request to:', `${API_URL}/users/${userId}/diet/notifications/extract`);
+    const response = await customAxios.post(`/users/${userId}/diet/notifications/extract`);
+    logger.log('[API] Diet extraction request completed successfully');
+    return response.data;
+  } catch (error) {
+    logger.error('[API] Diet extraction request failed:', error);
+    throw error;
+  }
 };
 
 export const getDietNotifications = async (userId: string) => {
