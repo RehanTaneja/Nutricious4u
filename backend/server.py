@@ -1804,9 +1804,10 @@ async def create_break(break_request: BreakRequest):
 
 # --- Serve PDF from Firestore ---
 @api_router.get("/users/{user_id}/diet/pdf")
-async def get_user_diet_pdf(user_id: str):
+async def get_user_diet_pdf(user_id: str, t: str = None):
     """
     Serves the PDF data from Firebase Storage for viewing.
+    t: Cache busting parameter (timestamp)
     """
     try:
         # First, get the user's profile to find the dietPdfUrl
@@ -1832,7 +1833,7 @@ async def get_user_diet_pdf(user_id: str):
                         media_type="application/pdf",
                         headers={
                             "Content-Disposition": f"inline; filename=diet.pdf",
-                            "Cache-Control": "public, max-age=3600"
+                            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"
                         }
                     )
                 else:
@@ -1883,10 +1884,10 @@ async def get_user_diet_pdf(user_id: str):
                 return Response(
                     content=pdf_content,
                     media_type="application/pdf",
-                    headers={
-                        "Content-Disposition": f"inline; filename={diet_pdf_url}",
-                        "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
-                    }
+                                            headers={
+                            "Content-Disposition": f"inline; filename={diet_pdf_url}",
+                            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"
+                        }
                 )
                 
             except Exception as storage_error:

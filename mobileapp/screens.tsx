@@ -1290,18 +1290,19 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         Alert.alert('Error', 'User not authenticated. Please log in again.');
         return;
       }
+      
+      // Force refresh by adding cache busting parameter
       const dietData = await getUserDiet(userId);
       console.log('[DashboardScreen] Refreshed diet data:', dietData);
       
-      // Update local state with fresh data
-      if (dietData.dietPdfUrl && dietData.dietPdfUrl !== dietPdfUrl) {
-        console.log('[DashboardScreen] Diet PDF URL changed, updating state...');
-        setDietPdfUrl(dietData.dietPdfUrl);
-      }
+      // Always update local state with fresh data to ensure we have the latest
+      setDietPdfUrl(dietData.dietPdfUrl || null);
       
       if (dietData.dietPdfUrl) {
         console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
-        const pdfUrl = getPdfUrl();
+        
+        // Generate PDF URL with cache busting
+        const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
         console.log('Final PDF URL for browser:', pdfUrl);
         
         if (pdfUrl) {
@@ -1326,7 +1327,35 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Helper function to get the correct PDF URL
+  // Helper function to get the correct PDF URL with cache busting
+  const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
+    if (!pdfUrl) return null;
+    
+    console.log('getPdfUrlWithCacheBusting called with pdfUrl:', pdfUrl);
+    
+    // If it's a Firebase Storage signed URL, use it directly
+    if (pdfUrl.startsWith('https://storage.googleapis.com/')) {
+      console.log('Using Firebase Storage URL directly:', pdfUrl);
+      return pdfUrl;
+    }
+    
+    // If it's a firestore:// URL, use the backend endpoint
+    if (pdfUrl.startsWith('firestore://')) {
+      const userId = firebase.auth().currentUser?.uid;
+      const url = `${API_URL}/users/${userId}/diet/pdf`;
+      console.log('Using backend endpoint for firestore URL:', url);
+      return url;
+    }
+    
+    // If it's just a filename or any other format, use the backend endpoint with cache busting
+    const userId = firebase.auth().currentUser?.uid;
+    const timestamp = Date.now(); // Add cache busting parameter
+    const url = `${API_URL}/users/${userId}/diet/pdf?t=${timestamp}`;
+    console.log('Using backend endpoint for filename with cache busting:', url);
+    return url;
+  };
+
+  // Helper function to get the correct PDF URL (legacy function for backward compatibility)
   const getPdfUrl = () => {
     if (!dietPdfUrl) return null;
     
@@ -4257,12 +4286,21 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         setShowSuccessModal(true);
         console.log('[Diet Notifications] ✅ Extraction successful:', response.notifications.length, 'notifications');
       } else {
-        Alert.alert(
-          'No Activities Found', 
-          'No timed activities were found in your diet plan. Make sure your diet plan includes specific times for activities.',
-          [{ text: 'OK', style: 'default' }]
-        );
-        console.log('[Diet Notifications] ⚠️ No activities found in diet plan');
+        // Check if user is dietician - don't show popup for dieticians
+        const currentUser = auth.currentUser;
+        const userEmail = currentUser?.email;
+        const isDieticianUser = userEmail === "nutricious4u@gmail.com" || userEmail?.includes("dietician");
+        
+        if (!isDieticianUser) {
+          Alert.alert(
+            'No Activities Found', 
+            'No timed activities were found in your diet plan. Make sure your diet plan includes specific times for activities.',
+            [{ text: 'OK', style: 'default' }]
+          );
+          console.log('[Diet Notifications] ⚠️ No activities found in diet plan');
+        } else {
+          console.log('[Diet Notifications] ⚠️ No activities found in diet plan (dietician view - no alert shown)');
+        }
       }
     } catch (error: any) {
       console.error('[Diet Notifications] Error extracting:', error);
