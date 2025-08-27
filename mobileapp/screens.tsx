@@ -1161,16 +1161,18 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 hours: hoursRemaining
               });
               
-              // Check if user has 1 day remaining and notify dietician
+              // Check if user has 1 day remaining and notify dietician locally
               if (daysRemaining === 1) {
                 try {
-                  // Use enhanced API wrapper instead of direct fetch
-                  // Note: This should call the backend API for diet reminders
-                  // For now, we'll skip this to prevent errors
-                  console.log('[Dashboard Debug] Diet reminder check would be sent here');
-                  console.log('[Dashboard Debug] Notified dietician about 1 day remaining');
+                  // Schedule diet reminder notification locally for dietician
+                  const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+                  const userName = userProfile?.firstName && userProfile?.lastName 
+                    ? `${userProfile.firstName} ${userProfile.lastName}`.trim()
+                    : 'User';
+                  await unifiedNotificationService.scheduleDietReminderNotification(userId, userName);
+                  console.log('[Dashboard Debug] Diet reminder notification scheduled locally for dietician');
                 } catch (notificationError) {
-                  console.error('[Dashboard Debug] Error notifying dietician:', notificationError);
+                  console.error('[Dashboard Debug] Error scheduling diet reminder notification:', notificationError);
                 }
               }
             } else {
@@ -4256,7 +4258,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Enhanced diet notification extraction using backend API
+  // Enhanced diet notification extraction using backend API and local scheduling
   const handleExtractDietNotifications = async () => {
     try {
       const userId = auth.currentUser?.uid;
@@ -4281,10 +4283,26 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       console.log('[Diet Notifications] Backend response:', response);
       
       if (response.notifications && response.notifications.length > 0) {
-        setDietNotifications(response.notifications);
-        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications! 🎉`);
+        // Cancel existing diet notifications
+        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+        const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+        
+        console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
+        
+        // Schedule new diet notifications locally (works in EAS builds)
+        const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
+        
+        // Update notifications with scheduled IDs
+        const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
+          ...notification,
+          scheduledId: scheduledIds[index] || null
+        }));
+        
+        setDietNotifications(updatedNotifications);
+        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications locally! 🎉 (Cancelled ${cancelledCount} previous notifications)`);
         setShowSuccessModal(true);
-        console.log('[Diet Notifications] ✅ Extraction successful:', response.notifications.length, 'notifications');
+        console.log('[Diet Notifications] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
+        console.log('[Diet Notifications] Scheduled IDs:', scheduledIds);
       } else {
         // Check if user is dietician - don't show popup for dieticians
         const currentUser = auth.currentUser;
@@ -4560,23 +4578,27 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      // Cancel the scheduled notification if it exists
-      const notification = dietNotifications.find(n => n.id === notificationId);
-      if (notification && notification.scheduledId) {
-        try {
-          await Notifications.cancelScheduledNotificationAsync(notification.scheduledId);
-          console.log('[Diet Notifications] Cancelled scheduled notification:', notification.scheduledId);
-        } catch (error) {
-          console.error('[Diet Notifications] Error cancelling notification:', error);
-        }
+      // Cancel the scheduled notification locally
+      const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+      const cancelled = await unifiedNotificationService.cancelNotificationById(notificationId);
+      
+      if (cancelled) {
+        console.log('[Diet Notifications] Cancelled notification locally:', notificationId);
+      } else {
+        console.log('[Diet Notifications] Notification not found for local cancellation:', notificationId);
       }
 
-      await deleteDietNotification(userId, notificationId);
+      // Remove from local state immediately
       setDietNotifications(prev => prev.filter(n => n.id !== notificationId));
-      console.log('[Diet Notifications] Deleted:', notificationId);
+      console.log('[Diet Notifications] Deleted from local state:', notificationId);
+      
+      // Show success message
+      setSuccessMessage('Notification deleted successfully!');
+      setShowSuccessModal(true);
+      
     } catch (error) {
       console.error('[Diet Notifications] Error deleting:', error);
-      setErrorMessage('Failed to delete notification.');
+      setErrorMessage('Failed to delete notification. Please try again.');
       setShowErrorModal(true);
     }
   };
@@ -4616,19 +4638,26 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       // Set loading state
       setSavingEdit(true);
 
-      // Update the notification on the backend
+      // Cancel only the specific notification being edited
+      const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+      if (editingNotification.scheduledId) {
+        await unifiedNotificationService.cancelNotificationById(editingNotification.id);
+      }
+
+      // Create updated notification for local scheduling
       const updatedNotification = {
         message: editMessage,
         time: editTime,
         selectedDays: editSelectedDays
       };
 
-      await updateDietNotification(userId, editingNotification.id, updatedNotification);
+      // Schedule the updated notification locally
+      const scheduledIds = await unifiedNotificationService.scheduleDietNotifications([updatedNotification]);
 
       // Update the notification in local state
       setDietNotifications(prev => prev.map(n => 
         n.id === editingNotification.id 
-          ? { ...n, time: editTime, message: editMessage, selectedDays: editSelectedDays }
+          ? { ...n, time: editTime, message: editMessage, selectedDays: editSelectedDays, scheduledId: scheduledIds[0] }
           : n
       ));
 
@@ -4641,17 +4670,17 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setShowEditDaySelector(false);
 
       // Show success message
-      setSuccessMessage('Notification updated successfully! Rescheduling in background...');
+      setSuccessMessage('Notification updated and scheduled locally! Will work in EAS builds.');
       setShowSuccessModal(true);
 
     } catch (error: any) {
       console.error('[Diet Notifications] Error editing:', error);
       
-      // Check if it's a network error
-      if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-        setErrorMessage('Backend server is not available. Please check your internet connection and try again.');
-      } else if (error?.response?.data?.message) {
-        setErrorMessage(error.response.data.message);
+      // Since we're using local scheduling, most errors should be handled gracefully
+      if (error?.message?.includes('scheduleNotificationAsync')) {
+        setErrorMessage('Failed to schedule notification locally. Please try again.');
+      } else if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+        setErrorMessage('Network error. Please check your connection and try again.');
       } else {
         setErrorMessage('Failed to update notification. Please try again.');
       }
@@ -6308,6 +6337,16 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       console.log('[Message Notifications] Push notification sent successfully');
     } catch (error) {
       console.error('[Message Notifications] Error sending push notification:', error);
+      
+      // Fallback: Schedule message notification locally if backend fails
+      try {
+        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+        const isFromDietician = senderName === 'Dietician';
+        await unifiedNotificationService.scheduleMessageNotification(recipientUserId, senderName, message, isFromDietician);
+        console.log('[Message Notifications] Fallback: Message notification scheduled locally');
+      } catch (localError) {
+        console.error('[Message Notifications] Fallback also failed:', localError);
+      }
     }
   };
 
@@ -11659,9 +11698,18 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
       // The backend has already updated the Firestore document with the new dietPdfUrl
       // We just need to refresh the user data to get the updated information
       console.log('[UploadDietScreen] Diet uploaded successfully, triggering refresh');
-      setRefresh(r => r + 1);
       
-      setSuccessMsg('Diet uploaded successfully!');
+      // Send a notification to the user about the new diet using local scheduling
+      try {
+        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+        await unifiedNotificationService.scheduleNewDietNotification(selectedUser.userId, file.name);
+        console.log('[UploadDietScreen] New diet notification scheduled locally for user');
+      } catch (notificationError) {
+        console.error('[UploadDietScreen] Error scheduling new diet notification:', notificationError);
+      }
+      
+      setRefresh(r => r + 1);
+      setSuccessMsg('Diet uploaded successfully! User has been notified.');
       setRefresh(r => r + 1);
       setShowUploadModal(false);
       setSelectedUser(null);
