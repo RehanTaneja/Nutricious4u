@@ -19,11 +19,10 @@ export interface UnifiedNotification {
 
 export class UnifiedNotificationService {
   private static instance: UnifiedNotificationService;
-  private notificationService: any;
+  private isInitialized = false;
 
   private constructor() {
-    // Import the existing notification service
-    this.notificationService = require('./notificationService').default;
+    // No dependencies to prevent circular imports and EAS build issues
   }
 
   public static getInstance(): UnifiedNotificationService {
@@ -33,9 +32,40 @@ export class UnifiedNotificationService {
     return UnifiedNotificationService.instance;
   }
 
+  // CRITICAL FIX: Initialize permissions for EAS builds
+  async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+
+    try {
+      // Request permissions - CRITICAL for EAS builds
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        throw new Error('Notification permissions not granted');
+      }
+
+      this.isInitialized = true;
+      logger.log('[UnifiedNotificationService] Initialized successfully with permissions');
+    } catch (error) {
+      logger.error('[UnifiedNotificationService] Initialization failed:', error);
+      throw error;
+    }
+  }
+
   // Schedule a notification locally (works in EAS builds)
   async scheduleNotification(notification: UnifiedNotification): Promise<string> {
     try {
+      // CRITICAL FIX: Ensure permissions are initialized
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
       const { title, body, type, data, scheduledFor, repeats, repeatInterval } = notification;
 
       // iOS-specific notification content optimization
@@ -74,17 +104,35 @@ export class UnifiedNotificationService {
 
       if (scheduledFor) {
         // Schedule for specific date/time
-        const secondsUntilTrigger = Math.max(1, Math.floor((scheduledFor.getTime() - Date.now()) / 1000));
-        trigger = {
-          type: 'timeInterval',
-          seconds: secondsUntilTrigger,
-          repeats: repeats || false
-        };
+        const secondsUntilTrigger = Math.floor((scheduledFor.getTime() - Date.now()) / 1000);
+        
+        // CRITICAL FIX: Prevent immediate triggers and ensure minimum delay
+        if (secondsUntilTrigger <= 0) {
+          logger.warn(`[UnifiedNotificationService] Attempted to schedule notification for past time: ${scheduledFor.toISOString()}, scheduling for 1 minute from now`);
+          trigger = {
+            type: 'timeInterval',
+            seconds: 60, // Minimum 1 minute delay
+            repeats: repeats || false
+          };
+        } else if (secondsUntilTrigger < 60) {
+          // If less than 1 minute, add buffer
+          trigger = {
+            type: 'timeInterval',
+            seconds: 60,
+            repeats: repeats || false
+          };
+        } else {
+          trigger = {
+            type: 'timeInterval',
+            seconds: secondsUntilTrigger,
+            repeats: repeats || false
+          };
+        }
       } else {
-        // Schedule immediately
+        // Schedule immediately with minimum delay
         trigger = {
           type: 'timeInterval',
-          seconds: 1,
+          seconds: 60, // Minimum 1 minute delay instead of 1 second
           repeats: false
         };
       }
@@ -121,7 +169,97 @@ export class UnifiedNotificationService {
     }
   }
 
-  // Schedule diet notifications locally with day-wise scheduling
+  // CRITICAL FIX: Add custom notification scheduling to unified service
+  async scheduleCustomNotification(notification: {
+    message: string;
+    time: string; // HH:MM format
+    selectedDays: number[]; // 0=Monday, 1=Tuesday, etc.
+    type: 'custom';
+  }): Promise<string> {
+    try {
+      // CRITICAL FIX: Ensure permissions are initialized
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      const { message, time, selectedDays } = notification;
+      const [hours, minutes] = time.split(':').map(Number);
+      
+      // Calculate next occurrence based on selected days
+      const nextOccurrence = this.calculateNextOccurrence(hours, minutes, selectedDays);
+      
+      const unifiedNotification: UnifiedNotification = {
+        id: `custom_${Date.now()}_${Math.random()}`,
+        title: 'Custom Reminder',
+        body: message,
+        type: 'custom',
+        data: {
+          message,
+          time,
+          selectedDays,
+          userId: auth.currentUser?.uid,
+          scheduledFor: nextOccurrence.toISOString(),
+          platform: Platform.OS
+        },
+        scheduledFor: nextOccurrence,
+        repeats: false
+      };
+
+      const scheduledId = await this.scheduleNotification(unifiedNotification);
+      logger.log('[UnifiedNotificationService] Custom notification scheduled:', {
+        message,
+        time,
+        selectedDays,
+        scheduledId,
+        nextOccurrence: nextOccurrence.toISOString()
+      });
+
+      return scheduledId;
+    } catch (error) {
+      logger.error('[UnifiedNotificationService] Failed to schedule custom notification:', error);
+      throw error;
+    }
+  }
+
+  // Calculate next occurrence for custom notifications
+  private calculateNextOccurrence(hours: number, minutes: number, selectedDays: number[]): Date {
+    const now = new Date();
+    const currentDay = now.getDay(); // 0=Sunday, 1=Monday, etc.
+    const targetTime = new Date(now);
+    targetTime.setHours(hours, minutes, 0, 0);
+
+    // Convert selectedDays to match JavaScript day format (0=Sunday)
+    const jsSelectedDays = selectedDays.map(day => (day + 1) % 7); // Convert Monday=0 to Sunday=0
+
+    // Find next occurrence
+    for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+      const checkDate = new Date(now);
+      checkDate.setDate(now.getDate() + dayOffset);
+      const checkDay = checkDate.getDay();
+
+      if (jsSelectedDays.includes(checkDay)) {
+        const occurrence = new Date(checkDate);
+        occurrence.setHours(hours, minutes, 0, 0);
+
+        // If this is today and time hasn't passed, use today
+        if (dayOffset === 0 && occurrence > now) {
+          return occurrence;
+        }
+        // If this is today but time has passed, or it's a future day
+        if (dayOffset > 0) {
+          return occurrence;
+        }
+      }
+    }
+
+    // Fallback: schedule for next week
+    const fallback = new Date(now);
+    fallback.setDate(now.getDate() + 7);
+    fallback.setHours(hours, minutes, 0, 0);
+    return fallback;
+  }
+
+  // Schedule diet notifications locally with improved day-wise scheduling
   async scheduleDietNotifications(notifications: any[]): Promise<string[]> {
     try {
       const scheduledIds: string[] = [];
@@ -130,41 +268,45 @@ export class UnifiedNotificationService {
         const { message, time, selectedDays } = notification;
         const [hours, minutes] = time.split(':').map(Number);
         
-        // Schedule for each selected day
+        // CRITICAL FIX: Group notifications by activity and time, not by day
         if (selectedDays && selectedDays.length > 0) {
-          for (const dayOfWeek of selectedDays) {
-            // Calculate next occurrence for this specific day
-            const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, dayOfWeek);
-            
-            const notificationId = `diet_${Date.now()}_${Math.random()}_day_${dayOfWeek}`;
-            const unifiedNotification: UnifiedNotification = {
-              id: notificationId,
-              title: 'Diet Reminder',
-              body: message,
-              type: 'diet',
-              data: {
-                message,
-                time,
-                dayOfWeek,
-                selectedDays,
-                extractedFrom: notification.extractedFrom,
-                notificationId: notificationId // Add this for specific cancellation
-              },
-              scheduledFor: nextOccurrence,
-              repeats: true,
-              repeatInterval: 7 * 24 * 60 * 60 // 7 days in seconds
-            };
-
-            const scheduledId = await this.scheduleNotification(unifiedNotification);
-            scheduledIds.push(scheduledId);
-            
-            logger.log(`[UnifiedNotificationService] Scheduled diet notification for day ${dayOfWeek}:`, {
+          // Create one notification per activity with proper day filtering
+          const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}`;
+          
+          // Calculate the next occurrence for the first selected day
+          const firstDay = selectedDays[0];
+          const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, firstDay);
+          
+          const unifiedNotification: UnifiedNotification = {
+            id: notificationId,
+            title: 'Diet Reminder',
+            body: message,
+            type: 'diet',
+            data: {
               message,
               time,
-              scheduledFor: nextOccurrence.toISOString(),
-              scheduledId
-            });
-          }
+              selectedDays, // Store all selected days in data
+              extractedFrom: notification.extractedFrom,
+              notificationId: notificationId,
+              // Add activity identifier to prevent duplicates
+              activityId: `${message}_${time}`
+            },
+            scheduledFor: nextOccurrence,
+            repeats: true,
+            repeatInterval: 7 * 24 * 60 * 60 // 7 days in seconds
+          };
+
+          const scheduledId = await this.scheduleNotification(unifiedNotification);
+          scheduledIds.push(scheduledId);
+          
+          logger.log(`[UnifiedNotificationService] Scheduled grouped diet notification:`, {
+            message,
+            time,
+            selectedDays,
+            scheduledFor: nextOccurrence.toISOString(),
+            scheduledId,
+            activityId: `${message}_${time}`
+          });
         } else {
           // Fallback: schedule daily if no specific days selected
           const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes);
@@ -178,10 +320,10 @@ export class UnifiedNotificationService {
             data: {
               message,
               time,
-              dayOfWeek: null,
               selectedDays: [],
               extractedFrom: notification.extractedFrom,
-              notificationId: notificationId
+              notificationId: notificationId,
+              activityId: `${message}_${time}`
             },
             scheduledFor: nextOccurrence,
             repeats: true,
@@ -287,6 +429,17 @@ export class UnifiedNotificationService {
     }
   }
 
+  // Cancel a notification by scheduled ID (for backward compatibility)
+  async cancelNotification(scheduledId: string): Promise<void> {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(scheduledId);
+      logger.log('[UnifiedNotificationService] Cancelled notification by scheduled ID:', scheduledId);
+    } catch (error) {
+      logger.error('[UnifiedNotificationService] Failed to cancel notification by scheduled ID:', error);
+      throw error;
+    }
+  }
+
   // Cancel a specific notification by ID
   async cancelNotificationById(notificationId: string): Promise<boolean> {
     try {
@@ -359,9 +512,9 @@ export class UnifiedNotificationService {
     targetTime.setHours(hours, minutes, 0, 0);
 
     if (dayOfWeek !== undefined) {
-      // Specific day of week
-      const currentDay = now.getDay();
-      const targetDay = (dayOfWeek + 1) % 7; // Convert Monday=0 to Sunday=0
+      // Specific day of week - simplified logic
+      const currentDay = now.getDay(); // Sunday=0, Monday=1, ..., Saturday=6
+      const targetDay = dayOfWeek; // Keep original day numbering (Monday=0, Sunday=6)
       
       let daysToAdd = targetDay - currentDay;
       if (daysToAdd <= 0) daysToAdd += 7; // Next week if today or past
@@ -370,16 +523,18 @@ export class UnifiedNotificationService {
       occurrence.setDate(now.getDate() + daysToAdd);
       occurrence.setHours(hours, minutes, 0, 0);
 
-      // If it's today and time hasn't passed, use today
-      if (daysToAdd === 7 && targetTime > now) {
-        return targetTime;
+      // CRITICAL FIX: Prevent immediate triggers for past times
+      if (occurrence <= now) {
+        // If the calculated time has already passed, schedule for next week
+        occurrence.setDate(occurrence.getDate() + 7);
+        logger.log(`[UnifiedNotificationService] Time ${hours}:${minutes} has passed for day ${dayOfWeek}, scheduling for next week: ${occurrence.toISOString()}`);
       }
 
       return occurrence;
     } else {
       // Daily occurrence
       if (targetTime > now) {
-        return targetTime; // Today
+        return targetTime; // Today if time hasn't passed
       } else {
         const tomorrow = new Date(now);
         tomorrow.setDate(now.getDate() + 1);

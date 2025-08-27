@@ -3862,7 +3862,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const { isFreeUser, setShowUpgradeModal } = useSubscription();
   
   // Import notification service
-  const notificationService = require('./services/notificationService').default;
+
 
   // Show upgrade modal for free users every time screen is focused
   useFocusEffect(
@@ -4170,6 +4170,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
   // Enhanced notification functions using the notification service
   const handleSaveNotification = async () => {
+    const unifiedNotificationService = require('./services/unifiedNotificationService').default;
     if (!message.trim()) {
       setError('Please enter a message');
       return;
@@ -4190,12 +4191,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
 
       if (modalMode === 'add') {
         // Add new notification
-        const scheduledId = await notificationService.scheduleCustomNotification({
+        const scheduledId = await unifiedNotificationService.scheduleCustomNotification({
           message: message.trim(),
           time: timeString,
           selectedDays,
-          type: 'custom',
-          userId: auth.currentUser?.uid || ''
+          type: 'custom'
         });
 
         const newNotification = {
@@ -4221,16 +4221,15 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         // Cancel existing notification
         const existingNotification = notifications.find(n => n.id === currentId);
         if (existingNotification?.scheduledId) {
-          await notificationService.cancelNotification(existingNotification.scheduledId);
+          await unifiedNotificationService.cancelNotification(existingNotification.scheduledId);
         }
 
         // Schedule new notification
-        const scheduledId = await notificationService.scheduleCustomNotification({
+        const scheduledId = await unifiedNotificationService.scheduleCustomNotification({
           message: message.trim(),
           time: timeString,
           selectedDays,
-          type: 'custom',
-          userId: auth.currentUser?.uid || ''
+          type: 'custom'
         });
 
         const updatedNotifications = notifications.map(n => 
