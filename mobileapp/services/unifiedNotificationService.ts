@@ -505,34 +505,45 @@ export class UnifiedNotificationService {
     }
   }
 
-  // Calculate next occurrence for diet notifications
+  // Calculate next occurrence for diet notifications - using same method as custom reminders
   private calculateDietNextOccurrence(hours: number, minutes: number, dayOfWeek?: number): Date {
     const now = new Date();
+    const currentDay = now.getDay(); // 0=Sunday, 1=Monday, etc.
     const targetTime = new Date(now);
     targetTime.setHours(hours, minutes, 0, 0);
 
     if (dayOfWeek !== undefined) {
-      // Specific day of week - simplified logic
-      const currentDay = now.getDay(); // Sunday=0, Monday=1, ..., Saturday=6
-      const targetDay = dayOfWeek; // Keep original day numbering (Monday=0, Sunday=6)
+      // Convert selectedDays to match JavaScript day format (0=Sunday)
+      const jsSelectedDay = (dayOfWeek + 1) % 7; // Convert Monday=0 to Sunday=0
       
-      let daysToAdd = targetDay - currentDay;
-      if (daysToAdd <= 0) daysToAdd += 7; // Next week if today or past
+      // Find next occurrence for the specific day
+      for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+        const checkDate = new Date(now);
+        checkDate.setDate(now.getDate() + dayOffset);
+        const checkDay = checkDate.getDay();
 
-      const occurrence = new Date(now);
-      occurrence.setDate(now.getDate() + daysToAdd);
-      occurrence.setHours(hours, minutes, 0, 0);
+        if (checkDay === jsSelectedDay) {
+          const occurrence = new Date(checkDate);
+          occurrence.setHours(hours, minutes, 0, 0);
 
-      // CRITICAL FIX: Prevent immediate triggers for past times
-      if (occurrence <= now) {
-        // If the calculated time has already passed, schedule for next week
-        occurrence.setDate(occurrence.getDate() + 7);
-        logger.log(`[UnifiedNotificationService] Time ${hours}:${minutes} has passed for day ${dayOfWeek}, scheduling for next week: ${occurrence.toISOString()}`);
+          // If this is today and time hasn't passed, use today
+          if (dayOffset === 0 && occurrence > now) {
+            return occurrence;
+          }
+          // If this is today but time has passed, or it's a future day
+          if (dayOffset > 0) {
+            return occurrence;
+          }
+        }
       }
 
-      return occurrence;
+      // Fallback: schedule for next week
+      const fallback = new Date(now);
+      fallback.setDate(now.getDate() + 7);
+      fallback.setHours(hours, minutes, 0, 0);
+      return fallback;
     } else {
-      // Daily occurrence
+      // Daily occurrence - same logic as custom reminders
       if (targetTime > now) {
         return targetTime; // Today if time hasn't passed
       } else {

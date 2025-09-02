@@ -137,29 +137,22 @@ class NotificationScheduler:
             # Parse the notification time
             target_time = datetime.strptime(notification['time'], '%H:%M').time()
             
-            # Use IST (Indian Standard Time) for day calculations since the diet is in IST
-            ist = pytz.timezone('Asia/Kolkata')
-            now_ist = now.astimezone(ist)
-            
-            # Calculate next occurrence of this day and time in IST
-            # Fix: Ensure we're calculating the correct day by using proper day boundary logic
-            days_ahead = (day - now_ist.weekday()) % 7
+            # Use UTC for consistent timezone handling across all environments
+            # This ensures notifications work correctly in both Expo Go and EAS builds
+            days_ahead = (day - now.weekday()) % 7
             
             # If it's the same day and the time has already passed, go to next week
-            if days_ahead == 0 and now_ist.time() >= target_time:
+            if days_ahead == 0 and now.time() >= target_time:
                 days_ahead = 7
             
-            # Calculate the next occurrence in IST
-            next_occurrence_ist = now_ist + timedelta(days=days_ahead)
-            next_occurrence_ist = next_occurrence_ist.replace(
+            # Calculate the next occurrence in UTC
+            next_occurrence = now + timedelta(days=days_ahead)
+            next_occurrence = next_occurrence.replace(
                 hour=target_time.hour, 
                 minute=target_time.minute, 
                 second=0, 
                 microsecond=0
             )
-            
-            # Convert back to UTC for storage
-            next_occurrence = next_occurrence_ist.astimezone(pytz.UTC)
             
             # Prepare the scheduled notification document
             scheduled_notification = {
@@ -174,10 +167,9 @@ class NotificationScheduler:
             }
             
             logger.info(f"Prepared notification for user {user_id} on {self.days_of_week[day]} at {notification['time']}")
-            logger.info(f"  Current IST: {now_ist.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {now_ist.weekday()})")
+            logger.info(f"  Current UTC: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {now.weekday()})")
             logger.info(f"  Target day: {self.days_of_week[day]} (day {day})")
             logger.info(f"  Days ahead: {days_ahead}")
-            logger.info(f"  Next occurrence IST: {next_occurrence_ist.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {next_occurrence_ist.weekday()})")
             logger.info(f"  Next occurrence UTC: {next_occurrence.strftime('%Y-%m-%d %H:%M:%S %Z')} (weekday: {next_occurrence.weekday()})")
             return scheduled_notification
             

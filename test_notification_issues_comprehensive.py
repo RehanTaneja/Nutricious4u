@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Notification Fixes Verification Test
-Tests all notification fixes after implementation
+Comprehensive Notification Issues Test
+Tests all notification systems to identify issues before fixes
 """
 
 import os
@@ -95,9 +95,9 @@ def test_notification_targeting():
     except Exception as e:
         print(f"❌ Error reading firebase_client.py: {e}")
 
-def test_timezone_handling():
-    """Test timezone handling"""
-    print("\n🔍 TESTING TIMEZONE HANDLING")
+def test_notification_scheduler():
+    """Test notification scheduler configuration"""
+    print("\n🔍 TESTING NOTIFICATION SCHEDULER")
     
     try:
         with open("backend/services/notification_scheduler.py", "r") as f:
@@ -114,13 +114,25 @@ def test_timezone_handling():
             print("⚠️ IST timezone usage found (may cause issues)")
         else:
             print("✅ No IST timezone usage")
+        
+        # Check user token usage
+        if "get_user_notification_token" in content:
+            print("✅ User notification token usage found")
+        else:
+            print("❌ User notification token usage missing")
+        
+        # Check notification sending to users
+        if "send_push_notification(token=user_token" in content:
+            print("✅ Regular diet notifications sent to users")
+        else:
+            print("❌ Regular diet notifications not sent to users")
             
     except Exception as e:
         print(f"❌ Error reading notification_scheduler.py: {e}")
 
-def test_duplicate_logic():
-    """Test for duplicate notification logic"""
-    print("\n🔍 TESTING DUPLICATE LOGIC")
+def test_server_scheduled_jobs():
+    """Test server scheduled jobs"""
+    print("\n🔍 TESTING SERVER SCHEDULED JOBS")
     
     try:
         with open("backend/server.py", "r") as f:
@@ -142,18 +154,72 @@ def test_duplicate_logic():
     except Exception as e:
         print(f"❌ Error reading server.py: {e}")
 
+def test_diet_notification_service():
+    """Test diet notification service"""
+    print("\n🔍 TESTING DIET NOTIFICATION SERVICE")
+    
+    try:
+        with open("backend/services/diet_notification_service.py", "r") as f:
+            content = f.read()
+        
+        # Check user token usage
+        if "get_user_notification_token(user_id)" in content:
+            print("✅ User notification token usage found")
+        else:
+            print("❌ User notification token usage missing")
+        
+        # Check notification sending to users
+        if "send_push_notification(token=user_token" in content:
+            print("✅ Diet notifications sent to users")
+        else:
+            print("❌ Diet notifications not sent to users")
+            
+    except Exception as e:
+        print(f"❌ Error reading diet_notification_service.py: {e}")
+
+def test_expo_notifications_configuration():
+    """Test Expo notifications configuration"""
+    print("\n🔍 TESTING EXPO NOTIFICATIONS CONFIGURATION")
+    
+    try:
+        with open("mobileapp/app.json", "r") as f:
+            app_config = json.load(f)
+        
+        plugins = app_config.get("expo", {}).get("plugins", [])
+        
+        # Check expo-notifications plugin mode
+        expo_notifications_plugin = None
+        for plugin in plugins:
+            if isinstance(plugin, list) and len(plugin) > 0 and plugin[0] == "expo-notifications":
+                expo_notifications_plugin = plugin[1] if len(plugin) > 1 else {}
+                break
+        
+        if expo_notifications_plugin:
+            mode = expo_notifications_plugin.get("mode")
+            if mode == "production":
+                print("✅ Expo notifications plugin in production mode")
+            else:
+                print(f"⚠️ Expo notifications plugin mode: {mode}")
+        else:
+            print("❌ Expo notifications plugin not found")
+            
+    except Exception as e:
+        print(f"❌ Error reading app.json: {e}")
+
 def main():
     """Run all tests"""
-    print("🚀 NOTIFICATION FIXES VERIFICATION TEST")
+    print("🚀 COMPREHENSIVE NOTIFICATION ISSUES TEST")
     print("=" * 50)
     
     test_notification_icon_configuration()
     test_notification_targeting()
-    test_timezone_handling()
-    test_duplicate_logic()
+    test_notification_scheduler()
+    test_server_scheduled_jobs()
+    test_diet_notification_service()
+    test_expo_notifications_configuration()
     
     print("\n" + "=" * 50)
-    print("✅ VERIFICATION TEST COMPLETED")
+    print("✅ COMPREHENSIVE TEST COMPLETED")
 
 if __name__ == "__main__":
     main()

@@ -34,8 +34,12 @@
             }
           }
         },
-        "UIRequiredDeviceCapabilities": ["armv7"],
-        "UIBackgroundModes": ["remote-notification"]
+        "UIRequiredDeviceCapabilities": [
+          "armv7"
+        ],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "buildNumber": "1"
     },
@@ -93,7 +97,6 @@
         "projectId": "23b497a5-baac-44c7-82a4-487a59bfff5b"
       }
     },
-
     "platforms": [
       "ios",
       "android"
