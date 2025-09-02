@@ -380,9 +380,25 @@ def check_users_with_one_day_remaining():
                 days_remaining = total_hours_remaining // 24
                 
                 if days_remaining == 1:
+                    # Get proper user name (first name + last name)
+                    first_name = data.get('firstName', '').strip()
+                    last_name = data.get('lastName', '').strip()
+                    
+                    # Create proper name format
+                    if first_name and last_name:
+                        full_name = f"{first_name} {last_name}"
+                    elif first_name:
+                        full_name = first_name
+                    elif last_name:
+                        full_name = last_name
+                    else:
+                        full_name = "User"  # Fallback
+                    
                     one_day_users.append({
                         "userId": user.id,
-                        "name": f"{data.get('firstName', '')} {data.get('lastName', '')}".strip(),
+                        "name": full_name,
+                        "firstName": first_name,
+                        "lastName": last_name,
                         "email": data.get('email', '')
                     })
         
@@ -390,14 +406,23 @@ def check_users_with_one_day_remaining():
         if one_day_users:
             dietician_token = get_dietician_notification_token()
             if dietician_token:
-                user_names = ", ".join([user["name"] for user in one_day_users])
+                # Create proper message with user names
+                if len(one_day_users) == 1:
+                    user_name = one_day_users[0]["name"]
+                    message = f"{user_name} has 1 day left in their diet"
+                else:
+                    user_names = [user["name"] for user in one_day_users]
+                    message = f"{', '.join(user_names)} have 1 day left in their diets"
+                
                 send_push_notification(
                     dietician_token,
                     "Diet Reminder",
-                    f"1 day left for {user_names}'s diet",
+                    message,
                     {"type": "diet_reminder", "users": one_day_users}
                 )
-                print(f"Sent diet reminder notification for {len(one_day_users)} users")
+                print(f"Sent diet reminder notification to dietician: {message}")
+            else:
+                print("No dietician notification token found")
         
         return one_day_users
         

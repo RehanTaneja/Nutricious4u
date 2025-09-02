@@ -2636,23 +2636,8 @@ async def check_diet_reminders_job():
         
         if one_day_users:
             print(f"[Diet Reminders] Found {len(one_day_users)} users with 1 day remaining")
-            
-            # Get dietician notification token
-            dietician_token = get_dietician_notification_token()
-            if dietician_token:
-                # Send notification to dietician
-                user_names = [user["userName"] for user in one_day_users]
-                message = f"Users with 1 day remaining: {', '.join(user_names)}"
-                
-                send_push_notification(
-                    dietician_token,
-                    "Diet Reminder Alert",
-                    message,
-                    {"type": "diet_reminder", "users": one_day_users}
-                )
-                print(f"[Diet Reminders] Sent notification to dietician about {len(one_day_users)} users")
-            else:
-                print("[Diet Reminders] No dietician notification token found")
+            # The notification is already sent by check_users_with_one_day_remaining()
+            print(f"[Diet Reminders] Notification sent to dietician for {len(one_day_users)} users")
         else:
             print("[Diet Reminders] No users with 1 day remaining")
             
