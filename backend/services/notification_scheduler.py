@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """
-Notification Scheduler Service
-Handles day-based notification scheduling and sending
+NOTIFICATION SCHEDULER SERVICE - TEMPORARILY DISABLED
+This complex scheduler has been commented out to create a simpler, more reliable system.
+All notifications will now be scheduled locally on the device using Expo's built-in system.
 """
 
-import asyncio
-import logging
-from datetime import datetime, timedelta
-import pytz
-from typing import List, Dict
-import firebase_admin
-from firebase_admin import firestore
+# TEMPORARILY DISABLED - Complex notification scheduler
+# import asyncio
+# import logging
+# from datetime import datetime, timedelta
+# import pytz
+# from typing import List, Dict
+# import firebase_admin
+# from firebase_admin import firestore
 
-from services.firebase_client import send_push_notification, get_user_notification_token
+# from services.firebase_client import send_push_notification, get_user_notification_token
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
+# TEMPORARILY DISABLED - Complex notification scheduler
 class NotificationScheduler:
+    """
+    TEMPORARILY DISABLED - This complex scheduler has been replaced with simple local scheduling
+    """
     def __init__(self, db):
         self.db = db
         self.days_of_week = {
@@ -29,38 +35,13 @@ class NotificationScheduler:
             6: "Sunday"
         }
     
+    # TEMPORARILY DISABLED - Complex notification scheduler
     async def cancel_user_notifications(self, user_id: str) -> int:
         """
-        Cancel all scheduled notifications for a user.
-        Returns the number of notifications cancelled.
+        TEMPORARILY DISABLED - This method has been replaced with simple local scheduling
         """
-        try:
-            logger.info(f"Cancelling all scheduled notifications for user {user_id}")
-            
-            # Get all scheduled notifications for this user
-            scheduled_ref = self.db.collection("scheduled_notifications")
-            user_notifications = scheduled_ref.where("user_id", "==", user_id).where("status", "==", "scheduled").stream()
-            
-            cancelled_count = 0
-            
-            for doc in user_notifications:
-                try:
-                    # Update status to cancelled
-                    doc.reference.update({
-                        'status': 'cancelled',
-                        'cancelled_at': datetime.now(pytz.UTC).isoformat()
-                    })
-                    cancelled_count += 1
-                    logger.info(f"Cancelled scheduled notification: {doc.id}")
-                except Exception as e:
-                    logger.error(f"Error cancelling notification {doc.id}: {e}")
-            
-            logger.info(f"Cancelled {cancelled_count} scheduled notifications for user {user_id}")
-            return cancelled_count
-            
-        except Exception as e:
-            logger.error(f"Error cancelling notifications for user {user_id}: {e}")
-            return 0
+        print(f"[NOTIFICATION SCHEDULER] TEMPORARILY DISABLED - cancel_user_notifications for user {user_id}")
+        return 0
 
     async def schedule_user_notifications(self, user_id: str) -> int:
         """

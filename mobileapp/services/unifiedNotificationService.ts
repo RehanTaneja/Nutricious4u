@@ -407,27 +407,9 @@ export class UnifiedNotificationService {
   }
 
   // Schedule diet reminder notification locally
-  async scheduleDietReminderNotification(userId: string, userName: string): Promise<string> {
-    try {
-      const unifiedNotification: UnifiedNotification = {
-        id: `diet_reminder_${Date.now()}`,
-        title: 'Diet Reminder Alert',
-        body: `User ${userName} has 1 day remaining on their diet plan.`,
-        type: 'diet_reminder',
-        data: {
-          userId,
-          userName
-        }
-      };
-
-      const scheduledId = await this.scheduleNotification(unifiedNotification);
-      logger.log('[UnifiedNotificationService] Diet reminder notification scheduled:', scheduledId);
-      return scheduledId;
-    } catch (error) {
-      logger.error('[UnifiedNotificationService] Failed to schedule diet reminder notification:', error);
-      throw error;
-    }
-  }
+  // REMOVED: scheduleDietReminderNotification method
+  // This was causing users to receive "1 day left" notifications meant for dieticians
+  // "1 day left" notifications should only be sent to dieticians from the backend
 
   // Cancel a notification by scheduled ID (for backward compatibility)
   async cancelNotification(scheduledId: string): Promise<void> {

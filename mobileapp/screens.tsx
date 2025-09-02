@@ -1161,20 +1161,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 hours: hoursRemaining
               });
               
-              // Check if user has 1 day remaining and notify dietician locally
-              if (daysRemaining === 1) {
-                try {
-                  // Schedule diet reminder notification locally for dietician
-                  const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-                  const userName = userProfile?.firstName && userProfile?.lastName 
-                    ? `${userProfile.firstName} ${userProfile.lastName}`.trim()
-                    : 'User';
-                  await unifiedNotificationService.scheduleDietReminderNotification(userId, userName);
-                  console.log('[Dashboard Debug] Diet reminder notification scheduled locally for dietician');
-                } catch (notificationError) {
-                  console.error('[Dashboard Debug] Error scheduling diet reminder notification:', notificationError);
-                }
-              }
+              // REMOVED: Local "1 day left" notification scheduling
+              // This was causing users to receive notifications meant for dieticians
+              // "1 day left" notifications should only be sent to dieticians from the backend
             } else {
               setDaysLeft(null);
             }

@@ -51,7 +51,7 @@ from services.pdf_rag_service import pdf_rag_service
 # Add import for diet notification service
 from services.diet_notification_service import diet_notification_service
 # Add import for notification scheduler
-from services.notification_scheduler import get_notification_scheduler
+from services.notification_scheduler_simple import get_simple_notification_scheduler as get_notification_scheduler
 import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor
