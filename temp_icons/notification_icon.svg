@@ -1,0 +1,18 @@
+<svg width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle with transparency -->
+  <circle cx="48" cy="48" r="44" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.9"/>
+  
+  <!-- Apple/nutrition symbol -->
+  <path d="M48 20 C52 20, 56 24, 56 28 C56 32, 52 36, 48 36 C44 36, 40 32, 40 28 C40 24, 44 20, 48 20 Z" fill="#ffffff"/>
+  
+  <!-- Leaf -->
+  <path d="M56 28 Q60 26, 62 30 Q60 34, 56 32" fill="#ffffff" opacity="0.8"/>
+  
+  <!-- Stem -->
+  <path d="M48 36 L48 44" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Nutrition lines -->
+  <path d="M32 52 L64 52" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+  <path d="M36 60 L60 60" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+  <path d="M40 68 L56 68" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+</svg>

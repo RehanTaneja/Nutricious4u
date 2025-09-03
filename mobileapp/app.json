@@ -6,16 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "notification": {
-      "icon": "./assets/notification_icon_96.png",
-      "color": "#ffffff",
-      "androidMode": "default",
-      "androidCollapsedTitle": "Nutricious4u",
-      "ios": {
-        "icon": "./assets/notification_icon_96.png"
-      },
-      "android": {
-        "icon": "./assets/notification_icon_48.png"
-      }
+      "icon": "./assets/notification_icon_48.png",
+      "color": "#ffffff"
     },
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
@@ -47,11 +39,7 @@
           "remote-notification"
         ]
       },
-      "buildNumber": "1",
-      "notification": {
-        "icon": "./assets/notification_icon_96.png",
-        "color": "#ffffff"
-      }
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -67,11 +55,7 @@
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK"
       ],
-      "versionCode": 3,
-      "notification": {
-        "icon": "./assets/notification_icon_48.png",
-        "color": "#ffffff"
-      }
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -99,7 +83,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification_icon_96.png",
+          "icon": "./assets/notification_icon_48.png",
           "color": "#ffffff",
           "mode": "production"
         }
