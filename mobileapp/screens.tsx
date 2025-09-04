@@ -3921,18 +3921,6 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     return timeA.localeCompare(timeB);
   });
 
-  // Helper to convert IST hour/minute to local time
-  function getLocalTimeFromIST(hour: number, minute: number): Date {
-    const now = new Date();
-    // IST is UTC+5:30
-    const istOffset = 5.5 * 60; // in minutes
-    const localOffset = -now.getTimezoneOffset(); // in minutes
-    const diff = localOffset - istOffset;
-    const localDate = new Date(now);
-    localDate.setHours(hour, minute, 0, 0);
-    localDate.setMinutes(localDate.getMinutes() + diff);
-    return localDate;
-  }
 
   // Helper functions for day selection
   const toggleDay = (dayId: number) => {
@@ -4459,29 +4447,24 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Schedule notifications for multiple days to ensure reliability
-  const scheduleMultipleDays = async (notification: any) => {
+  // Schedule single notification (removed multiple day scheduling to prevent duplicates)
+  const scheduleSingleNotification = async (notification: any) => {
     try {
-      // Schedule for today/tomorrow (primary)
-      const primaryId = await scheduleDietNotification(notification, 0);
+      // Schedule only one notification for the specified time
+      const scheduledId = await scheduleDietNotification(notification, 0);
       
-      // Also schedule for the next few days as backup
-      const backupIds = [];
-      for (let day = 1; day <= 3; day++) {
-        try {
-          const backupId = await scheduleDietNotification(notification, day);
-          backupIds.push(backupId);
-        } catch (error) {
-          console.error(`[Diet Notifications] Failed to schedule backup for day ${day}:`, error);
-        }
-      }
+      console.log('[Diet Notifications] ✅ Single notification scheduled successfully:', {
+        message: notification.message,
+        time: notification.time,
+        scheduledId
+      });
       
       return {
-        primaryId,
-        backupIds
+        primaryId: scheduledId,
+        backupIds: [] // No backup notifications to prevent duplicates
       };
     } catch (error) {
-      console.error('[Diet Notifications] Error in multiple day scheduling:', error);
+      console.error('[Diet Notifications] Error in single notification scheduling:', error);
       throw error;
     }
   };
@@ -4955,13 +4938,13 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                   placeholder="Enter your custom message"
                   maxLength={100}
                 />
-                <Text style={styles.modalLabel}>Time (IST)</Text>
+                <Text style={styles.modalLabel}>Time</Text>
                 <TouchableOpacity
                   style={[styles.modalInput, { justifyContent: 'center', height: 48 }]}
                   onPress={() => setShowTimePicker(true)}
                 >
                   <Text style={{ color: COLORS.text, fontSize: 16 }}>
-                    {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST
+                    {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                 </TouchableOpacity>
                 {showTimePicker && (

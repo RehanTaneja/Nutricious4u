@@ -292,7 +292,7 @@ export class UnifiedNotificationService {
               activityId: `${message}_${time}`
             },
             scheduledFor: nextOccurrence,
-            repeats: true,
+            repeats: true, // Enable weekly repeats for diet notifications
             repeatInterval: 7 * 24 * 60 * 60 // 7 days in seconds
           };
 
@@ -326,8 +326,8 @@ export class UnifiedNotificationService {
               activityId: `${message}_${time}`
             },
             scheduledFor: nextOccurrence,
-            repeats: true,
-            repeatInterval: 24 * 60 * 60 // Daily
+            repeats: true, // Enable daily repeats for diet notifications
+            repeatInterval: 24 * 60 * 60 // Daily in seconds
           };
 
           const scheduledId = await this.scheduleNotification(unifiedNotification);
