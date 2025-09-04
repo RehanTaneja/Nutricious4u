@@ -138,7 +138,7 @@ class UserProfile(BaseModel):
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
     # Subscription fields
-    subscriptionPlan: Optional[str] = None  # '1month', '3months', '6months'
+    subscriptionPlan: Optional[str] = None  # '1month', '2months', '3months'
     subscriptionStartDate: Optional[str] = None
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = 0.0
@@ -2739,9 +2739,9 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         
         # Get plan details
         plan_prices = {
-            "1month": 5000.0,
-            "3months": 8000.0,
-            "6months": 20000.0
+            "1month": 5500.0,
+            "2months": 10000.0,
+            "3months": 14000.0
         }
         
         if current_plan not in plan_prices:
@@ -2754,10 +2754,10 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         start_date = datetime.now()
         if current_plan == "1month":
             end_date = start_date + timedelta(days=30)
+        elif current_plan == "2months":
+            end_date = start_date + timedelta(days=60)
         elif current_plan == "3months":
             end_date = start_date + timedelta(days=90)
-        elif current_plan == "6months":
-            end_date = start_date + timedelta(days=180)
         
         # Calculate new total amount
         new_total = current_total + plan_prices[current_plan]
@@ -2929,8 +2929,8 @@ def get_plan_name(plan_id: str) -> str:
     """Get plan name from plan ID"""
     plan_names = {
         "1month": "1 Month Plan",
-        "3months": "3 Months Plan", 
-        "6months": "6 Months Plan"
+        "2months": "2 Months Plan",
+        "3months": "3 Months Plan"
     }
     return plan_names.get(plan_id, "Unknown Plan")
 
@@ -2983,7 +2983,7 @@ async def get_subscription_plans():
                 "planId": "1month",
                 "name": "1 Month Plan",
                 "duration": "1 month",
-                "price": 5000.0,
+                "price": 5500.0,
                 "description": "Access to premium features for 1 month",
                 "features": [
                     "Personalized diet plans",
@@ -2996,11 +2996,11 @@ async def get_subscription_plans():
                 "isFree": False
             },
             {
-                "planId": "3months", 
-                "name": "3 Months Plan",
-                "duration": "3 months",
-                "price": 8000.0,
-                "description": "Access to premium features for 3 months",
+                "planId": "2months", 
+                "name": "2 Months Plan",
+                "duration": "2 months",
+                "price": 10000.0,
+                "description": "Access to premium features for 2 months",
                 "features": [
                     "Personalized diet plans",
                     "AI Chatbot support",
@@ -3013,11 +3013,11 @@ async def get_subscription_plans():
                 "isFree": False
             },
             {
-                "planId": "6months",
-                "name": "6 Months Plan", 
-                "duration": "6 months",
-                "price": 20000.0,
-                "description": "Access to premium features for 6 months",
+                "planId": "3months", 
+                "name": "3 Months Plan",
+                "duration": "3 months",
+                "price": 14000.0,
+                "description": "Access to premium features for 3 months",
                 "features": [
                     "Personalized diet plans",
                     "AI Chatbot support",
@@ -3044,9 +3044,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         # Get plan details
         plan_prices = {
-            "1month": 5000.0,
-            "3months": 8000.0,
-            "6months": 20000.0
+            "1month": 5500.0,
+            "2months": 10000.0,
+            "3months": 14000.0
         }
         
         if request.planId not in plan_prices:
@@ -3071,10 +3071,10 @@ async def select_subscription(request: SelectSubscriptionRequest):
         start_date = datetime.now()
         if request.planId == "1month":
             end_date = start_date + timedelta(days=30)
+        elif request.planId == "2months":
+            end_date = start_date + timedelta(days=60)
         elif request.planId == "3months":
             end_date = start_date + timedelta(days=90)
-        elif request.planId == "6months":
-            end_date = start_date + timedelta(days=180)
         
         # Check if user already has an active subscription
         has_active_subscription = user_data.get("isSubscriptionActive", False)
@@ -3299,9 +3299,9 @@ async def add_subscription_amount(userId: str, planId: str):
         
         # Get plan details
         plan_prices = {
-            "1month": 5000.0,
-            "3months": 8000.0,
-            "6months": 20000.0
+            "1month": 5500.0,
+            "2months": 10000.0,
+            "3months": 14000.0
         }
         
         if planId not in plan_prices:
@@ -3462,8 +3462,8 @@ async def get_user_details(user_id: str):
         # Format plan name for display
         plan_names = {
             "1month": "1 Month Plan",
-            "3months": "3 Months Plan", 
-            "6months": "6 Months Plan"
+            "2months": "2 Months Plan",
+            "3months": "3 Months Plan"
         }
         plan_display_name = plan_names.get(subscription_plan, subscription_plan or "No Plan")
         
@@ -3748,6 +3748,57 @@ def get_recipes_from_firestore():
     except Exception as e:
         logger.error(f"Error in get_recipes_from_firestore: {e}")
         return []
+
+# --- Notification Scheduler Endpoints ---
+@api_router.post("/notifications/check-due")
+async def check_due_notifications():
+    """
+    Check and send due notifications.
+    This endpoint can be called by a scheduled job (cron, etc.) to send notifications.
+    """
+    try:
+        check_firebase_availability()
+        
+        # Get the notification scheduler
+        scheduler = get_notification_scheduler(firestore_db)
+        
+        # Send due notifications
+        sent_count = await scheduler.send_due_notifications()
+        
+        return {
+            "success": True,
+            "sent_count": sent_count,
+            "message": f"Successfully sent {sent_count} due notifications"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking due notifications: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check due notifications: {str(e)}")
+
+@api_router.post("/notifications/schedule-user/{user_id}")
+async def schedule_user_notifications_manual(user_id: str):
+    """
+    Manually trigger notification scheduling for a specific user.
+    Useful for testing or manual scheduling.
+    """
+    try:
+        check_firebase_availability()
+        
+        # Get the notification scheduler
+        scheduler = get_notification_scheduler(firestore_db)
+        
+        # Schedule notifications for the user
+        scheduled_count = await scheduler.schedule_user_notifications(user_id)
+        
+        return {
+            "success": True,
+            "scheduled_count": scheduled_count,
+            "message": f"Successfully scheduled {scheduled_count} notifications for user {user_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error scheduling notifications for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to schedule notifications: {str(e)}")
 
 app.include_router(api_router)
 

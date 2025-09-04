@@ -9326,8 +9326,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const getPlanName = (planId: string) => {
     switch (planId) {
       case '1month': return '1 Month Plan';
+      case '2months': return '2 Months Plan';
       case '3months': return '3 Months Plan';
-      case '6months': return '6 Months Plan';
       default: return 'Unknown Plan';
     }
   };
@@ -9339,21 +9339,21 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       planId: '1month',
       name: '1 Month Plan',
       duration: '1 month',
-      price: 5000,
+      price: 5500,
       description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect for getting started with your fitness journey'
+    },
+    {
+      planId: '2months',
+      name: '2 Months Plan',
+      duration: '2 months',
+      price: 10000,
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Great value for consistent progress tracking'
     },
     {
       planId: '3months',
       name: '3 Months Plan',
       duration: '3 months',
-      price: 8000,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Great value for consistent progress tracking'
-    },
-    {
-      planId: '6months',
-      name: '6 Months Plan',
-      duration: '6 months',
-      price: 20000,
+      price: 14000,
       description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Best value for long-term fitness goals'
     }
   ];
@@ -10534,6 +10534,27 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     }
     return slots;
   });
+
+  // Helper function to format time consistently
+  const formatTimeDisplay = (time: string) => {
+    if (!time) return '';
+    // Ensure time is in HH:MM format
+    if (time.includes(':')) {
+      return time;
+    }
+    // If it's just a number, convert to HH:00 format
+    const hour = parseInt(time);
+    if (!isNaN(hour)) {
+      return `${hour.toString().padStart(2, '0')}:00`;
+    }
+    return time;
+  };
+
+  // Helper function to reset break form
+  const resetBreakForm = () => {
+    setNewBreakFromTime(null);
+    setNewBreakToTime(null);
+  };
   const [breaks, setBreaks] = React.useState<any[]>([]); // Simplified for users - no breaks needed
   const [breaksModalVisible, setBreaksModalVisible] = React.useState(false);
   // Add state for new break time range selection
@@ -10815,8 +10836,18 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         toTime: toTime,
         specificDate: specificDate || null // null for daily breaks, date string for specific date breaks
       });
-      setNewBreakFromTime(null);
-      setNewBreakToTime(null);
+      
+      // Reset form and show success message
+      resetBreakForm();
+      setSuccessMessage(`Break added successfully from ${fromTime} to ${toTime}`);
+      setShowSuccessMessage(true);
+      
+      // Close the modal after successful addition
+      setBreaksModalVisible(false);
+      
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
     } catch (error) {
       console.error('Error adding break:', error);
     } finally {
@@ -11071,72 +11102,110 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
               <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
                 <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>Manage Daily Breaks</Text>
                         {/* List of current breaks */}
+        {(() => {
+          console.log('[Break Management] Current breaks:', breaks);
+          return null;
+        })()}
         {breaks.length === 0 ? (
           <Text style={{ color: '#888', marginBottom: 12, textAlign: 'center' }}>No breaks set.</Text>
         ) : (
           breaks.map((breakItem, idx) => (
-            <View key={breakItem.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 8 }}>
+            <View key={breakItem.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 8, backgroundColor: '#f8f9fa', borderRadius: 8, padding: 12 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16 }}>{breakItem.fromTime} - {breakItem.toTime}</Text>
-                <Text style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#333' }}>
+                  {formatTimeDisplay(breakItem.fromTime)} - {formatTimeDisplay(breakItem.toTime)}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
                   {breakItem.specificDate ? `Specific: ${new Date(breakItem.specificDate).toLocaleDateString()}` : 'Daily Break'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => handleRemoveBreak(breakItem.id)} style={{ marginLeft: 8, padding: 6 }}>
-                <Text style={{ color: '#ff4444', fontWeight: 'bold' }}>Remove</Text>
+              <TouchableOpacity onPress={() => handleRemoveBreak(breakItem.id)} style={{ marginLeft: 8, padding: 8, backgroundColor: '#ff4444', borderRadius: 6 }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>Remove</Text>
               </TouchableOpacity>
             </View>
           ))
         )}
         {/* Add break UI */}
         <View style={{ marginTop: 24, marginBottom: 8, paddingHorizontal: 8 }}>
-          <Text style={{ fontSize: 16, marginBottom: 12, textAlign: 'center' }}>Add New Break:</Text>
+          <Text style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: '600', color: '#333' }}>Add New Break:</Text>
           
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <Text style={{ fontSize: 14, marginRight: 8 }}>From:</Text>
-            <View style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fafafa' }}>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, marginBottom: 8, color: '#555', fontWeight: '500' }}>From:</Text>
+            <View style={{ borderWidth: 1, borderColor: newBreakFromTime ? '#34D399' : '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fff' }}>
               <Picker
                 selectedValue={newBreakFromTime}
-                style={{ width: '100%', height: 44 }}
+                style={{ width: '100%', height: 50 }}
                 onValueChange={itemValue => setNewBreakFromTime(itemValue)}
+                itemStyle={{ fontSize: 16, color: '#333' }}
               >
-                <Picker.Item label="Select time" value={null} />
+                <Picker.Item label="Select start time" value={null} color="#999" />
                 {timeSlots.map(slot => (
-                  <Picker.Item key={slot} label={slot} value={slot} />
+                  <Picker.Item key={slot} label={slot} value={slot} color="#333" />
                 ))}
               </Picker>
             </View>
+            {newBreakFromTime && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399', marginRight: 6 }} />
+                <Text style={{ fontSize: 12, color: '#34D399', fontWeight: '500' }}>
+                  Start time: {newBreakFromTime}
+                </Text>
+              </View>
+            )}
           </View>
           
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ fontSize: 14, marginRight: 8 }}>To:</Text>
-            <View style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fafafa' }}>
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, marginBottom: 8, color: '#555', fontWeight: '500' }}>To:</Text>
+            <View style={{ borderWidth: 1, borderColor: newBreakToTime ? '#34D399' : '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fff' }}>
               <Picker
                 selectedValue={newBreakToTime}
-                style={{ width: '100%', height: 44 }}
+                style={{ width: '100%', height: 50 }}
                 onValueChange={itemValue => setNewBreakToTime(itemValue)}
+                itemStyle={{ fontSize: 16, color: '#333' }}
               >
-                <Picker.Item label="Select time" value={null} />
+                <Picker.Item label="Select end time" value={null} color="#999" />
                 {timeSlots.filter(slot => !newBreakFromTime || slot > newBreakFromTime).map(slot => (
-                  <Picker.Item key={slot} label={slot} value={slot} />
+                  <Picker.Item key={slot} label={slot} value={slot} color="#333" />
                 ))}
               </Picker>
             </View>
+            {newBreakToTime && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399', marginRight: 6 }} />
+                <Text style={{ fontSize: 12, color: '#34D399', fontWeight: '500' }}>
+                  End time: {newBreakToTime}
+                </Text>
+              </View>
+            )}
           </View>
+          
+          {newBreakFromTime && newBreakToTime && (
+            <View style={{ backgroundColor: '#f0f9ff', padding: 12, borderRadius: 8, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: '#34D399' }}>
+              <Text style={{ fontSize: 14, color: '#0369a1', textAlign: 'center', fontWeight: '500' }}>
+                Break will be set from {newBreakFromTime} to {newBreakToTime}
+              </Text>
+            </View>
+          )}
           
           <TouchableOpacity
             style={{ 
-              backgroundColor: '#fbbf24', 
-              paddingVertical: 10, 
-              paddingHorizontal: 18, 
+              backgroundColor: (!newBreakFromTime || !newBreakToTime || breaksLoading) ? '#ccc' : '#34D399', 
+              paddingVertical: 12, 
+              paddingHorizontal: 24, 
               borderRadius: 8, 
               alignItems: 'center',
-              opacity: (!newBreakFromTime || !newBreakToTime || breaksLoading) ? 0.6 : 1
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3
             }}
             onPress={() => newBreakFromTime && newBreakToTime && handleAddBreak(newBreakFromTime, newBreakToTime)}
             disabled={!newBreakFromTime || !newBreakToTime || breaksLoading}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Break</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+              {breaksLoading ? 'Adding...' : 'Add Break'}
+            </Text>
           </TouchableOpacity>
         </View>
                 <TouchableOpacity
