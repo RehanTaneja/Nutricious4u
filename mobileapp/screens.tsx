@@ -4469,16 +4469,24 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Set up notification listener to reschedule daily and handle new diets
+  // Set up notification listener to handle new diets (removed rescheduling to prevent random repeats)
   useEffect(() => {
+    let isRefreshing = false; // Prevent multiple rapid refreshes
+    
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data;
       
-      // Handle new diet notifications - automatically refresh diet notifications
-      if (data?.type === 'new_diet') {
+      // Handle new diet notifications - only refresh for new diet uploads, not regular reminders
+      if (data?.type === 'new_diet' && !isRefreshing) {
         console.log('[Diet Notifications] Received new diet notification, refreshing diet notifications');
-        // Refresh diet notifications to show the newly extracted notifications (already extracted on backend)
-        await loadDietNotifications();
+        isRefreshing = true;
+        try {
+          // Only refresh for new diet uploads, not for regular diet reminders
+          // This prevents random rescheduling of existing notifications
+          await loadDietNotifications();
+        } finally {
+          isRefreshing = false;
+        }
       }
       
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
