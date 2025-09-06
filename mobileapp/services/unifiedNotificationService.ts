@@ -20,6 +20,8 @@ export interface UnifiedNotification {
 export class UnifiedNotificationService {
   private static instance: UnifiedNotificationService;
   private isInitialized = false;
+  private notificationDeduplication: Set<string> = new Set(); // Track processed notifications
+  private lastNotificationTime: Map<string, number> = new Map(); // Track last notification time per message
 
   private constructor() {
     // No dependencies to prevent circular imports and EAS build issues
@@ -58,9 +60,31 @@ export class UnifiedNotificationService {
     }
   }
 
+  // CRITICAL FIX: Add deduplication to prevent random repeats
+  private isDuplicateNotification(notification: UnifiedNotification): boolean {
+    const notificationKey = `${notification.data?.message}_${notification.data?.time}_${notification.data?.userId}`;
+    const now = Date.now();
+    const lastTime = this.lastNotificationTime.get(notificationKey) || 0;
+    
+    // If same notification was processed within last 5 minutes, consider it duplicate
+    if (now - lastTime < 5 * 60 * 1000) {
+      console.log('[NOTIFICATION DEBUG] Duplicate notification detected:', notificationKey);
+      return true;
+    }
+    
+    this.lastNotificationTime.set(notificationKey, now);
+    return false;
+  }
+
   // Schedule a notification locally (works in EAS builds)
   async scheduleNotification(notification: UnifiedNotification): Promise<string> {
     try {
+      // CRITICAL FIX: Check for duplicates before scheduling
+      if (this.isDuplicateNotification(notification)) {
+        console.log('[NOTIFICATION DEBUG] Skipping duplicate notification');
+        return 'duplicate_skipped';
+      }
+      
       // CRITICAL FIX: Ensure permissions are initialized
       if (!this.isInitialized) {
         await this.initialize();

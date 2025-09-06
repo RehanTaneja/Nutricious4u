@@ -1209,8 +1209,18 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
         const data = notification.request.content.data;
         
+        // COMPREHENSIVE LOGGING FOR DEBUGGING
+        console.log('[NOTIFICATION DEBUG] DashboardScreen listener triggered');
+        console.log('[NOTIFICATION DEBUG] Notification data:', JSON.stringify(data, null, 2));
+        console.log('[NOTIFICATION DEBUG] Notification title:', notification.request.content.title);
+        console.log('[NOTIFICATION DEBUG] Notification body:', notification.request.content.body);
+        console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
+        console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
+        console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
+        
         // Handle new diet notifications - refresh diet data immediately
         if (data?.type === 'new_diet' && data?.userId === userId) {
+          console.log('[NOTIFICATION DEBUG] Dashboard processing new_diet notification');
           console.log('[Dashboard] Received new diet notification, refreshing diet data...');
           console.log('[Dashboard] Notification data:', data);
           
@@ -4476,8 +4486,18 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data;
       
+      // COMPREHENSIVE LOGGING FOR DEBUGGING
+      console.log('[NOTIFICATION DEBUG] NotificationSettingsScreen listener triggered');
+      console.log('[NOTIFICATION DEBUG] Notification data:', JSON.stringify(data, null, 2));
+      console.log('[NOTIFICATION DEBUG] Notification title:', notification.request.content.title);
+      console.log('[NOTIFICATION DEBUG] Notification body:', notification.request.content.body);
+      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
+      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
+      console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
+      
       // Handle new diet notifications - only refresh for new diet uploads, not regular reminders
       if (data?.type === 'new_diet' && !isRefreshing) {
+        console.log('[NOTIFICATION DEBUG] Processing new_diet notification');
         console.log('[Diet Notifications] Received new diet notification, refreshing diet notifications');
         isRefreshing = true;
         try {
@@ -4487,6 +4507,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         } finally {
           isRefreshing = false;
         }
+      } else if (data?.type === 'diet_reminder') {
+        console.log('[NOTIFICATION DEBUG] Ignoring diet_reminder notification to prevent rescheduling');
+      } else {
+        console.log('[NOTIFICATION DEBUG] Ignoring notification type:', data?.type);
       }
       
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
@@ -4727,29 +4751,12 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         trigger,
       });
       console.log('[Notifications] Scheduled notification:', { scheduledId, message, trigger });
-      if (Platform.OS === 'android') {
-        // On Android, set up a listener to reschedule for the next day when notification is received
-        Notifications.addNotificationReceivedListener(async (notification) => {
-          if (notification.request.content.body === message) {
-            let next = new Date();
-            next.setDate(next.getDate() + 1);
-            next.setHours(time.getHours());
-            next.setMinutes(time.getMinutes());
-            next.setSeconds(0);
-            next.setMilliseconds(0);
-            const seconds = Math.max(1, Math.floor((next.getTime() - Date.now()) / 1000));
-            await Notifications.scheduleNotificationAsync({
-              content: { title: 'Reminder', body: message },
-              trigger: {
-                type: 'timeInterval',
-                seconds,
-                repeats: false
-              } as any,
-            });
-            console.log('[Notifications] Rescheduled daily notification for next day:', next);
-          }
-        });
-      }
+      
+      // CRITICAL FIX: Removed Android rescheduling listener that was causing random repeats
+      // This listener was creating multiple notification listeners and rescheduling notifications
+      // when they were received, causing the random repeat issue in EAS builds
+      console.log('[NOTIFICATION DEBUG] Removed problematic Android rescheduling listener');
+      console.log('[NOTIFICATION DEBUG] Using unified notification service for proper scheduling');
     } catch (e) {
       setError('Failed to schedule notification');
       console.log('[Notifications] Error scheduling notification:', e);

@@ -146,43 +146,18 @@ export async function registerForPushNotificationsAsync() {
   return token;
 }
 
-// Add notification listener for diet notifications
+// DISABLED: Add notification listener for diet notifications
+// This function is disabled to prevent multiple notification listeners causing random repeats
 export function setupDietNotificationListener() {
   try {
-    logger.log('Setting up diet notification listener for platform:', Platform.OS);
+    logger.log('Diet notification listener setup DISABLED to prevent random repeats');
+    console.log('[NOTIFICATION DEBUG] Firebase service listener DISABLED');
+    console.log('[NOTIFICATION DEBUG] Using screen-specific listeners instead');
     
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      logger.log('Notification received:', notification);
-      logger.log('Notification data:', notification.request.content.data);
-      logger.log('Notification title:', notification.request.content.title);
-      logger.log('Notification body:', notification.request.content.body);
-      
-      // Handle diet-related notifications
-      const data = notification.request.content.data;
-      if (data?.type === 'new_diet') {
-        logger.log('New diet notification received for user:', data.userId);
-        // You can add custom handling here if needed
-      } else if (data?.type === 'diet_reminder') {
-        logger.log('Diet reminder notification received for dietician');
-        // You can add custom handling here if needed
-      } else if (data?.type === 'message_notification') {
-        logger.log('Message notification received:', data);
-      } else {
-        logger.log('Other notification type received:', data?.type);
-      }
-    });
-
-    // Also add response listener for when user taps notification
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      logger.log('Notification response received:', response);
-      logger.log('Response data:', response.notification.request.content.data);
-    });
-
-    // Return combined subscription
+    // Return a dummy subscription to prevent crashes
     return {
       remove: () => {
-        subscription.remove();
-        responseSubscription.remove();
+        console.log('[NOTIFICATION DEBUG] Firebase service listener remove called (disabled)');
       }
     };
   } catch (error) {
