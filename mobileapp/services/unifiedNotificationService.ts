@@ -20,8 +20,6 @@ export interface UnifiedNotification {
 export class UnifiedNotificationService {
   private static instance: UnifiedNotificationService;
   private isInitialized = false;
-  private notificationDeduplication: Set<string> = new Set(); // Track processed notifications
-  private lastNotificationTime: Map<string, number> = new Map(); // Track last notification time per message
 
   private constructor() {
     // No dependencies to prevent circular imports and EAS build issues
@@ -60,31 +58,9 @@ export class UnifiedNotificationService {
     }
   }
 
-  // CRITICAL FIX: Add deduplication to prevent random repeats
-  private isDuplicateNotification(notification: UnifiedNotification): boolean {
-    const notificationKey = `${notification.data?.message}_${notification.data?.time}_${notification.data?.userId}`;
-    const now = Date.now();
-    const lastTime = this.lastNotificationTime.get(notificationKey) || 0;
-    
-    // If same notification was processed within last 5 minutes, consider it duplicate
-    if (now - lastTime < 5 * 60 * 1000) {
-      console.log('[NOTIFICATION DEBUG] Duplicate notification detected:', notificationKey);
-      return true;
-    }
-    
-    this.lastNotificationTime.set(notificationKey, now);
-    return false;
-  }
-
   // Schedule a notification locally (works in EAS builds)
   async scheduleNotification(notification: UnifiedNotification): Promise<string> {
     try {
-      // CRITICAL FIX: Check for duplicates before scheduling
-      if (this.isDuplicateNotification(notification)) {
-        console.log('[NOTIFICATION DEBUG] Skipping duplicate notification');
-        return 'duplicate_skipped';
-      }
-      
       // CRITICAL FIX: Ensure permissions are initialized
       if (!this.isInitialized) {
         await this.initialize();
@@ -165,6 +141,17 @@ export class UnifiedNotificationService {
         content: notificationContent,
         trigger
       });
+
+      // COMPREHENSIVE LOGGING FOR DEBUGGING
+      console.log('[NOTIFICATION DEBUG] Main schedule function executed');
+      console.log('[NOTIFICATION DEBUG] Notification ID:', notification.id);
+      console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
+      console.log('[NOTIFICATION DEBUG] Trigger type:', trigger.type);
+      console.log('[NOTIFICATION DEBUG] Trigger seconds:', trigger.seconds);
+      console.log('[NOTIFICATION DEBUG] Trigger repeats:', trigger.repeats);
+      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
+      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
+      console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
 
       logger.log('[UnifiedNotificationService] Notification scheduled:', {
         id: notification.id,
@@ -320,10 +307,21 @@ export class UnifiedNotificationService {
             repeatInterval: 7 * 24 * 60 * 60 // 7 days in seconds
           };
 
-          const scheduledId = await this.scheduleNotification(unifiedNotification);
-          scheduledIds.push(scheduledId);
-          
-          logger.log(`[UnifiedNotificationService] Scheduled grouped diet notification:`, {
+      const scheduledId = await this.scheduleNotification(unifiedNotification);
+      scheduledIds.push(scheduledId);
+      
+      // COMPREHENSIVE LOGGING FOR DEBUGGING
+      console.log('[NOTIFICATION DEBUG] UnifiedNotificationService scheduled diet notification');
+      console.log('[NOTIFICATION DEBUG] Message:', message);
+      console.log('[NOTIFICATION DEBUG] Time:', time);
+      console.log('[NOTIFICATION DEBUG] Selected days:', selectedDays);
+      console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
+      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
+      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
+      console.log('[NOTIFICATION DEBUG] Repeats:', true);
+      console.log('[NOTIFICATION DEBUG] Repeat interval:', '7 days');
+      
+      logger.log(`[UnifiedNotificationService] Scheduled grouped diet notification:`, {
             message,
             time,
             selectedDays,

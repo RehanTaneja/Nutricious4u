@@ -1217,6 +1217,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
         console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
         console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
+        console.log('[NOTIFICATION DEBUG] User ID match:', data?.userId === userId);
         
         // Handle new diet notifications - refresh diet data immediately
         if (data?.type === 'new_diet' && data?.userId === userId) {
@@ -4494,6 +4495,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
       console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
       console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
+      console.log('[NOTIFICATION DEBUG] Is refreshing:', isRefreshing);
       
       // Handle new diet notifications - only refresh for new diet uploads, not regular reminders
       if (data?.type === 'new_diet' && !isRefreshing) {
@@ -4755,8 +4757,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       // CRITICAL FIX: Removed Android rescheduling listener that was causing random repeats
       // This listener was creating multiple notification listeners and rescheduling notifications
       // when they were received, causing the random repeat issue in EAS builds
-      console.log('[NOTIFICATION DEBUG] Removed problematic Android rescheduling listener');
-      console.log('[NOTIFICATION DEBUG] Using unified notification service for proper scheduling');
+      console.log('[NOTIFICATION FIX] Removed problematic Android rescheduling listener');
+      console.log('[NOTIFICATION FIX] Using unified notification service for proper scheduling');
+      console.log('[NOTIFICATION FIX] Platform:', Platform.OS, 'EAS Build:', !__DEV__);
     } catch (e) {
       setError('Failed to schedule notification');
       console.log('[Notifications] Error scheduling notification:', e);
