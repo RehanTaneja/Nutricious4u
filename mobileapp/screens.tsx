@@ -1840,13 +1840,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         // Schedule new diet notifications locally (works in EAS builds)
         const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
         
-        // Update notifications with scheduled IDs (same as manual extraction)
-        const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
-          ...notification,
-          scheduledId: scheduledIds[index] || null
-        }));
-        
-        setDietNotifications(updatedNotifications);
+        // Note: Notification list will be updated when user navigates to Notification Settings
         console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
         console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
         
@@ -1858,7 +1852,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         
         setShowAutoExtractionPopup(false);
         
-        // Show success popup instead of alert
+        // Show success popup instead of alert (same as manual extraction)
         setExtractionSuccessCount(response.notifications.length);
         setShowExtractionSuccessPopup(true);
       } else {
@@ -2641,7 +2635,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         </View>
       </Modal>
 
-      {/* Extraction Success Popup Modal */}
+      {/* Extraction Success Popup Modal (Same as Manual Extraction) */}
       <Modal
         transparent={true}
         visible={showExtractionSuccessPopup}
