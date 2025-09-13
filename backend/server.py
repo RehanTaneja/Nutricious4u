@@ -1539,20 +1539,33 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         # Send push notification to user with enhanced data
         user_token = get_user_notification_token(user_id)
         if user_token:
-            send_push_notification(
+            notification_payload = {
+                "type": "new_diet", 
+                "userId": user_id,
+                "auto_extract_pending": True,  # Flag to trigger popup
+                "dietPdfUrl": file.filename,
+                "cacheVersion": diet_info["dietCacheVersion"],
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            print(f"🚀 SENDING NOTIFICATION TO USER {user_id}")
+            print(f"📱 Notification payload: {json.dumps(notification_payload, indent=2)}")
+            print(f"🔑 User token: {user_token[:20]}...")
+            
+            success = send_push_notification(
                 user_token,
                 "New Diet Has Arrived!",
                 "Your dietician has uploaded a new diet plan for you.",
-                {
-                    "type": "new_diet", 
-                    "userId": user_id,
-                    "auto_extract_pending": True,  # Flag to trigger popup
-                    "dietPdfUrl": file.filename,
-                    "cacheVersion": diet_info["dietCacheVersion"],
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
+                notification_payload
             )
-            print(f"Sent new diet notification to user {user_id} with cache version {diet_info['dietCacheVersion']}")
+            
+            if success:
+                print(f"✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
+                print(f"🎯 Popup should appear with auto_extract_pending=True")
+            else:
+                print(f"❌ NOTIFICATION FAILED to send to user {user_id}")
+        else:
+            print(f"❌ NO NOTIFICATION TOKEN found for user {user_id}")
         
         # Send notification to dietician about successful upload
         dietician_token = get_dietician_notification_token()

@@ -1154,6 +1154,20 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           if (data?.auto_extract_pending === true) {
             console.log('[Dashboard] Auto extraction pending detected, showing popup');
             setShowAutoExtractionPopup(true);
+            
+            // EAS BUILD LOGGING - Log popup trigger from screen load
+            if (!__DEV__ && userId) {
+              try {
+                const { logFrontendEvent } = require('./services/api');
+                await logFrontendEvent(userId, 'POPUP_TRIGGERED_SCREEN_LOAD', {
+                  reason: 'auto_extract_pending_on_load',
+                  firestoreData: data,
+                  popupState: 'showing'
+                });
+              } catch (logError) {
+                console.warn('Failed to log popup trigger from screen load:', logError);
+              }
+            }
           }
         }
       } catch (error) {
@@ -1249,6 +1263,24 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
         console.log('[NOTIFICATION DEBUG] User ID match:', data?.userId === userId);
         
+        // EAS BUILD LOGGING - Send to backend for visibility
+        if (!__DEV__ && userId) {
+          try {
+            const { logFrontendEvent } = require('./services/api');
+            await logFrontendEvent(userId, 'NOTIFICATION_RECEIVED', {
+              type: 'new_diet',
+              notificationData: data,
+              title: notification.request.content.title,
+              body: notification.request.content.body,
+              platform: Platform.OS,
+              userMatch: data?.userId === userId,
+              autoExtractPending: data?.auto_extract_pending
+            });
+          } catch (logError) {
+            console.warn('Failed to log notification event:', logError);
+          }
+        }
+        
         // Handle new diet notifications - refresh diet data immediately
         if (data?.type === 'new_diet' && data?.userId === userId) {
           console.log('[NOTIFICATION DEBUG] Dashboard processing new_diet notification');
@@ -1285,7 +1317,22 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             // Check if auto extraction is pending and show popup
             if (data.auto_extract_pending) {
+              console.log('[NOTIFICATION DEBUG] Auto extract pending detected, showing popup');
               setShowAutoExtractionPopup(true);
+              
+              // EAS BUILD LOGGING - Log popup trigger
+              if (!__DEV__ && userId) {
+                try {
+                  const { logFrontendEvent } = require('./services/api');
+                  await logFrontendEvent(userId, 'POPUP_TRIGGERED', {
+                    reason: 'auto_extract_pending',
+                    notificationData: data,
+                    popupState: 'showing'
+                  });
+                } catch (logError) {
+                  console.warn('Failed to log popup trigger:', logError);
+                }
+              }
             } else {
               // Show regular success message if no auto extraction pending
               Alert.alert(
