@@ -210,8 +210,11 @@ class SimpleNotificationScheduler:
                             "sent_at": now.isoformat()
                         })
                         
-                        # Schedule next occurrence if it's a recurring notification
-                        self._schedule_next_occurrence(notification_data)
+                        # CRITICAL FIX: Remove duplicate scheduling
+                        # The mobile app handles recurring notifications with repeats: true
+                        # We should NOT schedule next occurrence here to prevent duplicates
+                        # This fixes the issue of late notifications appearing after 22:00
+                        logger.info(f"Notification sent successfully - mobile app will handle next occurrence")
                         
                         sent_count += 1
                         logger.info(f"[SimpleNotificationScheduler] Sent notification to user {user_id}: {message}")

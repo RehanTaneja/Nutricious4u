@@ -88,6 +88,15 @@ class DietNotificationService:
         if structured_activities:
             return structured_activities
         
+        # CRITICAL FIX: Try to detect if this is a mixed diet format
+        # Look for day headers even in unstructured text
+        detected_days = self._detect_days_from_text_structure(diet_text)
+        if detected_days:
+            # If we found day headers, try to extract with day context
+            mixed_activities = self._extract_mixed_diet_activities(diet_text, detected_days)
+            if mixed_activities:
+                return mixed_activities
+        
         # Fall back to the original extraction method
         activities = []
         lines = diet_text.split('\n')
@@ -279,6 +288,115 @@ class DietNotificationService:
             final_activities.append(activity)
         
         return final_activities
+
+    def _extract_mixed_diet_activities(self, diet_text: str, detected_days: List[int]) -> List[Dict]:
+        """
+        Extract activities from mixed diet format where some activities have day headers
+        and others don't. This helps handle cases where the diet is partially structured.
+        """
+        try:
+            activities = []
+            lines = diet_text.split('\n')
+            current_day = None
+            
+            day_mapping = {
+                'monday': 0, 'mon': 0,
+                'tuesday': 1, 'tue': 1,
+                'wednesday': 2, 'wed': 2,
+                'thursday': 3, 'thu': 3,
+                'friday': 4, 'fri': 4,
+                'saturday': 5, 'sat': 5,
+                'sunday': 6, 'sun': 6
+            }
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Check if this is a day header
+                day_match = re.search(r'^([A-Z]+)\s*[-:]\s*\d+', line, re.IGNORECASE)
+                if day_match:
+                    day_name = day_match.group(1).lower()
+                    if day_name in day_mapping:
+                        current_day = day_mapping[day_name]
+                        logger.info(f"Found day header: {day_name.upper()} (day {current_day})")
+                        continue
+                
+                # Look for time patterns
+                time_patterns = [
+                    r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?',
+                    r'(\d{1,2})\s*(AM|PM|am|pm)',
+                ]
+                
+                time_match = None
+                for pattern in time_patterns:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        time_match = match
+                        break
+                
+                if time_match:
+                    try:
+                        # Extract time components
+                        if ':' in time_match.group(0):
+                            hour = int(time_match.group(1))
+                            minute = int(time_match.group(2))
+                            period = time_match.group(3) if len(time_match.groups()) > 2 else None
+                        else:
+                            hour = int(time_match.group(1))
+                            minute = 0
+                            period = time_match.group(2) if len(time_match.groups()) > 1 else None
+                        
+                        # Convert to 24-hour format
+                        if period:
+                            period = period.upper()
+                            if period == 'PM' and hour != 12:
+                                hour += 12
+                            elif period == 'AM' and hour == 12:
+                                hour = 0
+                        
+                        # Extract activity text
+                        activity_text = line[time_match.end():].strip()
+                        activity_text = re.sub(r'^[-:\s]+', '', activity_text)
+                        
+                        if activity_text and len(activity_text) > 3:
+                            activity = {
+                                'hour': hour,
+                                'minute': minute,
+                                'activity': activity_text,
+                                'day': current_day,  # Use current day context
+                                'original_text': line
+                            }
+                            activities.append(activity)
+                            logger.info(f"Extracted mixed activity: {hour:02d}:{minute:02d} - {activity_text} (Day {current_day})")
+                            
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"Error parsing time in mixed diet line: {line}, error: {e}")
+                        continue
+            
+            # Remove duplicates and sort by day and time
+            unique_activities = []
+            seen_combinations = set()
+            
+            for activity in activities:
+                time_key = f"{activity['hour']:02d}:{activity['minute']:02d}"
+                activity_key = activity['activity'].lower().strip()
+                day_key = f"day_{activity.get('day', 0)}"
+                combination = f"{time_key}_{activity_key}_{day_key}"
+                
+                if combination not in seen_combinations:
+                    seen_combinations.add(combination)
+                    unique_activities.append(activity)
+            
+            # Sort by day first, then by time
+            unique_activities.sort(key=lambda x: (x.get('day', 0), x['hour'], x['minute']))
+            
+            return unique_activities
+            
+        except Exception as e:
+            logger.error(f"Error extracting mixed diet activities: {e}")
+            return []
 
     def _extract_structured_diet_activities(self, diet_text: str) -> List[Dict]:
         """
@@ -588,6 +706,83 @@ class DietNotificationService:
         
         return None
 
+    def _determine_diet_days_from_activities(self, activities: List[Dict], diet_text: str) -> List[int]:
+        """
+        Determine the diet days from the overall structure of activities and diet text.
+        This helps prevent notifications from being sent on non-diet days.
+        """
+        try:
+            # First, check if we have activities with specific days
+            days_with_activities = set()
+            for activity in activities:
+                if 'day' in activity and activity['day'] is not None:
+                    days_with_activities.add(activity['day'])
+            
+            if days_with_activities:
+                # If we have day-specific activities, use those days
+                diet_days = sorted(list(days_with_activities))
+                logger.info(f"Found day-specific activities for days: {diet_days}")
+                return diet_days
+            
+            # If no day-specific activities, try to detect from diet text structure
+            diet_days = self._detect_days_from_text_structure(diet_text)
+            if diet_days:
+                logger.info(f"Detected diet days from text structure: {diet_days}")
+                return diet_days
+            
+            # If we still can't determine, return empty list (will use default weekdays)
+            logger.warning("Could not determine diet days from structure")
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error determining diet days: {e}")
+            return []
+
+    def _detect_days_from_text_structure(self, diet_text: str) -> List[int]:
+        """
+        Detect diet days from the text structure by looking for day headers.
+        """
+        try:
+            day_mapping = {
+                'monday': 0, 'mon': 0,
+                'tuesday': 1, 'tue': 1,
+                'wednesday': 2, 'wed': 2,
+                'thursday': 3, 'thu': 3,
+                'friday': 4, 'fri': 4,
+                'saturday': 5, 'sat': 5,
+                'sunday': 6, 'sun': 6
+            }
+            
+            found_days = set()
+            lines = diet_text.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                # Look for day headers in various formats
+                day_patterns = [
+                    r'^([A-Z]+)\s*-\s*\d+',  # MONDAY- 1st JAN
+                    r'^([A-Z]+)\s*:',  # MONDAY:
+                    r'^([A-Z]+)\s*$',  # MONDAY
+                    r'^([A-Z]+)\s+\d+',  # MONDAY 1
+                ]
+                
+                for pattern in day_patterns:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        day_name = match.group(1).lower()
+                        if day_name in day_mapping:
+                            found_days.add(day_mapping[day_name])
+                            break
+            
+            if found_days:
+                return sorted(list(found_days))
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error detecting days from text structure: {e}")
+            return []
+
     def _extract_activity_from_line(self, line: str) -> Optional[str]:
         """
         Extract activity description from a line of text.
@@ -626,13 +821,18 @@ class DietNotificationService:
         unique_id = activity.get('unique_id', f"{activity['hour']:02d}:{activity['minute']:02d}_{hash(activity['activity']) % 1000000}")
         notification_id = f"diet_{activity['hour']}_{activity['minute']}_{hash(unique_id) % 1000000}"
         
-        # Handle day-specific notifications
+        # CRITICAL FIX: Handle day-specific notifications properly
         if 'day' in activity and activity['day'] is not None:
             # If the activity has a specific day, create notifications for that day only
             selected_days = [activity['day']]
+            logger.info(f"Created day-specific notification for day {activity['day']}: {activity['activity'][:50]}...")
         else:
-            # Default to all days for extracted notifications
-            selected_days = [0, 1, 2, 3, 4, 5, 6]
+            # CRITICAL FIX: For activities without day headers, we need to determine the diet days
+            # This should be based on the overall diet structure, not default to all days
+            # For now, we'll use a more conservative approach and let the user configure
+            # This prevents notifications from being sent on non-diet days like Friday
+            selected_days = []  # Empty - will be set by the user or diet analysis
+            logger.warning(f"Activity without day header found: {activity['activity'][:50]}... - selectedDays set to empty")
         
         return {
             'id': notification_id,
@@ -643,7 +843,7 @@ class DietNotificationService:
             'scheduledId': None,  # Will be set when scheduled
             'source': 'diet_pdf',
             'original_text': activity['original_text'],
-            'selectedDays': selected_days,  # Use day-specific or all days
+            'selectedDays': selected_days,  # Use day-specific or empty for user configuration
             'isActive': True  # Track if notification is active
         }
     
@@ -666,10 +866,25 @@ class DietNotificationService:
                 logger.info(f"No timed activities found in diet PDF for user {user_id}")
                 return []
             
+            # CRITICAL FIX: Determine diet days from the overall structure
+            diet_days = self._determine_diet_days_from_activities(activities, diet_text)
+            logger.info(f"Determined diet days from structure: {diet_days}")
+            
             # Create notifications from activities
             notifications = []
             for activity in activities:
                 notification = self.create_notification_from_activity(activity)
+                
+                # CRITICAL FIX: If notification has no selectedDays, use the determined diet days
+                if not notification.get('selectedDays'):
+                    if diet_days:
+                        notification['selectedDays'] = diet_days
+                        logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
+                    else:
+                        # If we still can't determine days, default to weekdays only (Monday-Friday)
+                        notification['selectedDays'] = [0, 1, 2, 3, 4]  # Monday to Friday
+                        logger.warning(f"Using default weekdays for notification: {notification['message'][:50]}...")
+                
                 notifications.append(notification)
             
             logger.info(f"Extracted {len(notifications)} timed activities from diet PDF for user {user_id}")

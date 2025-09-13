@@ -303,8 +303,8 @@ export class UnifiedNotificationService {
               activityId: `${message}_${time}`
             },
             scheduledFor: nextOccurrence,
-            repeats: true, // Enable weekly repeats for diet notifications
-            repeatInterval: 7 * 24 * 60 * 60 // 7 days in seconds
+            repeats: false, // CRITICAL FIX: Disable repeats to prevent duplicate scheduling
+            // The backend will handle recurring notifications properly
           };
 
       const scheduledId = await this.scheduleNotification(unifiedNotification);
@@ -348,8 +348,8 @@ export class UnifiedNotificationService {
               activityId: `${message}_${time}`
             },
             scheduledFor: nextOccurrence,
-            repeats: true, // Enable daily repeats for diet notifications
-            repeatInterval: 24 * 60 * 60 // Daily in seconds
+            repeats: false, // CRITICAL FIX: Disable repeats to prevent duplicate scheduling
+            // The backend will handle recurring notifications properly
           };
 
           const scheduledId = await this.scheduleNotification(unifiedNotification);
