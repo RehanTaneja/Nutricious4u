@@ -280,14 +280,15 @@ export class UnifiedNotificationService {
       const scheduledIds: string[] = [];
       
       for (const notification of notifications) {
-        const { message, time, selectedDays } = notification;
-        const [hours, minutes] = time.split(':').map(Number);
-        
-        // CRITICAL FIX: Skip notifications without proper selectedDays to prevent random reminders
-        if (!selectedDays || selectedDays.length === 0) {
-          console.warn(`[UnifiedNotificationService] Skipping notification without selectedDays: ${message}`);
-          continue;
-        }
+        try {
+          const { message, time, selectedDays } = notification;
+          const [hours, minutes] = time.split(':').map(Number);
+          
+          // CRITICAL FIX: Skip notifications without proper selectedDays to prevent random reminders
+          if (!selectedDays || selectedDays.length === 0) {
+            console.warn(`[UnifiedNotificationService] Skipping notification without selectedDays: ${message}`);
+            continue;
+          }
         
         // Create one notification per activity with proper day filtering
         const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}`;
@@ -315,67 +316,27 @@ export class UnifiedNotificationService {
             // The backend will handle recurring notifications properly
           };
 
-      const scheduledId = await this.scheduleNotification(unifiedNotification);
-      scheduledIds.push(scheduledId);
-      
-      // COMPREHENSIVE LOGGING FOR DEBUGGING
-      console.log('[NOTIFICATION DEBUG] UnifiedNotificationService scheduled diet notification');
-      console.log('[NOTIFICATION DEBUG] Message:', message);
-      console.log('[NOTIFICATION DEBUG] Time:', time);
-      console.log('[NOTIFICATION DEBUG] Selected days:', selectedDays);
-      console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
-      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
-      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
-      console.log('[NOTIFICATION DEBUG] Repeats:', true);
-      console.log('[NOTIFICATION DEBUG] Repeat interval:', '7 days');
-      
-      logger.log(`[UnifiedNotificationService] Scheduled grouped diet notification:`, {
+          const scheduledId = await this.scheduleNotification(unifiedNotification);
+          scheduledIds.push(scheduledId);
+          
+          console.log('[UnifiedNotificationService] Scheduled diet notification:', {
             message,
             time,
             selectedDays,
             scheduledFor: nextOccurrence.toISOString(),
-            scheduledId,
-            activityId: `${message}_${time}`
-          });
-        } else {
-          // Fallback: schedule daily if no specific days selected
-          const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes);
-          
-          const notificationId = `diet_${Date.now()}_${Math.random()}_daily`;
-          const unifiedNotification: UnifiedNotification = {
-            id: notificationId,
-            title: 'Diet Reminder',
-            body: message,
-            type: 'diet',
-            data: {
-              message,
-              time,
-              selectedDays: [],
-              extractedFrom: notification.extractedFrom,
-              notificationId: notificationId,
-              activityId: `${message}_${time}`
-            },
-            scheduledFor: nextOccurrence,
-            repeats: false, // CRITICAL FIX: Disable repeats to prevent duplicate scheduling
-            // The backend will handle recurring notifications properly
-          };
-
-          const scheduledId = await this.scheduleNotification(unifiedNotification);
-          scheduledIds.push(scheduledId);
-          
-          logger.log('[UnifiedNotificationService] Scheduled daily diet notification:', {
-            message,
-            time,
-            scheduledFor: nextOccurrence.toISOString(),
             scheduledId
           });
+          
+        } catch (error) {
+          console.error('[UnifiedNotificationService] Error scheduling diet notification:', error);
+          logger.error(`[UnifiedNotificationService] Failed to schedule diet notification:`, error);
         }
       }
-
+      
       logger.log('[UnifiedNotificationService] Scheduled diet notifications:', scheduledIds);
       return scheduledIds;
     } catch (error) {
-      logger.error('[UnifiedNotificationService] Failed to schedule diet notifications:', error);
+      logger.error('[UnifiedNotificationService] Error in scheduleDietNotifications:', error);
       throw error;
     }
   }
