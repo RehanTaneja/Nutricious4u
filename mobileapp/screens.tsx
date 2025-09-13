@@ -1134,6 +1134,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   // Auto-extraction popup state
   const [showAutoExtractionPopup, setShowAutoExtractionPopup] = useState(false);
   const [extractionLoading, setExtractionLoading] = useState(false);
+  const [showExtractionSuccessPopup, setShowExtractionSuccessPopup] = useState(false);
+  const [extractionSuccessCount, setExtractionSuccessCount] = useState(0);
 
   // Consolidated profile fetch - removed duplicate to prevent iOS crashes
   // Profile fetching is now handled by the main useEffect below
@@ -1856,12 +1858,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         
         setShowAutoExtractionPopup(false);
         
-        // Show success alert with green styling
-        Alert.alert(
-          '🎉 Diet Reminders Set!',
-          `Successfully extracted and scheduled ${response.notifications.length} diet reminders! Your new diet notifications are now active.`,
-          [{ text: 'Great!', style: 'default' }]
-        );
+        // Show success popup instead of alert
+        setExtractionSuccessCount(response.notifications.length);
+        setShowExtractionSuccessPopup(true);
       } else {
         setShowAutoExtractionPopup(false);
         Alert.alert(
@@ -2615,11 +2614,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               <TouchableOpacity
                 style={{
                   flex: 1,
-                  backgroundColor: '#4CAF50',
+                  backgroundColor: extractionLoading ? '#CCCCCC' : '#4CAF50',
                   paddingVertical: 15,
                   borderRadius: 12,
                   alignItems: 'center',
-                  opacity: extractionLoading ? 0.7 : 1
+                  opacity: extractionLoading ? 0.8 : 1
                 }}
                 onPress={handleAutoExtraction}
                 disabled={extractionLoading}
@@ -2638,6 +2637,108 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 </View>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Extraction Success Popup Modal */}
+      <Modal
+        transparent={true}
+        visible={showExtractionSuccessPopup}
+        animationType="fade"
+      >
+        <View style={{ 
+          flex: 1, 
+          backgroundColor: 'rgba(0,0,0,0.5)', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          paddingHorizontal: 20
+        }}>
+          <View style={{
+            backgroundColor: '#ffffff',
+            borderRadius: 20,
+            padding: 30,
+            width: '100%',
+            maxWidth: 350,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 10
+          }}>
+            {/* Success Icon with Animation */}
+            <View style={{
+              width: 100,
+              height: 100,
+              borderRadius: 50,
+              backgroundColor: '#4CAF50',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: 25
+            }}>
+              <Text style={{ fontSize: 50, color: '#ffffff' }}>✅</Text>
+            </View>
+            
+            <Text style={{
+              fontSize: 26,
+              fontWeight: 'bold',
+              color: '#2E7D32',
+              textAlign: 'center',
+              marginBottom: 15
+            }}>
+              Diet Reminders Set!
+            </Text>
+            
+            <Text style={{
+              fontSize: 18,
+              color: '#4CAF50',
+              textAlign: 'center',
+              fontWeight: '600',
+              marginBottom: 10
+            }}>
+              🎉 Successfully extracted and scheduled
+            </Text>
+            
+            <Text style={{
+              fontSize: 24,
+              color: '#2E7D32',
+              textAlign: 'center',
+              fontWeight: 'bold',
+              marginBottom: 15
+            }}>
+              {extractionSuccessCount} diet reminders
+            </Text>
+            
+            <Text style={{
+              fontSize: 16,
+              color: '#666',
+              textAlign: 'center',
+              lineHeight: 22,
+              marginBottom: 30
+            }}>
+              Your new diet notifications are now active and scheduled. You can view and manage them in Notification Settings.
+            </Text>
+            
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#4CAF50',
+                paddingVertical: 15,
+                paddingHorizontal: 40,
+                borderRadius: 12,
+                width: '100%',
+                alignItems: 'center'
+              }}
+              onPress={() => setShowExtractionSuccessPopup(false)}
+            >
+              <Text style={{
+                color: '#ffffff',
+                fontSize: 18,
+                fontWeight: '600'
+              }}>
+                Great!
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
