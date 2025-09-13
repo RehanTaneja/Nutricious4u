@@ -1504,7 +1504,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             print(f"ERROR updating Firestore: {firestore_error}")
             raise firestore_error
         
-        # Extract notifications from the new diet PDF
+        # Extract notifications from the new diet PDF but DON'T automatically schedule
         try:
             print(f"Starting notification extraction from new diet PDF: {file.filename}")
             notifications = diet_notification_service.extract_and_create_notifications(
@@ -1517,24 +1517,16 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
                     "diet_notifications": notifications,
                     "extracted_at": datetime.now().isoformat(),
-                    "diet_pdf_url": file.filename  # Use the new PDF filename
+                    "diet_pdf_url": file.filename,  # Use the new PDF filename
+                    "auto_extract_pending": True  # Flag for popup trigger
                 }, merge=True))
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
                 print(f"Stored notifications with new PDF URL: {file.filename}")
+                print(f"Marked auto_extract_pending=True for popup-based scheduling")
                 
-                # Automatically schedule the notifications
-                try:
-                    # Get the notification scheduler
-                    scheduler = get_notification_scheduler(firestore_db)
-                    
-                    # Schedule notifications for the user
-                    scheduled_count = await scheduler.schedule_user_notifications(user_id)
-                    print(f"Successfully scheduled {scheduled_count} notifications for user {user_id}")
-                    
-                except Exception as schedule_error:
-                    print(f"Error scheduling notifications for user {user_id}: {schedule_error}")
-                    # Don't fail the upload if scheduling fails
+                # DO NOT automatically schedule here - let the user trigger it via popup
+                # This prevents backend/frontend scheduling conflicts
                     
             else:
                 print(f"No timed activities found in new diet PDF for user {user_id}")
@@ -1554,6 +1546,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 {
                     "type": "new_diet", 
                     "userId": user_id,
+                    "auto_extract_pending": True,  # Flag to trigger popup
                     "dietPdfUrl": file.filename,
                     "cacheVersion": diet_info["dietCacheVersion"],
                     "timestamp": datetime.now(timezone.utc).isoformat()
@@ -2070,16 +2063,13 @@ async def extract_diet_notifications(user_id: str):
         user_notifications_ref.set({
             "diet_notifications": notifications,
             "extracted_at": datetime.now().isoformat(),
-            "diet_pdf_url": diet_pdf_url
+            "diet_pdf_url": diet_pdf_url,
+            "auto_extract_pending": False  # Clear pending flag when manually extracted
         }, merge=True)
         
-        # Schedule the notifications on the backend
-        try:
-            logger.info(f"[DIET EXTRACTION] Scheduling notifications for {user_id}")
-            scheduled_count = await scheduler.schedule_user_notifications(user_id)
-            logger.info(f"[DIET EXTRACTION] Successfully scheduled {scheduled_count} notifications for user {user_id}")
-        except Exception as e:
-            logger.error(f"[DIET EXTRACTION] Failed to schedule notifications for user {user_id}: {e}")
+        # DISABLED: Schedule the notifications on the backend to prevent conflicts
+        # Manual extraction now uses only local scheduling on the device for reliability
+        logger.info(f"[DIET EXTRACTION] Skipping backend scheduling - using local scheduling only for reliability")
         
         total_time = time.time() - start_time
         logger.info(f"[DIET EXTRACTION] Completed extraction in {total_time:.2f}s for user {user_id}: {len(notifications)} notifications")
@@ -3427,8 +3417,10 @@ def run_notification_scheduler():
 scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
 scheduler_thread.start()
 
-notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
-notification_scheduler_thread.start()
+# DISABLED: Backend notification scheduler to prevent conflicts with local scheduling
+# notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
+# notification_scheduler_thread.start()
+print("🔕 Backend notification scheduler DISABLED - using local scheduling only")
 
 # Include the router in the main app (after all endpoints are defined)
 # Add new endpoints for dietician user management
@@ -3737,7 +3729,7 @@ def get_recipes_from_firestore():
         # If we have recipes, try to sort them by createdAt if the field exists
         if recipes and any('createdAt' in recipe for recipe in recipes):
             try:
-                recipes_ref = firestore_db.collection('recipes').order_by('createdAt', direction=firestore.Query.DESCENDING)
+                recipes_ref = firestore_db.collection('recipes').order_by('createdAt', direction=firestore_db.Query.DESCENDING)
                 docs = recipes_ref.stream()
                 recipes = [{"id": doc.id, **doc.to_dict()} for doc in docs]
                 logger.info(f"Successfully ordered {len(recipes)} recipes by createdAt")

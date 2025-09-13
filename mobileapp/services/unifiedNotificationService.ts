@@ -279,87 +279,55 @@ export class UnifiedNotificationService {
         const { message, time, selectedDays } = notification;
         const [hours, minutes] = time.split(':').map(Number);
         
-        // CRITICAL FIX: Group notifications by activity and time, not by day
-        if (selectedDays && selectedDays.length > 0) {
-          // Create one notification per activity with proper day filtering
-          const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}`;
-          
-          // Calculate the next occurrence for the first selected day
-          const firstDay = selectedDays[0];
-          const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, firstDay);
-          
-          const unifiedNotification: UnifiedNotification = {
-            id: notificationId,
-            title: 'Diet Reminder',
-            body: message,
-            type: 'diet',
-            data: {
-              message,
-              time,
-              selectedDays, // Store all selected days in data
-              extractedFrom: notification.extractedFrom,
-              notificationId: notificationId,
-              // Add activity identifier to prevent duplicates
-              activityId: `${message}_${time}`
-            },
-            scheduledFor: nextOccurrence,
-            repeats: false, // CRITICAL FIX: Disable repeats to prevent duplicate scheduling
-            // The backend will handle recurring notifications properly
-          };
+        // CRITICAL FIX: Only schedule active notifications with valid days
+        if (selectedDays && selectedDays.length > 0 && notification.isActive !== false) {
+          // Create separate notifications for each selected day to ensure proper day-wise delivery
+          for (let i = 0; i < selectedDays.length; i++) {
+            const dayOfWeek = selectedDays[i];
+            const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}_day${dayOfWeek}`;
+            
+            // Calculate the next occurrence for this specific day
+            const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, dayOfWeek);
+            
+            const unifiedNotification: UnifiedNotification = {
+              id: notificationId,
+              title: 'Diet Reminder',
+              body: message,
+              type: 'diet',
+              data: {
+                message,
+                time,
+                selectedDays: [dayOfWeek], // Only this specific day
+                extractedFrom: notification.extractedFrom,
+                notificationId: notificationId,
+                // Add activity identifier to prevent duplicates
+                activityId: `${message}_${time}_day${dayOfWeek}`,
+                originalSelectedDays: selectedDays // Keep original for reference
+              },
+              scheduledFor: nextOccurrence,
+              repeats: true, // Enable weekly repeats for consistent delivery
+              repeatInterval: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+            };
 
-      const scheduledId = await this.scheduleNotification(unifiedNotification);
-      scheduledIds.push(scheduledId);
-      
-      // COMPREHENSIVE LOGGING FOR DEBUGGING
-      console.log('[NOTIFICATION DEBUG] UnifiedNotificationService scheduled diet notification');
-      console.log('[NOTIFICATION DEBUG] Message:', message);
-      console.log('[NOTIFICATION DEBUG] Time:', time);
-      console.log('[NOTIFICATION DEBUG] Selected days:', selectedDays);
-      console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
-      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
-      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
-      console.log('[NOTIFICATION DEBUG] Repeats:', true);
-      console.log('[NOTIFICATION DEBUG] Repeat interval:', '7 days');
-      
-      logger.log(`[UnifiedNotificationService] Scheduled grouped diet notification:`, {
-            message,
-            time,
-            selectedDays,
-            scheduledFor: nextOccurrence.toISOString(),
-            scheduledId,
-            activityId: `${message}_${time}`
-          });
+            const scheduledId = await this.scheduleNotification(unifiedNotification);
+            scheduledIds.push(scheduledId);
+            
+            // COMPREHENSIVE LOGGING FOR DEBUGGING
+            console.log('[NOTIFICATION DEBUG] UnifiedNotificationService scheduled diet notification for day', dayOfWeek);
+            console.log('[NOTIFICATION DEBUG] Message:', message);
+            console.log('[NOTIFICATION DEBUG] Time:', time);
+            console.log('[NOTIFICATION DEBUG] Day of week:', dayOfWeek);
+            console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
+            console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
+            console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
+            console.log('[NOTIFICATION DEBUG] Repeats:', true);
+            console.log('[NOTIFICATION DEBUG] Repeat interval:', '7 days');
+          }
         } else {
-          // Fallback: schedule daily if no specific days selected
-          const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes);
-          
-          const notificationId = `diet_${Date.now()}_${Math.random()}_daily`;
-          const unifiedNotification: UnifiedNotification = {
-            id: notificationId,
-            title: 'Diet Reminder',
-            body: message,
-            type: 'diet',
-            data: {
-              message,
-              time,
-              selectedDays: [],
-              extractedFrom: notification.extractedFrom,
-              notificationId: notificationId,
-              activityId: `${message}_${time}`
-            },
-            scheduledFor: nextOccurrence,
-            repeats: false, // CRITICAL FIX: Disable repeats to prevent duplicate scheduling
-            // The backend will handle recurring notifications properly
-          };
-
-          const scheduledId = await this.scheduleNotification(unifiedNotification);
-          scheduledIds.push(scheduledId);
-          
-          logger.log('[UnifiedNotificationService] Scheduled daily diet notification:', {
-            message,
-            time,
-            scheduledFor: nextOccurrence.toISOString(),
-            scheduledId
+          console.log('[NOTIFICATION DEBUG] Skipping notification - no valid days or inactive:', {
+            message: message?.substring(0, 50),
+            selectedDays,
+            isActive: notification.isActive
           });
         }
       }

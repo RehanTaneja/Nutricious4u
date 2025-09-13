@@ -1131,8 +1131,36 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [dietError, setDietError] = useState('');
   const [showDietPdf, setShowDietPdf] = useState(false);
 
+  // Auto-extraction popup state
+  const [showAutoExtractionPopup, setShowAutoExtractionPopup] = useState(false);
+  const [extractionLoading, setExtractionLoading] = useState(false);
+
   // Consolidated profile fetch - removed duplicate to prevent iOS crashes
   // Profile fetching is now handled by the main useEffect below
+
+  // Check for pending auto-extraction when screen loads
+  useEffect(() => {
+    const checkPendingExtraction = async () => {
+      if (!userId || !isFocused) return;
+      
+      try {
+        const firestore = require('./services/firebase').firestore;
+        const userNotificationsDoc = await firestore.collection("user_notifications").doc(userId).get();
+        
+        if (userNotificationsDoc.exists) {
+          const data = userNotificationsDoc.data();
+          if (data?.auto_extract_pending === true) {
+            console.log('[Dashboard] Auto extraction pending detected, showing popup');
+            setShowAutoExtractionPopup(true);
+          }
+        }
+      } catch (error) {
+        console.error('[Dashboard] Error checking pending extraction:', error);
+      }
+    };
+
+    checkPendingExtraction();
+  }, [userId, isFocused]);
   
 
 
@@ -1253,12 +1281,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             setDietPdfUrl(dietData.dietPdfUrl || null);
             console.log('[Dashboard] ✅ Diet data refreshed successfully after new diet upload');
             
-            // Show success message to user
-            Alert.alert(
-              'New Diet Available!',
-              'Your dietician has uploaded a new diet plan. The diet has been refreshed automatically.',
-              [{ text: 'OK', style: 'default' }]
-            );
+            // Check if auto extraction is pending and show popup
+            if (data.auto_extract_pending) {
+              setShowAutoExtractionPopup(true);
+            } else {
+              // Show regular success message if no auto extraction pending
+              Alert.alert(
+                'New Diet Available!',
+                'Your dietician has uploaded a new diet plan. The diet has been refreshed automatically.',
+                [{ text: 'OK', style: 'default' }]
+              );
+            }
           } catch (error) {
             console.error('[Dashboard] Error refreshing diet data after new diet:', error);
             
@@ -1776,6 +1809,92 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const targetFat = userProfile?.targetFat || 65;
 
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 0;
+
+  // Auto-extraction function using the same logic as manual extraction
+  const handleAutoExtraction = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        Alert.alert('Error', 'User not authenticated. Please log in again.');
+        return;
+      }
+
+      setExtractionLoading(true);
+      console.log('[Auto Extraction] Starting extraction from backend API...');
+      
+      // Call backend API for extraction (same as manual extraction)
+      const { extractDietNotifications } = require('./services/api');
+      const response = await extractDietNotifications(userId);
+      
+      console.log('[Auto Extraction] Backend response:', response);
+      
+      if (response.notifications && response.notifications.length > 0) {
+        // Cancel existing diet notifications
+        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+        const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+        
+        console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
+        
+        // Schedule new diet notifications locally (works in EAS builds)
+        const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
+        
+        // Update notifications with scheduled IDs (same as manual extraction)
+        const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
+          ...notification,
+          scheduledId: scheduledIds[index] || null
+        }));
+        
+        setDietNotifications(updatedNotifications);
+        console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
+        console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
+        
+        // Clear the auto_extract_pending flag
+        const firestore = require('./services/firebase').firestore;
+        await firestore.collection("user_notifications").doc(userId).update({
+          auto_extract_pending: false
+        });
+        
+        setShowAutoExtractionPopup(false);
+        
+        // Show success alert with green styling
+        Alert.alert(
+          '🎉 Diet Reminders Set!',
+          `Successfully extracted and scheduled ${response.notifications.length} diet reminders! Your new diet notifications are now active.`,
+          [{ text: 'Great!', style: 'default' }]
+        );
+      } else {
+        setShowAutoExtractionPopup(false);
+        Alert.alert(
+          'No Activities Found', 
+          'No timed activities were found in your diet plan. Make sure your diet plan includes specific times for activities.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('[Auto Extraction] Error extracting:', error);
+      
+      let errorMsg = 'Failed to extract notifications from your diet plan. Please try again.';
+      
+      if (error?.response?.status === 404) {
+        if (error?.response?.data?.detail === 'No diet PDF found for this user') {
+          errorMsg = 'No diet plan found. Please upload a diet plan first.';
+        } else if (error?.response?.data?.detail === 'User not found') {
+          errorMsg = 'User not found. Please log in again.';
+        }
+      } else if (error?.response?.status === 500) {
+        errorMsg = 'Server error. Please try again later.';
+      } else if (error?.message === 'Network Error' || error?.code === 'ECONNREFUSED' || error?.code === 'NETWORK_ERROR') {
+        errorMsg = 'Network error. Please check your connection and try again.';
+      } else if (error?.message?.includes('timeout')) {
+        errorMsg = 'Request timed out. Please try again.';
+      }
+      
+      setShowAutoExtractionPopup(false);
+      Alert.alert('Extraction Failed', errorMsg);
+    } finally {
+      setExtractionLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: 50 }]}> 
@@ -2408,6 +2527,120 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         </View>
       </Modal>
 
+      {/* Auto-Extraction Popup Modal */}
+      <Modal
+        transparent={true}
+        visible={showAutoExtractionPopup}
+        animationType="fade"
+      >
+        <View style={{ 
+          flex: 1, 
+          backgroundColor: 'rgba(0,0,0,0.5)', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          paddingHorizontal: 20
+        }}>
+          <View style={{
+            backgroundColor: '#ffffff',
+            borderRadius: 20,
+            padding: 30,
+            width: '100%',
+            maxWidth: 350,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 10
+          }}>
+            {/* Green Success Icon */}
+            <View style={{
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: '#4CAF50',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: 20
+            }}>
+              <Text style={{ fontSize: 40, color: '#ffffff' }}>🎉</Text>
+            </View>
+            
+            <Text style={{
+              fontSize: 24,
+              fontWeight: 'bold',
+              color: '#2E7D32',
+              textAlign: 'center',
+              marginBottom: 15
+            }}>
+              New Diet Arrived!
+            </Text>
+            
+            <Text style={{
+              fontSize: 16,
+              color: '#666',
+              textAlign: 'center',
+              lineHeight: 22,
+              marginBottom: 25
+            }}>
+              Your dietician has uploaded a new diet plan. Would you like to automatically extract and schedule your diet reminders now?
+            </Text>
+            
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              width: '100%',
+              gap: 15
+            }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#f5f5f5',
+                  paddingVertical: 15,
+                  borderRadius: 12,
+                  alignItems: 'center'
+                }}
+                onPress={() => setShowAutoExtractionPopup(false)}
+                disabled={extractionLoading}
+              >
+                <Text style={{
+                  color: '#666',
+                  fontSize: 16,
+                  fontWeight: '600'
+                }}>
+                  Later
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#4CAF50',
+                  paddingVertical: 15,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  opacity: extractionLoading ? 0.7 : 1
+                }}
+                onPress={handleAutoExtraction}
+                disabled={extractionLoading}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {extractionLoading && (
+                    <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+                  )}
+                  <Text style={{
+                    color: '#ffffff',
+                    fontSize: 16,
+                    fontWeight: '600'
+                  }}>
+                    {extractionLoading ? 'Extracting...' : 'Extract Reminders'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       </ScrollView>
     </SafeAreaView>

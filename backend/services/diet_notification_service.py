@@ -881,9 +881,11 @@ class DietNotificationService:
                         notification['selectedDays'] = diet_days
                         logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
                     else:
-                        # If we still can't determine days, default to weekdays only (Monday-Friday)
-                        notification['selectedDays'] = [0, 1, 2, 3, 4]  # Monday to Friday
-                        logger.warning(f"Using default weekdays for notification: {notification['message'][:50]}...")
+                        # CONSERVATIVE FIX: If we can't determine days, DON'T default to any days
+                        # Let the user manually configure this to prevent wrong notifications
+                        notification['selectedDays'] = []  # Empty - user must configure
+                        notification['isActive'] = False  # Inactive until user configures
+                        logger.warning(f"Could not determine days for notification: {notification['message'][:50]}... - marked as inactive")
                 
                 notifications.append(notification)
             
