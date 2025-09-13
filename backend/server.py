@@ -1504,12 +1504,48 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             print(f"ERROR updating Firestore: {firestore_error}")
             raise firestore_error
         
+        # CRITICAL FIX: Initialize notifications variable for proper scope
+        notifications = []
+        extraction_count = 0
+        
+        # CRITICAL FIX: Extract notifications AFTER user profile is updated
+        # Wait a moment to ensure Firestore update has propagated
+        import time
+        time.sleep(0.5)  # Small delay to ensure Firestore consistency
+        
         # Extract notifications from the new diet PDF
         try:
-            print(f"Starting notification extraction from new diet PDF: {file.filename}")
+            print(f"🔄 Starting automatic notification extraction from new diet PDF: {file.filename}")
+            
+            # CRITICAL FIX: Get the diet PDF URL from user profile (same way as manual extraction)
+            # Retry up to 3 times to handle Firestore consistency
+            diet_pdf_url = file.filename  # Default fallback
+            
+            for attempt in range(3):
+                try:
+                    user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+                        diet_pdf_url = user_data.get("dietPdfUrl", file.filename)
+                        print(f"📄 Using diet PDF URL for extraction (attempt {attempt + 1}): {diet_pdf_url}")
+                        break
+                    else:
+                        print(f"⚠️ User doc not found on attempt {attempt + 1}, using filename: {file.filename}")
+                        if attempt < 2:
+                            time.sleep(0.5)  # Wait and retry
+                except Exception as doc_error:
+                    print(f"❌ Error getting user doc on attempt {attempt + 1}: {doc_error}")
+                    if attempt < 2:
+                        time.sleep(0.5)  # Wait and retry
+            
+            print(f"📄 Final diet PDF URL for extraction: {diet_pdf_url}")
+            
             notifications = diet_notification_service.extract_and_create_notifications(
-                user_id, file.filename, firestore_db
+                user_id, diet_pdf_url, firestore_db
             )
+            extraction_count = len(notifications) if notifications else 0
+            
+            print(f"✅ AUTOMATIC EXTRACTION RESULT: {extraction_count} notifications extracted")
             
             if notifications:
                 # Store notifications in Firestore with the new PDF URL
@@ -1517,46 +1553,58 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
                     "diet_notifications": notifications,
                     "extracted_at": datetime.now().isoformat(),
-                    "diet_pdf_url": file.filename  # Use the new PDF filename
+                    "diet_pdf_url": diet_pdf_url,  # Use the actual diet PDF URL
+                    "automatic_extraction": True,  # Mark as automatic extraction
+                    "extraction_source": "diet_upload"  # Source of extraction
                 }, merge=True))
                 
-                print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
-                print(f"Stored notifications with new PDF URL: {file.filename}")
+                print(f"✅ Extracted and stored {len(notifications)} timed activities from new diet PDF for user {user_id}")
+                print(f"📱 Stored notifications with new PDF URL: {file.filename}")
                 
-                # Automatically schedule the notifications
-                try:
-                    # Get the notification scheduler
-                    scheduler = get_notification_scheduler(firestore_db)
-                    
-                    # Schedule notifications for the user
-                    scheduled_count = await scheduler.schedule_user_notifications(user_id)
-                    print(f"Successfully scheduled {scheduled_count} notifications for user {user_id}")
-                    
-                except Exception as schedule_error:
-                    print(f"Error scheduling notifications for user {user_id}: {schedule_error}")
-                    # Don't fail the upload if scheduling fails
+                # CRITICAL CHANGE: Pure local scheduling approach
+                # Backend no longer schedules recurring notifications
+                # All diet reminders will be handled by local scheduling on mobile app
+                print(f"✅ Automatic extraction completed - notifications will be scheduled locally on mobile app")
                     
             else:
-                print(f"No timed activities found in new diet PDF for user {user_id}")
+                print(f"⚠️ No timed activities found in new diet PDF for user {user_id}")
                 
         except Exception as e:
-            print(f"Error extracting notifications from new diet PDF: {e}")
+            print(f"❌ CRITICAL ERROR: Automatic extraction failed for user {user_id}: {e}")
             import traceback
             traceback.print_exc()
         
-        # Send push notification to user with enhanced data
+        # Send push notification to user with enhanced data including extraction status
         user_token = get_user_notification_token(user_id)
+        
         if user_token:
+            # Determine message and type based on extraction success
+            if extraction_count > 0:
+                notification_type = "new_diet_with_local_scheduling"
+                title = "🎉 New Diet & Reminders Ready!"
+                message = f"Tap to set up {extraction_count} automatic reminders"
+            else:
+                notification_type = "new_diet"
+                title = "📋 New Diet Available"
+                message = "Your dietician has uploaded a new diet plan"
+            
             send_push_notification(
                 user_token,
-                "New Diet Has Arrived!",
-                "Your dietician has uploaded a new diet plan for you.",
+                title,
+                message,
                 {
-                    "type": "new_diet", 
+                    "type": notification_type, 
                     "userId": user_id,
                     "dietPdfUrl": file.filename,
                     "cacheVersion": diet_info["dietCacheVersion"],
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    # CRITICAL FIX: Add extraction status for automatic popup
+                    "automaticExtractionCompleted": extraction_count > 0,
+                    "extractedNotificationCount": extraction_count,
+                    "autoScheduled": extraction_count > 0,
+                    # NEW: Include extracted notifications for local scheduling when app closed
+                    "extractedNotifications": notifications if extraction_count > 0 else [],
+                    "scheduleLocally": extraction_count > 0
                 }
             )
             print(f"Sent new diet notification to user {user_id} with cache version {diet_info['dietCacheVersion']}")
@@ -2148,6 +2196,48 @@ async def get_diet_raw_text(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to get raw diet text")
 
 
+
+@api_router.post("/users/{user_id}/diet/notifications/test-automatic")
+async def test_automatic_diet_extraction(user_id: str):
+    """
+    Test the automatic diet extraction process to debug issues.
+    """
+    try:
+        print(f"🧪 Testing automatic extraction process for user {user_id}")
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if not user_doc.exists:
+            return {"error": "User not found", "user_id": user_id}
+        
+        user_data = user_doc.to_dict()
+        diet_pdf_url = user_data.get("dietPdfUrl")
+        
+        if not diet_pdf_url:
+            return {"error": "No diet PDF found", "user_data_keys": list(user_data.keys())}
+        
+        print(f"📄 Found diet PDF URL: {diet_pdf_url}")
+        
+        # Test extraction
+        notifications = diet_notification_service.extract_and_create_notifications(
+            user_id, diet_pdf_url, firestore_db
+        )
+        
+        return {
+            "message": "Test completed",
+            "user_id": user_id,
+            "diet_pdf_url": diet_pdf_url,
+            "extraction_count": len(notifications) if notifications else 0,
+            "notifications": notifications[:3] if notifications else [],  # First 3 for debugging
+            "user_data_last_upload": user_data.get("lastDietUpload"),
+            "automatic_extraction_working": len(notifications) > 0 if notifications else False
+        }
+        
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "user_id": user_id}
 
 @api_router.post("/users/{user_id}/diet/notifications/test")
 async def test_diet_notification(user_id: str):
@@ -3737,7 +3827,8 @@ def get_recipes_from_firestore():
         # If we have recipes, try to sort them by createdAt if the field exists
         if recipes and any('createdAt' in recipe for recipe in recipes):
             try:
-                recipes_ref = firestore_db.collection('recipes').order_by('createdAt', direction=firestore.Query.DESCENDING)
+                from google.cloud.firestore import Query
+                recipes_ref = firestore_db.collection('recipes').order_by('createdAt', direction=Query.DESCENDING)
                 docs = recipes_ref.stream()
                 recipes = [{"id": doc.id, **doc.to_dict()} for doc in docs]
                 logger.info(f"Successfully ordered {len(recipes)} recipes by createdAt")

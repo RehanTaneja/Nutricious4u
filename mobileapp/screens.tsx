@@ -1219,8 +1219,45 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
         console.log('[NOTIFICATION DEBUG] User ID match:', data?.userId === userId);
         
+        // Handle new diet with automatic scheduling
+        if (data?.type === 'new_diet_with_local_scheduling' && data?.userId === userId) {
+          console.log('[NOTIFICATION DEBUG] Dashboard processing automatic diet scheduling');
+          try {
+            setDietLoading(true);
+            
+            // Handle automatic local scheduling (same as manual extraction)
+            if (data.extractedNotifications && data.extractedNotifications.length > 0) {
+              console.log('[AUTO SCHEDULE] Scheduling', data.extractedNotifications.length, 'local notifications');
+              
+              // Import unified notification service
+              const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+              
+              // Cancel existing diet notifications
+              const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+              console.log(`[AUTO SCHEDULE] Cancelled ${cancelledCount} existing diet notifications`);
+              
+              // Schedule new diet notifications locally (exactly like manual extraction)
+              const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(data.extractedNotifications);
+              console.log('[AUTO SCHEDULE] ✅ Scheduled', scheduledIds.length, 'local diet notifications');
+              
+              // Show success popup
+              Alert.alert(
+                '🎉 Automatic Reminders Ready!',
+                `Your dietician uploaded a new diet with ${data.extractedNotifications.length} automatic reminders! They've been scheduled locally on your device.`,
+                [{ text: 'Great!', style: 'default' }]
+              );
+            }
+            
+            // Refresh diet data
+            await fetchDietData();
+          } catch (error) {
+            console.error('[AUTO SCHEDULE] Error:', error);
+          } finally {
+            setDietLoading(false);
+          }
+        }
         // Handle new diet notifications - refresh diet data immediately
-        if (data?.type === 'new_diet' && data?.userId === userId) {
+        else if (data?.type === 'new_diet' && data?.userId === userId) {
           console.log('[NOTIFICATION DEBUG] Dashboard processing new_diet notification');
           console.log('[Dashboard] Received new diet notification, refreshing diet data...');
           console.log('[Dashboard] Notification data:', data);
@@ -1253,12 +1290,39 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             setDietPdfUrl(dietData.dietPdfUrl || null);
             console.log('[Dashboard] ✅ Diet data refreshed successfully after new diet upload');
             
-            // Show success message to user
-            Alert.alert(
-              'New Diet Available!',
-              'Your dietician has uploaded a new diet plan. The diet has been refreshed automatically.',
-              [{ text: 'OK', style: 'default' }]
-            );
+            // CRITICAL FIX: Show enhanced success message for automatic extraction
+            const extractionCount = data.extractedNotificationCount || 0;
+            const autoScheduled = data.autoScheduled || false;
+            
+            if (autoScheduled && typeof extractionCount === 'number' && extractionCount > 0) {
+              // Green success popup for automatic extraction
+              Alert.alert(
+                '🎉 New Diet & Reminders Ready!',
+                `Your dietician has uploaded a new diet plan with ${extractionCount} automatic reminders scheduled! Check Notification Settings to view them.`,
+                [
+                  { 
+                    text: 'View Reminders', 
+                    style: 'default',
+                    onPress: () => navigation.navigate('NotificationSettings')
+                  },
+                  { text: 'OK', style: 'default' }
+                ]
+              );
+            } else if (data.automaticExtractionCompleted) {
+              // Standard popup for diet without automatic reminders
+              Alert.alert(
+                'New Diet Available!',
+                'Your dietician has uploaded a new diet plan. The diet has been refreshed automatically.',
+                [{ text: 'OK', style: 'default' }]
+              );
+            } else {
+              // Fallback popup
+              Alert.alert(
+                'New Diet Available!',
+                'Your dietician has uploaded a new diet plan.',
+                [{ text: 'OK', style: 'default' }]
+              );
+            }
           } catch (error) {
             console.error('[Dashboard] Error refreshing diet data after new diet:', error);
             
@@ -4497,8 +4561,44 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
       console.log('[NOTIFICATION DEBUG] Is refreshing:', isRefreshing);
       
+      // Handle new diet with automatic scheduling
+      if (data?.type === 'new_diet_with_local_scheduling' && !isRefreshing) {
+        console.log('[NOTIFICATION DEBUG] NotificationSettings processing automatic diet scheduling');
+        isRefreshing = true;
+        try {
+          // Handle automatic local scheduling (same as manual extraction)
+          if (data.extractedNotifications && data.extractedNotifications.length > 0) {
+            console.log('[AUTO SCHEDULE] NotificationSettings scheduling', data.extractedNotifications.length, 'local notifications');
+            
+            // Import unified notification service
+            const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+            
+            // Cancel existing diet notifications
+            const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+            console.log(`[AUTO SCHEDULE] NotificationSettings cancelled ${cancelledCount} existing diet notifications`);
+            
+            // Schedule new diet notifications locally (exactly like manual extraction)
+            const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(data.extractedNotifications);
+            console.log('[AUTO SCHEDULE] NotificationSettings ✅ Scheduled', scheduledIds.length, 'local diet notifications');
+            
+            // Show success popup
+            Alert.alert(
+              '✅ Automatic Reminders Scheduled!',
+              `${data.extractedNotifications.length} diet reminders have been automatically scheduled locally! Old reminders have been removed.`,
+              [{ text: 'Great!', style: 'default' }]
+            );
+          }
+          
+          // Refresh the notification list
+          await loadDietNotifications();
+        } catch (error) {
+          console.error('[AUTO SCHEDULE] NotificationSettings error:', error);
+        } finally {
+          isRefreshing = false;
+        }
+      }
       // Handle new diet notifications - only refresh for new diet uploads, not regular reminders
-      if (data?.type === 'new_diet' && !isRefreshing) {
+      else if (data?.type === 'new_diet' && !isRefreshing) {
         console.log('[NOTIFICATION DEBUG] Processing new_diet notification');
         console.log('[Diet Notifications] Received new diet notification, refreshing diet notifications');
         isRefreshing = true;
@@ -4506,6 +4606,19 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           // Only refresh for new diet uploads, not for regular diet reminders
           // This prevents random rescheduling of existing notifications
           await loadDietNotifications();
+          
+          // CRITICAL FIX: Show success popup for automatic extraction if user is on notification settings
+          const extractionCount = data.extractedNotificationCount || 0;
+          const autoScheduled = data.autoScheduled || false;
+          
+          if (autoScheduled && typeof extractionCount === 'number' && extractionCount > 0) {
+            // Show green success popup for automatic extraction completion
+            Alert.alert(
+              '✅ Automatic Reminders Scheduled!',
+              `${extractionCount} diet reminders have been automatically extracted and scheduled from your new diet plan! Old reminders have been removed.`,
+              [{ text: 'Great!', style: 'default' }]
+            );
+          }
         } finally {
           isRefreshing = false;
         }

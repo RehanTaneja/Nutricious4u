@@ -852,12 +852,17 @@ class DietNotificationService:
         Extract timed activities from a user's diet PDF and create notifications.
         """
         try:
+            logger.info(f"🔄 Starting diet notification extraction for user {user_id}")
+            logger.info(f"📄 Diet PDF URL: {diet_pdf_url}")
+            
             # Get diet text using the existing RAG service
             diet_text = pdf_rag_service.get_diet_pdf_text(user_id, diet_pdf_url, db)
             
             if not diet_text:
-                logger.warning(f"No diet text found for user {user_id}")
+                logger.warning(f"❌ No diet text found for user {user_id} with URL {diet_pdf_url}")
                 return []
+                
+            logger.info(f"✅ Successfully extracted diet text ({len(diet_text)} characters) for user {user_id}")
             
             # Extract timed activities
             activities = self.extract_timed_activities(diet_text)
@@ -881,9 +886,11 @@ class DietNotificationService:
                         notification['selectedDays'] = diet_days
                         logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
                     else:
-                        # If we still can't determine days, default to weekdays only (Monday-Friday)
-                        notification['selectedDays'] = [0, 1, 2, 3, 4]  # Monday to Friday
-                        logger.warning(f"Using default weekdays for notification: {notification['message'][:50]}...")
+                        # CRITICAL FIX: If we can't determine days, set empty array instead of all weekdays
+                        # This prevents notifications from being scheduled on wrong days
+                        notification['selectedDays'] = []
+                        logger.warning(f"Cannot determine diet days - selectedDays set to empty for: {notification['message'][:50]}...")
+                        logger.warning("This notification will need manual day configuration by user")
                 
                 notifications.append(notification)
             

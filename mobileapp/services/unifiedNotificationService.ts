@@ -273,20 +273,28 @@ export class UnifiedNotificationService {
   // Schedule diet notifications locally with improved day-wise scheduling
   async scheduleDietNotifications(notifications: any[]): Promise<string[]> {
     try {
+      // CRITICAL FIX: Cancel all existing diet notifications first
+      console.log('[UnifiedNotificationService] Cancelling existing diet notifications before scheduling new ones');
+      await this.cancelNotificationsByType('diet');
+      
       const scheduledIds: string[] = [];
       
       for (const notification of notifications) {
         const { message, time, selectedDays } = notification;
         const [hours, minutes] = time.split(':').map(Number);
         
-        // CRITICAL FIX: Group notifications by activity and time, not by day
-        if (selectedDays && selectedDays.length > 0) {
-          // Create one notification per activity with proper day filtering
-          const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}`;
-          
-          // Calculate the next occurrence for the first selected day
-          const firstDay = selectedDays[0];
-          const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, firstDay);
+        // CRITICAL FIX: Skip notifications without proper selectedDays to prevent random reminders
+        if (!selectedDays || selectedDays.length === 0) {
+          console.warn(`[UnifiedNotificationService] Skipping notification without selectedDays: ${message}`);
+          continue;
+        }
+        
+        // Create one notification per activity with proper day filtering
+        const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}`;
+        
+        // Calculate the next occurrence for the first selected day
+        const firstDay = selectedDays[0];
+        const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, firstDay);
           
           const unifiedNotification: UnifiedNotification = {
             id: notificationId,

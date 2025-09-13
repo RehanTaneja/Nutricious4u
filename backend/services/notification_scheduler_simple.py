@@ -20,11 +20,32 @@ class SimpleNotificationScheduler:
     
     async def cancel_user_notifications(self, user_id: str) -> int:
         """
-        Cancel all scheduled notifications for a user.
-        Returns 0 since all notifications are handled locally.
+        Cancel all scheduled notifications for a user by removing them from the database.
+        This prevents old diet notifications from continuing to be sent.
         """
-        logger.info(f"[SimpleNotificationScheduler] Notifications for user {user_id} handled locally")
-        return 0
+        try:
+            logger.info(f"[SimpleNotificationScheduler] Cancelling all notifications for user {user_id}")
+            
+            # Get all scheduled notifications for this user
+            scheduled_ref = self.db.collection("scheduled_notifications")
+            user_notifications = scheduled_ref.where("user_id", "==", user_id).stream()
+            
+            cancelled_count = 0
+            for notification_doc in user_notifications:
+                try:
+                    # Delete the scheduled notification document
+                    notification_doc.reference.delete()
+                    cancelled_count += 1
+                    logger.info(f"[SimpleNotificationScheduler] Cancelled notification {notification_doc.id}")
+                except Exception as delete_error:
+                    logger.error(f"[SimpleNotificationScheduler] Error deleting notification {notification_doc.id}: {delete_error}")
+            
+            logger.info(f"[SimpleNotificationScheduler] Successfully cancelled {cancelled_count} notifications for user {user_id}")
+            return cancelled_count
+            
+        except Exception as e:
+            logger.error(f"[SimpleNotificationScheduler] Error cancelling notifications for user {user_id}: {e}")
+            return 0
 
     async def schedule_user_notifications(self, user_id: str) -> int:
         """
@@ -63,7 +84,12 @@ class SimpleNotificationScheduler:
                     # Get notification details
                     message = notification.get("message", "")
                     time_str = notification.get("time", "")
-                    selected_days = notification.get("selectedDays", [0, 1, 2, 3, 4, 5, 6])  # Default to all days
+                    selected_days = notification.get("selectedDays", [])  # CRITICAL FIX: No default to all days
+                    
+                    # Skip notifications without proper day selection to prevent random reminders
+                    if not selected_days:
+                        logger.warning(f"[SimpleNotificationScheduler] Skipping notification without selectedDays: {message}")
+                        continue
                     
                     if not message or not time_str:
                         logger.warning(f"[SimpleNotificationScheduler] Invalid notification data: {notification}")
@@ -114,37 +140,38 @@ class SimpleNotificationScheduler:
         """
         Calculate the next occurrence of a notification based on time and selected days.
         Returns ISO timestamp string.
+        CRITICAL FIX: Improved logic to prevent notifications on wrong days.
         """
         now = datetime.now()
-        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        current_day = now.weekday()  # 0=Monday, 1=Tuesday, etc.
         
-        # If time has passed today, find next occurrence
-        if target_time <= now:
-            # Find next selected day
-            current_day = now.weekday()
-            next_day = None
-            
-            # Check remaining days this week
-            for day in range(current_day + 1, 7):
-                if day in selected_days:
-                    next_day = day
-                    break
-            
-            # If no remaining days this week, find first selected day next week
-            if next_day is None:
-                for day in range(7):
-                    if day in selected_days:
-                        next_day = day
-                        break
-            
-            if next_day is not None:
-                days_ahead = (next_day - current_day) % 7
-                if days_ahead == 0:  # Same day, next week
-                    days_ahead = 7
-                target_time = now + timedelta(days=days_ahead)
-                target_time = target_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # CRITICAL FIX: Validate selected_days
+        if not selected_days:
+            logger.error("No selected days provided for notification scheduling")
+            return (now + timedelta(days=1)).isoformat()
         
-        return target_time.isoformat()
+        logger.info(f"Calculating next occurrence for {hour:02d}:{minute:02d} on days {selected_days}")
+        logger.info(f"Current day: {current_day} ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][current_day]})")
+        
+        # Check if we can schedule for today
+        today_target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if current_day in selected_days and today_target > now:
+            logger.info(f"Scheduling for today: {today_target.isoformat()}")
+            return today_target.isoformat()
+        
+        # Find next valid day
+        for days_ahead in range(1, 8):  # Check next 7 days
+            check_date = now + timedelta(days=days_ahead)
+            check_day = check_date.weekday()
+            
+            if check_day in selected_days:
+                target_time = check_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                logger.info(f"Scheduling for {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][check_day]} ({check_day}): {target_time.isoformat()}")
+                return target_time.isoformat()
+        
+        # Fallback (should never happen if selected_days is valid)
+        logger.error(f"Could not find valid day in selected_days {selected_days}")
+        return (now + timedelta(days=1)).isoformat()
 
     async def send_due_notifications(self):
         """
@@ -210,11 +237,10 @@ class SimpleNotificationScheduler:
                             "sent_at": now.isoformat()
                         })
                         
-                        # CRITICAL FIX: Remove duplicate scheduling
-                        # The mobile app handles recurring notifications with repeats: true
-                        # We should NOT schedule next occurrence here to prevent duplicates
-                        # This fixes the issue of late notifications appearing after 22:00
-                        logger.info(f"Notification sent successfully - mobile app will handle next occurrence")
+                        # CRITICAL FIX: Backend handles all recurring scheduling
+                        # Schedule next occurrence for recurring notifications
+                        self._schedule_next_occurrence(notification_data)
+                        logger.info(f"Notification sent successfully - scheduled next occurrence")
                         
                         sent_count += 1
                         logger.info(f"[SimpleNotificationScheduler] Sent notification to user {user_id}: {message}")
