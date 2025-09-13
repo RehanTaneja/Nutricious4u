@@ -1146,26 +1146,57 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       if (!userId || !isFocused) return;
       
       try {
+        // First check AsyncStorage for global notification flag
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const storedFlag = await AsyncStorage.getItem('pending_auto_extract');
+        
+        if (storedFlag) {
+          const flagData = JSON.parse(storedFlag);
+          if (flagData.userId === userId && flagData.auto_extract_pending) {
+            console.log('[Dashboard] Auto extraction pending detected from global notification, showing popup');
+            setShowAutoExtractionPopup(true);
+            
+            // Clear the stored flag
+            await AsyncStorage.removeItem('pending_auto_extract');
+            
+            // EAS BUILD LOGGING - Log popup trigger from global notification
+            if (!__DEV__ && userId) {
+              try {
+                const { logFrontendEvent } = require('./services/api');
+                await logFrontendEvent(userId, 'POPUP_TRIGGERED_GLOBAL_NOTIFICATION', {
+                  reason: 'auto_extract_pending_from_global',
+                  storedData: flagData,
+                  popupState: 'showing'
+                });
+              } catch (logError) {
+                console.warn('Failed to log popup trigger from global notification:', logError);
+              }
+            }
+            return; // Exit early if we found the global flag
+          }
+        }
+        
+        // Fallback: Check Firestore for auto_extract_pending flag
         const firestore = require('./services/firebase').firestore;
         const userNotificationsDoc = await firestore.collection("user_notifications").doc(userId).get();
         
         if (userNotificationsDoc.exists) {
           const data = userNotificationsDoc.data();
           if (data?.auto_extract_pending === true) {
-            console.log('[Dashboard] Auto extraction pending detected, showing popup');
+            console.log('[Dashboard] Auto extraction pending detected from Firestore, showing popup');
             setShowAutoExtractionPopup(true);
             
-            // EAS BUILD LOGGING - Log popup trigger from screen load
+            // EAS BUILD LOGGING - Log popup trigger from Firestore
             if (!__DEV__ && userId) {
               try {
                 const { logFrontendEvent } = require('./services/api');
-                await logFrontendEvent(userId, 'POPUP_TRIGGERED_SCREEN_LOAD', {
-                  reason: 'auto_extract_pending_on_load',
+                await logFrontendEvent(userId, 'POPUP_TRIGGERED_FIRESTORE', {
+                  reason: 'auto_extract_pending_from_firestore',
                   firestoreData: data,
                   popupState: 'showing'
                 });
               } catch (logError) {
-                console.warn('Failed to log popup trigger from screen load:', logError);
+                console.warn('Failed to log popup trigger from Firestore:', logError);
               }
             }
           }
@@ -1177,8 +1208,59 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
     checkPendingExtraction();
   }, [userId, isFocused]);
-  
 
+  // Additional check when app comes to foreground (handles notification tap case)
+  useEffect(() => {
+    const handleAppStateChange = async () => {
+      if (!userId) return;
+      
+      try {
+        // Check AsyncStorage for notification tap flag
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const storedFlag = await AsyncStorage.getItem('pending_auto_extract');
+        
+        if (storedFlag) {
+          const flagData = JSON.parse(storedFlag);
+          if (flagData.userId === userId && flagData.auto_extract_pending && flagData.source === 'notification_tap') {
+            console.log('[Dashboard] Auto extraction pending detected from notification tap, showing popup');
+            setShowAutoExtractionPopup(true);
+            
+            // Clear the stored flag
+            await AsyncStorage.removeItem('pending_auto_extract');
+            
+            // EAS BUILD LOGGING - Log popup trigger from notification tap
+            if (!__DEV__ && userId) {
+              try {
+                const { logFrontendEvent } = require('./services/api');
+                await logFrontendEvent(userId, 'POPUP_TRIGGERED_NOTIFICATION_TAP', {
+                  reason: 'auto_extract_pending_from_notification_tap',
+                  storedData: flagData,
+                  popupState: 'showing'
+                });
+              } catch (logError) {
+                console.warn('Failed to log popup trigger from notification tap:', logError);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Dashboard] Error checking notification tap flag:', error);
+      }
+    };
+
+    // Check immediately when component mounts
+    handleAppStateChange();
+    
+    // Also check when app comes to foreground
+    const { AppState } = require('react-native');
+    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        handleAppStateChange();
+      }
+    });
+
+    return () => subscription?.remove();
+  }, [userId]);
 
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
