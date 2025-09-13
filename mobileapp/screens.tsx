@@ -4808,67 +4808,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  // Set up notification listener to handle new diets (removed rescheduling to prevent random repeats)
-  useEffect(() => {
-    let isRefreshing = false; // Prevent multiple rapid refreshes
-    
-    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
-      const data = notification.request.content.data;
-      
-      // COMPREHENSIVE LOGGING FOR DEBUGGING
-      console.log('[NOTIFICATION DEBUG] NotificationSettingsScreen listener triggered');
-      console.log('[NOTIFICATION DEBUG] Notification data:', JSON.stringify(data, null, 2));
-      console.log('[NOTIFICATION DEBUG] Notification title:', notification.request.content.title);
-      console.log('[NOTIFICATION DEBUG] Notification body:', notification.request.content.body);
-      console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
-      console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
-      console.log('[NOTIFICATION DEBUG] Timestamp:', new Date().toISOString());
-      console.log('[NOTIFICATION DEBUG] Is refreshing:', isRefreshing);
-      
-      // Handle new diet notifications - only refresh for new diet uploads, not regular reminders
-      if (data?.type === 'new_diet' && !isRefreshing) {
-        console.log('[NOTIFICATION DEBUG] Processing new_diet notification');
-        console.log('[Diet Notifications] Received new diet notification, refreshing diet notifications');
-        isRefreshing = true;
-        try {
-          // Only refresh for new diet uploads, not for regular diet reminders
-          // This prevents random rescheduling of existing notifications
-          await loadDietNotifications();
-        } finally {
-          isRefreshing = false;
-        }
-      } else if (data?.type === 'diet_reminder') {
-        console.log('[NOTIFICATION DEBUG] Ignoring diet_reminder notification to prevent rescheduling');
-      } else {
-        console.log('[NOTIFICATION DEBUG] Ignoring notification type:', data?.type);
-      }
-      
-      if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
-        console.log('[Diet Notifications] Received diet reminder from backend');
-        
-        // Backend handles rescheduling, no need for local rescheduling
-        // Just log that we received the notification
-        const dietNotification = dietNotifications.find(n => n.id === data.notificationId);
-        if (dietNotification) {
-          console.log('[Diet Notifications] Received backend notification:', dietNotification.message);
-        }
-      }
-      
-      // Handle incoming message notifications
-      if (data?.type === 'message_notification') {
-        console.log('[Message Notifications] Received message notification');
-        
-        // Update the messages list if we're in the chat screen
-        if (data.fromUser || data.fromDietician) {
-          // Refresh messages to show the new message
-          // This will be handled by the existing message listener
-          console.log('[Message Notifications] Message notification received, chat will update automatically');
-        }
-      }
-    });
-
-    return () => subscription.remove();
-  }, [dietNotifications]);
+  // REMOVED: Notification listener to prevent conflicts with DashboardScreen
+  // The DashboardScreen now handles all new_diet notifications and popup logic
+  // This prevents race conditions and popup state conflicts
+  // Only message notifications are handled here if needed
 
   // Enhanced background notification handling
   useEffect(() => {

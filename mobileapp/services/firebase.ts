@@ -146,50 +146,16 @@ export async function registerForPushNotificationsAsync() {
   return token;
 }
 
-// Add notification listener for diet notifications
+// REMOVED: Diet notification listener to prevent conflicts with DashboardScreen
+// The DashboardScreen now handles all new_diet notifications and popup logic
+// This prevents race conditions and popup state conflicts
 export function setupDietNotificationListener() {
-  try {
-    logger.log('Setting up diet notification listener for platform:', Platform.OS);
-    
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      logger.log('Notification received:', notification);
-      logger.log('Notification data:', notification.request.content.data);
-      logger.log('Notification title:', notification.request.content.title);
-      logger.log('Notification body:', notification.request.content.body);
-      
-      // Handle diet-related notifications
-      const data = notification.request.content.data;
-      if (data?.type === 'new_diet') {
-        logger.log('New diet notification received for user:', data.userId);
-        // You can add custom handling here if needed
-      } else if (data?.type === 'diet_reminder') {
-        logger.log('Diet reminder notification received for dietician');
-        // You can add custom handling here if needed
-      } else if (data?.type === 'message_notification') {
-        logger.log('Message notification received:', data);
-      } else {
-        logger.log('Other notification type received:', data?.type);
-      }
-    });
-
-    // Also add response listener for when user taps notification
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      logger.log('Notification response received:', response);
-      logger.log('Response data:', response.notification.request.content.data);
-    });
-
-    // Return combined subscription
-    return {
-      remove: () => {
-        subscription.remove();
-        responseSubscription.remove();
-      }
-    };
-  } catch (error) {
-    logger.log('Failed to setup diet notification listener:', error);
-    // Return a dummy subscription to prevent crashes
-    return {
-      remove: () => {}
-    };
-  }
+  // DISABLED: This listener was causing conflicts with DashboardScreen
+  // All notification handling is now centralized in DashboardScreen
+  logger.log('Diet notification listener disabled to prevent conflicts');
+  
+  // Return a dummy subscription to prevent crashes
+  return {
+    remove: () => {}
+  };
 } 
