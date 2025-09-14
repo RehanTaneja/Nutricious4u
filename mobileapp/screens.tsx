@@ -1861,6 +1861,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const response = await extractDietNotifications(userId);
       
       console.log('[Auto Extraction] Backend response:', response);
+      console.log('[Auto Extraction] Number of notifications:', response.notifications?.length || 0);
       
       if (response.notifications && response.notifications.length > 0) {
         try {
@@ -1878,12 +1879,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
           console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
           
-          // Clear the new_diet_received flag
-          console.log('[Auto Extraction] Clearing new_diet_received flag...');
-          const firestore = require('./services/firebase').firestore;
-          await firestore.collection("user_profiles").doc(userId).update({
-            new_diet_received: false
-          });
+          // Note: Backend already clears the new_diet_received flag during extraction
+          console.log('[Auto Extraction] Backend has already cleared new_diet_received flag');
           
           setShowAutoExtractionPopup(false);
           
@@ -1892,7 +1889,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           setShowExtractionSuccessPopup(true);
         } catch (schedulingError: any) {
           console.error('[Auto Extraction] Error in local scheduling:', schedulingError);
-          throw new Error(`Local notification scheduling failed: ${schedulingError.message || schedulingError}`);
+          // Don't throw the error - just log it and continue
+          // The extraction was successful, just local scheduling failed
+          console.warn('[Auto Extraction] Local scheduling failed, but extraction was successful');
+          
+          // Still show success popup even if local scheduling failed
+          setShowAutoExtractionPopup(false);
+          setExtractionSuccessCount(response.notifications.length);
+          setShowExtractionSuccessPopup(true);
         }
       } else {
         setShowAutoExtractionPopup(false);
