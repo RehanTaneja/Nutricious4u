@@ -1433,6 +1433,13 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
     """
     Dietician uploads a new diet PDF for a user. Replaces previous diet, updates timestamp, and returns the new URL.
     """
+    logger.info(f"[DIET UPLOAD] ===== DIET UPLOAD STARTED =====")
+    logger.info(f"[DIET UPLOAD] user_id: {user_id}")
+    logger.info(f"[DIET UPLOAD] dietician_id: {dietician_id}")
+    logger.info(f"[DIET UPLOAD] file: {file}")
+    logger.info(f"[DIET UPLOAD] file.filename: {file.filename if file else 'None'}")
+    logger.info(f"[DIET UPLOAD] file.size: {file.size if file else 'None'}")
+    
     try:
         logger.info(f"[DIET UPLOAD] Starting diet upload for user {user_id} by dietician {dietician_id}")
         logger.info(f"[DIET UPLOAD] File: {file.filename}, Size: {file.size} bytes")
@@ -1631,7 +1638,11 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
         
     except Exception as e:
-        logger.error(f"[DIET UPLOAD ERROR] Error uploading diet for user {user_id}: {e}")
+        logger.error(f"[DIET UPLOAD ERROR] ===== DIET UPLOAD FAILED =====")
+        logger.error(f"[DIET UPLOAD ERROR] user_id: {user_id}")
+        logger.error(f"[DIET UPLOAD ERROR] dietician_id: {dietician_id}")
+        logger.error(f"[DIET UPLOAD ERROR] Error: {e}")
+        logger.error(f"[DIET UPLOAD ERROR] Error type: {type(e).__name__}")
         import traceback
         logger.error(f"[DIET UPLOAD ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
