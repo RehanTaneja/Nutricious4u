@@ -877,6 +877,9 @@ async def create_user_profile(profile: UserProfile):
             profile_dict["totalAmountPaid"] = 0.0
             profile_dict["autoRenewalEnabled"] = True
         
+        # Set new_diet_received to false for all new users
+        profile_dict["new_diet_received"] = False
+        
         await loop.run_in_executor(executor, lambda: doc_ref.set(profile_dict))
         logger.info(f"Created profile for user {user_id} with isDietician={profile_dict.get('isDietician')}")
         return profile_dict
@@ -1518,12 +1521,17 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                     "diet_notifications": notifications,
                     "extracted_at": datetime.now().isoformat(),
                     "diet_pdf_url": file.filename,  # Use the new PDF filename
-                    "auto_extract_pending": True  # Flag for popup trigger
                 }, merge=True))
+                
+                # Set new_diet_received flag in user profile for popup trigger
+                user_profile_ref = firestore_db.collection("users").document(user_id)
+                await loop.run_in_executor(executor, lambda: user_profile_ref.update({
+                    "new_diet_received": True
+                }))
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
                 print(f"Stored notifications with new PDF URL: {file.filename}")
-                print(f"Marked auto_extract_pending=True for popup-based scheduling")
+                print(f"Set new_diet_received=True for popup trigger")
                 
                 # DO NOT automatically schedule here - let the user trigger it via popup
                 # This prevents backend/frontend scheduling conflicts
@@ -1542,7 +1550,6 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             notification_payload = {
                 "type": "new_diet", 
                 "userId": user_id,
-                "auto_extract_pending": True,  # Flag to trigger popup
                 "dietPdfUrl": file.filename,
                 "cacheVersion": diet_info["dietCacheVersion"],
                 "timestamp": datetime.now(timezone.utc).isoformat()
@@ -1561,7 +1568,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             
             if success:
                 print(f"✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
-                print(f"🎯 Popup should appear with auto_extract_pending=True")
+                print(f"🎯 User should see popup on next dashboard load")
             else:
                 print(f"❌ NOTIFICATION FAILED to send to user {user_id}")
         else:
@@ -1678,6 +1685,57 @@ async def get_user_diet(user_id: str):
     except Exception as e:
         logger.error(f"Error getting diet for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve diet information. Please try again.")
+
+@api_router.get("/users/{user_id}/new-diet-popup-trigger")
+async def get_new_diet_popup_trigger(user_id: str):
+    """
+    Check if new diet popup should be shown for the user.
+    For existing users without the attribute, set it to True by default.
+    """
+    try:
+        # Get user's profile to check new_diet_received flag
+        user_doc = firestore_db.collection("users").document(user_id).get()
+        
+        if not user_doc.exists:
+            return {"showPopup": False, "reason": "User not found"}
+        
+        user_data = user_doc.to_dict()
+        
+        # Check if user has the new_diet_received attribute
+        if "new_diet_received" not in user_data:
+            # Existing user without the attribute - check if they have a diet
+            # If they have a diet, set to True (they should see popup)
+            # If no diet, set to False (no popup needed)
+            
+            # Check if user has a diet by looking at dietPdfUrl
+            has_diet = user_data.get("dietPdfUrl") is not None
+            
+            if has_diet:
+                logger.info(f"[NEW DIET POPUP] Existing user {user_id} missing new_diet_received attribute but has diet, setting to True")
+                new_diet_received = True
+            else:
+                logger.info(f"[NEW DIET POPUP] Existing user {user_id} missing new_diet_received attribute and no diet, setting to False")
+                new_diet_received = False
+            
+            # Update the user document with the new attribute
+            user_doc.reference.update({
+                "new_diet_received": new_diet_received
+            })
+            
+            logger.info(f"[NEW DIET POPUP] Set new_diet_received={new_diet_received} for existing user {user_id}")
+        else:
+            new_diet_received = user_data.get("new_diet_received", False)
+        
+        logger.info(f"[NEW DIET POPUP] User {user_id}: new_diet_received={new_diet_received}")
+        
+        return {
+            "showPopup": new_diet_received,
+            "reason": "new_diet_received flag" if new_diet_received else "no new diet"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking new diet popup trigger: {e}")
+        return {"showPopup": False, "reason": f"Error: {e}"}
 
 # --- Appointment Management Endpoints ---
 @api_router.post("/appointments", response_model=AppointmentResponse)
@@ -2077,8 +2135,13 @@ async def extract_diet_notifications(user_id: str):
             "diet_notifications": notifications,
             "extracted_at": datetime.now().isoformat(),
             "diet_pdf_url": diet_pdf_url,
-            "auto_extract_pending": False  # Clear pending flag when manually extracted
         }, merge=True)
+        
+        # Clear new_diet_received flag when extraction is completed
+        user_profile_ref = firestore_db.collection("users").document(user_id)
+        user_profile_ref.update({
+            "new_diet_received": False
+        })
         
         # DISABLED: Schedule the notifications on the backend to prevent conflicts
         # Manual extraction now uses only local scheduling on the device for reliability

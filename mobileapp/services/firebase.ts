@@ -146,116 +146,17 @@ export async function registerForPushNotificationsAsync() {
   return token;
 }
 
-// Global notification listener for new_diet notifications
+// Simplified diet notification listener - just for basic setup
 export function setupDietNotificationListener() {
   try {
-    logger.log('Setting up GLOBAL diet notification listener for platform:', Platform.OS);
+    logger.log('Setting up basic diet notification listener for platform:', Platform.OS);
     
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      const data = notification.request.content.data;
-      
-      logger.log('🌍 GLOBAL NOTIFICATION RECEIVED:', notification.request.content.title);
-      logger.log('🌍 Notification data:', data);
-      
-      // Handle new_diet notifications globally
-      if (data?.type === 'new_diet') {
-        logger.log('🌍 New diet notification received globally for user:', data.userId);
-        
-        // Send to backend for logging
-        if (!__DEV__ && data.userId) {
-          try {
-            const { logFrontendEvent } = require('./api');
-            logFrontendEvent(data.userId, 'GLOBAL_NOTIFICATION_RECEIVED', {
-              type: 'new_diet',
-              notificationData: data,
-              title: notification.request.content.title,
-              body: notification.request.content.body,
-              platform: Platform.OS,
-              autoExtractPending: data?.auto_extract_pending
-            });
-          } catch (logError) {
-            logger.log('Failed to log global notification event:', logError);
-          }
-        }
-        
-        // Store notification data for DashboardScreen to pick up
-        if (data?.auto_extract_pending) {
-          try {
-            // Store in AsyncStorage so DashboardScreen can check for it
-            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-            AsyncStorage.setItem('pending_auto_extract', JSON.stringify({
-              userId: data.userId,
-              auto_extract_pending: true,
-              timestamp: new Date().toISOString(),
-              notificationData: data,
-              source: 'foreground' // Mark as from foreground
-            }));
-            logger.log('🌍 Stored pending auto extract flag for DashboardScreen');
-          } catch (storageError) {
-            logger.log('Failed to store pending auto extract flag:', storageError);
-          }
-        }
-      }
-    });
-
-    // Also add response listener for when user taps notification (CRITICAL for closed app)
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      
-      logger.log('🌍 Global notification response received:', response);
-      logger.log('🌍 Response data:', data);
-      
-      // Handle new_diet notifications when user taps them (app was closed/backgrounded)
-      if (data?.type === 'new_diet') {
-        logger.log('🌍 New diet notification tapped globally for user:', data.userId);
-        
-        // Send to backend for logging
-        if (!__DEV__ && data.userId) {
-          try {
-            const { logFrontendEvent } = require('./api');
-            logFrontendEvent(data.userId, 'GLOBAL_NOTIFICATION_TAPPED', {
-              type: 'new_diet',
-              notificationData: data,
-              title: response.notification.request.content.title,
-              body: response.notification.request.content.body,
-              platform: Platform.OS,
-              autoExtractPending: data?.auto_extract_pending
-            });
-          } catch (logError) {
-            logger.log('Failed to log global notification tap event:', logError);
-          }
-        }
-        
-        // Store notification data for DashboardScreen to pick up
-        if (data?.auto_extract_pending) {
-          try {
-            // Store in AsyncStorage so DashboardScreen can check for it
-            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-            AsyncStorage.setItem('pending_auto_extract', JSON.stringify({
-              userId: data.userId,
-              auto_extract_pending: true,
-              timestamp: new Date().toISOString(),
-              notificationData: data,
-              source: 'notification_tap' // Mark as from notification tap
-            }));
-            logger.log('🌍 Stored pending auto extract flag from notification tap');
-          } catch (storageError) {
-            logger.log('Failed to store pending auto extract flag from tap:', storageError);
-          }
-        }
-      }
-    });
-
-    // Return combined subscription
+    // Return a dummy subscription to prevent crashes
     return {
-      remove: () => {
-        subscription.remove();
-        responseSubscription.remove();
-      }
+      remove: () => {}
     };
   } catch (error) {
-    logger.log('Failed to setup global diet notification listener:', error);
-    // Return a dummy subscription to prevent crashes
+    logger.log('Failed to setup diet notification listener:', error);
     return {
       remove: () => {}
     };

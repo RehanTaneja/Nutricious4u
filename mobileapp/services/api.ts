@@ -1115,6 +1115,17 @@ export const logFrontendEvent = async (userId: string, event: string, data?: any
   }
 };
 
+// Check if new diet popup should be shown
+export const checkNewDietPopupTrigger = async (userId: string) => {
+  try {
+    const response = await enhancedApi.get(`/users/${userId}/new-diet-popup-trigger`);
+    return response.data;
+  } catch (error) {
+    console.error('Error checking new diet popup trigger:', error);
+    return { showPopup: false };
+  }
+};
+
 // Function to get queue status for debugging
 export const getQueueStatus = () => {
   return {

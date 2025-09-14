@@ -1140,127 +1140,30 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   // Consolidated profile fetch - removed duplicate to prevent iOS crashes
   // Profile fetching is now handled by the main useEffect below
 
-  // Check for pending auto-extraction when screen loads
+  // Check for new diet popup trigger on dashboard load
   useEffect(() => {
-    const checkPendingExtraction = async () => {
+    const checkNewDietPopup = async () => {
       if (!userId || !isFocused) return;
       
       try {
-        // First check AsyncStorage for global notification flag
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const storedFlag = await AsyncStorage.getItem('pending_auto_extract');
+        console.log('[Dashboard] Checking for new diet popup trigger...');
+        const { checkNewDietPopupTrigger } = require('./services/api');
+        const response = await checkNewDietPopupTrigger(userId);
         
-        if (storedFlag) {
-          const flagData = JSON.parse(storedFlag);
-          if (flagData.userId === userId && flagData.auto_extract_pending) {
-            console.log('[Dashboard] Auto extraction pending detected from global notification, showing popup');
-            setShowAutoExtractionPopup(true);
-            
-            // Clear the stored flag
-            await AsyncStorage.removeItem('pending_auto_extract');
-            
-            // EAS BUILD LOGGING - Log popup trigger from global notification
-            if (!__DEV__ && userId) {
-              try {
-                const { logFrontendEvent } = require('./services/api');
-                await logFrontendEvent(userId, 'POPUP_TRIGGERED_GLOBAL_NOTIFICATION', {
-                  reason: 'auto_extract_pending_from_global',
-                  storedData: flagData,
-                  popupState: 'showing'
-                });
-              } catch (logError) {
-                console.warn('Failed to log popup trigger from global notification:', logError);
-              }
-            }
-            return; // Exit early if we found the global flag
-          }
-        }
-        
-        // Fallback: Check Firestore for auto_extract_pending flag
-        const firestore = require('./services/firebase').firestore;
-        const userNotificationsDoc = await firestore.collection("user_notifications").doc(userId).get();
-        
-        if (userNotificationsDoc.exists) {
-          const data = userNotificationsDoc.data();
-          if (data?.auto_extract_pending === true) {
-            console.log('[Dashboard] Auto extraction pending detected from Firestore, showing popup');
-            setShowAutoExtractionPopup(true);
-            
-            // EAS BUILD LOGGING - Log popup trigger from Firestore
-            if (!__DEV__ && userId) {
-              try {
-                const { logFrontendEvent } = require('./services/api');
-                await logFrontendEvent(userId, 'POPUP_TRIGGERED_FIRESTORE', {
-                  reason: 'auto_extract_pending_from_firestore',
-                  firestoreData: data,
-                  popupState: 'showing'
-                });
-              } catch (logError) {
-                console.warn('Failed to log popup trigger from Firestore:', logError);
-              }
-            }
-          }
+        if (response.showPopup) {
+          console.log('[Dashboard] New diet popup trigger is true, showing popup');
+          setShowAutoExtractionPopup(true);
+        } else {
+          console.log('[Dashboard] New diet popup trigger is false, no popup needed');
         }
       } catch (error) {
-        console.error('[Dashboard] Error checking pending extraction:', error);
+        console.error('[Dashboard] Error checking new diet popup trigger:', error);
       }
     };
 
-    checkPendingExtraction();
+    checkNewDietPopup();
   }, [userId, isFocused]);
 
-  // Additional check when app comes to foreground (handles notification tap case)
-  useEffect(() => {
-    const handleAppStateChange = async () => {
-      if (!userId) return;
-      
-      try {
-        // Check AsyncStorage for notification tap flag
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const storedFlag = await AsyncStorage.getItem('pending_auto_extract');
-        
-        if (storedFlag) {
-          const flagData = JSON.parse(storedFlag);
-          if (flagData.userId === userId && flagData.auto_extract_pending && flagData.source === 'notification_tap') {
-            console.log('[Dashboard] Auto extraction pending detected from notification tap, showing popup');
-            setShowAutoExtractionPopup(true);
-            
-            // Clear the stored flag
-            await AsyncStorage.removeItem('pending_auto_extract');
-            
-            // EAS BUILD LOGGING - Log popup trigger from notification tap
-            if (!__DEV__ && userId) {
-              try {
-                const { logFrontendEvent } = require('./services/api');
-                await logFrontendEvent(userId, 'POPUP_TRIGGERED_NOTIFICATION_TAP', {
-                  reason: 'auto_extract_pending_from_notification_tap',
-                  storedData: flagData,
-                  popupState: 'showing'
-                });
-              } catch (logError) {
-                console.warn('Failed to log popup trigger from notification tap:', logError);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('[Dashboard] Error checking notification tap flag:', error);
-      }
-    };
-
-    // Check immediately when component mounts
-    handleAppStateChange();
-    
-    // Also check when app comes to foreground
-    const { AppState } = require('react-native');
-    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
-      if (nextAppState === 'active') {
-        handleAppStateChange();
-      }
-    });
-
-    return () => subscription?.remove();
-  }, [userId]);
 
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
@@ -1973,10 +1876,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
         console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
         
-        // Clear the auto_extract_pending flag
+        // Clear the new_diet_received flag
         const firestore = require('./services/firebase').firestore;
-        await firestore.collection("user_notifications").doc(userId).update({
-          auto_extract_pending: false
+        await firestore.collection("users").doc(userId).update({
+          new_diet_received: false
         });
         
         setShowAutoExtractionPopup(false);
