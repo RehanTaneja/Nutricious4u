@@ -1863,30 +1863,37 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       console.log('[Auto Extraction] Backend response:', response);
       
       if (response.notifications && response.notifications.length > 0) {
-        // Cancel existing diet notifications
-        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-        const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
-        
-        console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
-        
-        // Schedule new diet notifications locally (works in EAS builds)
-        const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
-        
-        // Note: Notification list will be updated when user navigates to Notification Settings
-        console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
-        console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
-        
-        // Clear the new_diet_received flag
-        const firestore = require('./services/firebase').firestore;
-        await firestore.collection("users").doc(userId).update({
-          new_diet_received: false
-        });
-        
-        setShowAutoExtractionPopup(false);
-        
-        // Show success popup instead of alert (same as manual extraction)
-        setExtractionSuccessCount(response.notifications.length);
-        setShowExtractionSuccessPopup(true);
+        try {
+          // Cancel existing diet notifications
+          const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+          const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+          
+          console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
+          
+          // Schedule new diet notifications locally (works in EAS builds)
+          console.log('[Auto Extraction] Starting local notification scheduling...');
+          const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
+          
+          // Note: Notification list will be updated when user navigates to Notification Settings
+          console.log('[Auto Extraction] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
+          console.log('[Auto Extraction] Scheduled IDs:', scheduledIds);
+          
+          // Clear the new_diet_received flag
+          console.log('[Auto Extraction] Clearing new_diet_received flag...');
+          const firestore = require('./services/firebase').firestore;
+          await firestore.collection("user_profiles").doc(userId).update({
+            new_diet_received: false
+          });
+          
+          setShowAutoExtractionPopup(false);
+          
+          // Show success popup instead of alert (same as manual extraction)
+          setExtractionSuccessCount(response.notifications.length);
+          setShowExtractionSuccessPopup(true);
+        } catch (schedulingError: any) {
+          console.error('[Auto Extraction] Error in local scheduling:', schedulingError);
+          throw new Error(`Local notification scheduling failed: ${schedulingError.message || schedulingError}`);
+        }
       } else {
         setShowAutoExtractionPopup(false);
         Alert.alert(
