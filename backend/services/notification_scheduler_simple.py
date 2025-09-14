@@ -63,10 +63,15 @@ class SimpleNotificationScheduler:
                     # Get notification details
                     message = notification.get("message", "")
                     time_str = notification.get("time", "")
-                    selected_days = notification.get("selectedDays", [0, 1, 2, 3, 4, 5, 6])  # Default to all days
+                    selected_days = notification.get("selectedDays", [])  # Preserve empty if no days assigned
                     
                     if not message or not time_str:
                         logger.warning(f"[SimpleNotificationScheduler] Invalid notification data: {notification}")
+                        continue
+                    
+                    # Skip notifications with no selected days (preserve empty behavior)
+                    if not selected_days or len(selected_days) == 0:
+                        logger.info(f"[SimpleNotificationScheduler] Skipping notification with no selected days: {message}")
                         continue
                     
                     # Parse time (format: "HH:MM")
@@ -113,9 +118,9 @@ class SimpleNotificationScheduler:
     def _calculate_next_occurrence(self, hour: int, minute: int, selected_days: List[int]) -> str:
         """
         Calculate the next occurrence of a notification based on time and selected days.
-        Returns ISO timestamp string.
+        Returns ISO timestamp string in UTC.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         
         # If time has passed today, find next occurrence
@@ -245,7 +250,7 @@ class SimpleNotificationScheduler:
         try:
             hour = notification_data.get("hour")
             minute = notification_data.get("minute")
-            selected_days = notification_data.get("selectedDays", [0, 1, 2, 3, 4, 5, 6])
+            selected_days = notification_data.get("selectedDays", [])
             
             if hour is None or minute is None:
                 return

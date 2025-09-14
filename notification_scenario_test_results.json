@@ -1,0 +1,165 @@
+[
+  {
+    "scenario": "Monday notification on Monday (time not passed)",
+    "current_time": "2024-01-15T10:00:00+00:00",
+    "notification_time": "12:00",
+    "selected_days": [
+      0
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-15",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 0,
+      "logic_explanation": "Today (Monday) at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "results_match": false,
+    "timestamp": "2025-09-14T15:31:45.083892"
+  },
+  {
+    "scenario": "Monday notification on Monday (time passed)",
+    "current_time": "2024-01-15T14:00:00+00:00",
+    "notification_time": "12:00",
+    "selected_days": [
+      0
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "results_match": true,
+    "timestamp": "2025-09-14T15:31:45.083954"
+  },
+  {
+    "scenario": "Monday notification on Tuesday",
+    "current_time": "2024-01-16T10:00:00+00:00",
+    "notification_time": "12:00",
+    "selected_days": [
+      0
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 6,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 6,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "results_match": true,
+    "timestamp": "2025-09-14T15:31:45.083983"
+  },
+  {
+    "scenario": "IST timezone - Monday notification on Monday",
+    "current_time": "2024-01-15T10:00:00+05:30",
+    "notification_time": "12:00",
+    "selected_days": [
+      0
+    ],
+    "timezone": "Asia/Kolkata",
+    "frontend_result": {
+      "scheduled_date": "2024-01-15",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 0,
+      "logic_explanation": "Today (Monday) at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 12:00:00"
+    },
+    "results_match": false,
+    "timestamp": "2025-09-14T15:31:45.103035"
+  },
+  {
+    "scenario": "Day boundary crossing - late night notification",
+    "current_time": "2024-01-15T23:30:00+00:00",
+    "notification_time": "08:00",
+    "selected_days": [
+      0
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "08:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 08:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-22",
+      "scheduled_time": "08:00:00",
+      "days_ahead": 7,
+      "logic_explanation": "Next Monday at 08:00:00"
+    },
+    "results_match": true,
+    "timestamp": "2025-09-14T15:31:45.103347"
+  },
+  {
+    "scenario": "Multiple days - Monday and Wednesday",
+    "current_time": "2024-01-15T10:00:00+00:00",
+    "notification_time": "12:00",
+    "selected_days": [
+      0,
+      2
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-15",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 0,
+      "logic_explanation": "Today (Monday) at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-17",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 2,
+      "logic_explanation": "Next Wednesday at 12:00:00"
+    },
+    "results_match": false,
+    "timestamp": "2025-09-14T15:31:45.103391"
+  },
+  {
+    "scenario": "Weekend notification on weekday",
+    "current_time": "2024-01-15T10:00:00+00:00",
+    "notification_time": "12:00",
+    "selected_days": [
+      5,
+      6
+    ],
+    "timezone": "UTC",
+    "frontend_result": {
+      "scheduled_date": "2024-01-20",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 5,
+      "logic_explanation": "Next Saturday at 12:00:00"
+    },
+    "backend_result": {
+      "scheduled_date": "2024-01-20",
+      "scheduled_time": "12:00:00",
+      "days_ahead": 5,
+      "logic_explanation": "Next Saturday at 12:00:00"
+    },
+    "results_match": true,
+    "timestamp": "2025-09-14T15:31:45.103439"
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "priority": "HIGH",
+    "issue": "Timezone conversion problems",
+    "recommendation": "Implement consistent timezone handling using pytz. Always convert to UTC for storage and user timezone for display.",
+    "files": [
+      "mobileapp/services/unifiedNotificationService.ts",
+      "backend/services/notification_scheduler.py"
+    ]
+  }
+]

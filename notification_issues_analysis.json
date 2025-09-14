@@ -1,0 +1,58 @@
+[
+  {
+    "type": "timezone_inconsistency",
+    "severity": "HIGH",
+    "description": "Frontend uses local timezone while backend uses UTC, causing day calculation mismatches",
+    "location": "mobileapp/services/unifiedNotificationService.ts vs backend/services/notification_scheduler.py",
+    "recommendation": "Implement consistent timezone handling - use UTC for all calculations and convert to user timezone only for display",
+    "timestamp": "2025-09-14T15:31:14.178613"
+  },
+  {
+    "type": "day_boundary_crossing",
+    "severity": "HIGH",
+    "description": "Notifications scheduled near midnight can appear on wrong day due to timezone conversion",
+    "location": "All notification scheduling logic",
+    "recommendation": "Add explicit timezone handling for day calculations and use user's local timezone for day determination",
+    "timestamp": "2025-09-14T15:31:14.178632"
+  },
+  {
+    "type": "ist_utc_mismatch",
+    "severity": "CRITICAL",
+    "description": "Diet plans are in IST but notifications are calculated in UTC, causing wrong day scheduling",
+    "location": "backend/services/notification_scheduler.py",
+    "recommendation": "Convert all diet times to UTC before scheduling or use IST consistently throughout",
+    "timestamp": "2025-09-14T15:31:14.178645"
+  },
+  {
+    "type": "day_numbering_mismatch",
+    "severity": "HIGH",
+    "description": "Backend uses 0=Monday while JavaScript uses 0=Sunday, causing day conversion errors",
+    "location": "mobileapp/services/unifiedNotificationService.ts line 243, 489",
+    "recommendation": "Standardize day numbering or fix conversion logic: js_day = (backend_day + 1) % 7",
+    "timestamp": "2025-09-14T15:31:14.178662"
+  },
+  {
+    "type": "day_calculation_logic",
+    "severity": "MEDIUM",
+    "description": "Day calculation logic may not handle edge cases properly (week boundaries, time passed today)",
+    "location": "mobileapp/services/unifiedNotificationService.ts calculateDietNextOccurrence method",
+    "recommendation": "Review and test day calculation logic for all edge cases",
+    "timestamp": "2025-09-14T15:31:14.178671"
+  },
+  {
+    "type": "duplicate_scheduling",
+    "severity": "HIGH",
+    "description": "Both frontend and backend may schedule notifications, causing duplicates",
+    "location": "mobileapp/services/unifiedNotificationService.ts and backend/services/notification_scheduler_simple.py",
+    "recommendation": "Use only frontend scheduling or only backend scheduling, not both",
+    "timestamp": "2025-09-14T15:31:14.178776"
+  },
+  {
+    "type": "notification_id_collision",
+    "severity": "MEDIUM",
+    "description": "Notification ID generation may create collisions for same message/time/day",
+    "location": "mobileapp/services/unifiedNotificationService.ts line 287",
+    "recommendation": "Improve ID generation to include more unique elements or use UUID",
+    "timestamp": "2025-09-14T15:31:14.178788"
+  }
+]

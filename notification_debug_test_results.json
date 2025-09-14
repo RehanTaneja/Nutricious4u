@@ -1,0 +1,333 @@
+{
+  "summary": {
+    "total_tests": 43,
+    "passed_tests": 39,
+    "failed_tests": 4,
+    "success_rate": 90.69767441860465
+  },
+  "test_results": [
+    {
+      "test_name": "UTC to IST conversion - UTC vs IST mismatch",
+      "passed": true,
+      "details": "UTC 2024-01-15 16:30:00+00:00 -> IST 2024-01-15 22:00:00+05:30 (expected hour 22, day 15)",
+      "timestamp": "2025-09-14T15:29:27.181365",
+      "issue_type": null
+    },
+    {
+      "test_name": "UTC to IST conversion - Day boundary crossing UTC to IST",
+      "passed": false,
+      "details": "UTC 2024-01-15 18:00:00+00:00 -> IST 2024-01-15 23:30:00+05:30 (expected hour 0, day 16)",
+      "timestamp": "2025-09-14T15:29:27.181452",
+      "issue_type": "timezone_conversion"
+    },
+    {
+      "test_name": "IST to UTC conversion - IST to UTC conversion",
+      "passed": false,
+      "details": "IST 2024-01-15 22:30:00 -> UTC 2024-01-15 17:00:00+00:00 (expected hour 16, day 15)",
+      "timestamp": "2025-09-14T15:29:27.181490",
+      "issue_type": "timezone_conversion"
+    },
+    {
+      "test_name": "Day calculation - Monday notification on Monday",
+      "passed": true,
+      "details": "Current day 0, target day 0, time 10:00->12:00, calculated days ahead: 0 (expected: 0)",
+      "timestamp": "2025-09-14T15:29:27.181520",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day calculation - Monday notification on Tuesday",
+      "passed": true,
+      "details": "Current day 1, target day 0, time 10:00->12:00, calculated days ahead: 6 (expected: 6)",
+      "timestamp": "2025-09-14T15:29:27.181532",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day calculation - Monday notification on Sunday",
+      "passed": true,
+      "details": "Current day 6, target day 0, time 10:00->12:00, calculated days ahead: 1 (expected: 1)",
+      "timestamp": "2025-09-14T15:29:27.181543",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day calculation - Monday notification on Monday (time passed)",
+      "passed": true,
+      "details": "Current day 0, target day 0, time 14:00->12:00, calculated days ahead: 7 (expected: 7)",
+      "timestamp": "2025-09-14T15:29:27.181552",
+      "issue_type": null
+    },
+    {
+      "test_name": "JS day conversion - Monday conversion (0 -> 1)",
+      "passed": true,
+      "details": "Backend day 0 -> JS day 1 (expected: 1) using (day + 1) % 7",
+      "timestamp": "2025-09-14T15:29:27.181609",
+      "issue_type": null
+    },
+    {
+      "test_name": "JS day conversion - Sunday conversion (6 -> 0)",
+      "passed": true,
+      "details": "Backend day 6 -> JS day 0 (expected: 0) using (day + 1) % 7",
+      "timestamp": "2025-09-14T15:29:27.181620",
+      "issue_type": null
+    },
+    {
+      "test_name": "JS day conversion - Tuesday conversion (1 -> 2)",
+      "passed": true,
+      "details": "Backend day 1 -> JS day 2 (expected: 2) using (day + 1) % 7",
+      "timestamp": "2025-09-14T15:29:27.181630",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00 AM",
+      "passed": true,
+      "details": "Parsed 8:00 AM -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181652",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00AM",
+      "passed": true,
+      "details": "Parsed 8:00AM -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181662",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00 A.M.",
+      "passed": true,
+      "details": "Parsed 8:00 A.M. -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181672",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00A.M.",
+      "passed": true,
+      "details": "Parsed 8:00A.M. -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181681",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00 PM",
+      "passed": true,
+      "details": "Parsed 8:00 PM -> 20:00",
+      "timestamp": "2025-09-14T15:29:27.181690",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00PM",
+      "passed": true,
+      "details": "Parsed 8:00PM -> 20:00",
+      "timestamp": "2025-09-14T15:29:27.181698",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00 P.M.",
+      "passed": true,
+      "details": "Parsed 8:00 P.M. -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181705",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00P.M.",
+      "passed": true,
+      "details": "Parsed 8:00P.M. -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181713",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 8:00",
+      "passed": true,
+      "details": "Parsed 8:00 -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181721",
+      "issue_type": null
+    },
+    {
+      "test_name": "Time parsing - 08:00",
+      "passed": true,
+      "details": "Parsed 08:00 -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181729",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - 8.00",
+      "passed": false,
+      "details": "Unknown text time format: 8.00",
+      "timestamp": "2025-09-14T15:29:27.181736",
+      "issue_type": "text_time_parsing"
+    },
+    {
+      "test_name": "Text time parsing - 08.00",
+      "passed": false,
+      "details": "Unknown text time format: 08.00",
+      "timestamp": "2025-09-14T15:29:27.181746",
+      "issue_type": "text_time_parsing"
+    },
+    {
+      "test_name": "Text time parsing - morning",
+      "passed": true,
+      "details": "Parsed morning -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181754",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - breakfast",
+      "passed": true,
+      "details": "Parsed breakfast -> 08:00",
+      "timestamp": "2025-09-14T15:29:27.181762",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - noon",
+      "passed": true,
+      "details": "Parsed noon -> 12:00",
+      "timestamp": "2025-09-14T15:29:27.181769",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - lunch",
+      "passed": true,
+      "details": "Parsed lunch -> 12:00",
+      "timestamp": "2025-09-14T15:29:27.181777",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - dinner",
+      "passed": true,
+      "details": "Parsed dinner -> 19:00",
+      "timestamp": "2025-09-14T15:29:27.181785",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - evening",
+      "passed": true,
+      "details": "Parsed evening -> 18:00",
+      "timestamp": "2025-09-14T15:29:27.181792",
+      "issue_type": null
+    },
+    {
+      "test_name": "Text time parsing - night",
+      "passed": true,
+      "details": "Parsed night -> 21:00",
+      "timestamp": "2025-09-14T15:29:27.181800",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day detection - Standard day headers",
+      "passed": true,
+      "details": "Detected days: [0, 1], expected: [0, 1]",
+      "timestamp": "2025-09-14T15:29:27.182272",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day detection - Abbreviated day headers with dates",
+      "passed": true,
+      "details": "Detected days: [0, 1], expected: [0, 1]",
+      "timestamp": "2025-09-14T15:29:27.182296",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day detection - Lowercase day headers with colons",
+      "passed": true,
+      "details": "Detected days: [0, 1], expected: [0, 1]",
+      "timestamp": "2025-09-14T15:29:27.182313",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day detection - No day headers",
+      "passed": true,
+      "details": "Detected days: [], expected: []",
+      "timestamp": "2025-09-14T15:29:27.182328",
+      "issue_type": null
+    },
+    {
+      "test_name": "Scheduling logic - Notification scheduled for past time",
+      "passed": true,
+      "details": "Current: 2024-01-15 14:00:00, Target: 2024-01-15 12:00:00, Should schedule tomorrow: True",
+      "timestamp": "2025-09-14T15:29:27.182351",
+      "issue_type": null
+    },
+    {
+      "test_name": "Scheduling logic - Notification scheduled for same time",
+      "passed": true,
+      "details": "Current: 2024-01-15 12:00:00, Target: 2024-01-15 12:00:00, Should schedule tomorrow: True",
+      "timestamp": "2025-09-14T15:29:27.182363",
+      "issue_type": null
+    },
+    {
+      "test_name": "Scheduling logic - Notification scheduled for future time today",
+      "passed": true,
+      "details": "Current: 2024-01-15 10:00:00, Target: 2024-01-15 12:00:00, Should schedule today: True",
+      "timestamp": "2025-09-14T15:29:27.182373",
+      "issue_type": null
+    },
+    {
+      "test_name": "Scheduling error handling - Notification with invalid time format",
+      "passed": true,
+      "details": "Correctly handled invalid time format: invalid_time",
+      "timestamp": "2025-09-14T15:29:27.182383",
+      "issue_type": null
+    },
+    {
+      "test_name": "Concurrent handling - Multiple notifications for same time and day",
+      "passed": true,
+      "details": "Generated 2 IDs, 2 unique. Duplicates: False",
+      "timestamp": "2025-09-14T15:29:27.182405",
+      "issue_type": null
+    },
+    {
+      "test_name": "Concurrent handling - Overlapping time ranges",
+      "passed": true,
+      "details": "Generated 6 IDs, 6 unique. Duplicates: False",
+      "timestamp": "2025-09-14T15:29:27.182421",
+      "issue_type": null
+    },
+    {
+      "test_name": "Concurrent handling - Same notification with different days",
+      "passed": true,
+      "details": "Generated 2 IDs, 2 unique. Duplicates: False",
+      "timestamp": "2025-09-14T15:29:27.182433",
+      "issue_type": null
+    },
+    {
+      "test_name": "Timezone boundary - Daylight Saving Time transition",
+      "passed": true,
+      "details": "Local: 2024-03-10 02:00:00-05:00, UTC: 2024-03-10 07:00:00+00:00, Valid: True",
+      "timestamp": "2025-09-14T15:29:27.182963",
+      "issue_type": null
+    },
+    {
+      "test_name": "Timezone boundary - New Year timezone boundary",
+      "passed": true,
+      "details": "Local: 2024-01-01 00:00:00+05:30, UTC: 2023-12-31 18:30:00+00:00, Valid: True",
+      "timestamp": "2025-09-14T15:29:27.183006",
+      "issue_type": null
+    },
+    {
+      "test_name": "Timezone boundary - Leap year boundary",
+      "passed": true,
+      "details": "Local: 2024-02-29 12:00:00+00:00, UTC: 2024-02-29 12:00:00+00:00, Valid: True",
+      "timestamp": "2025-09-14T15:29:27.183026",
+      "issue_type": null
+    }
+  ],
+  "issues_found": [
+    {
+      "test_name": "UTC to IST conversion - Day boundary crossing UTC to IST",
+      "issue_type": "timezone_conversion",
+      "details": "UTC 2024-01-15 18:00:00+00:00 -> IST 2024-01-15 23:30:00+05:30 (expected hour 0, day 16)"
+    },
+    {
+      "test_name": "IST to UTC conversion - IST to UTC conversion",
+      "issue_type": "timezone_conversion",
+      "details": "IST 2024-01-15 22:30:00 -> UTC 2024-01-15 17:00:00+00:00 (expected hour 16, day 15)"
+    },
+    {
+      "test_name": "Text time parsing - 8.00",
+      "issue_type": "text_time_parsing",
+      "details": "Unknown text time format: 8.00"
+    },
+    {
+      "test_name": "Text time parsing - 08.00",
+      "issue_type": "text_time_parsing",
+      "details": "Unknown text time format: 08.00"
+    }
+  ]
+}

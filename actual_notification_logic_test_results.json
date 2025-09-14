@@ -1,0 +1,185 @@
+{
+  "summary": {
+    "total_tests": 19,
+    "passed_tests": 11,
+    "failed_tests": 8,
+    "success_rate": 57.89473684210527
+  },
+  "test_results": [
+    {
+      "test_name": "UnifiedService error - Monday notification on Monday (time not passed)",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.576978",
+      "issue_type": "scheduling_error"
+    },
+    {
+      "test_name": "UnifiedService error - Monday notification on Monday (time passed)",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.576998",
+      "issue_type": "scheduling_error"
+    },
+    {
+      "test_name": "UnifiedService error - Monday notification on Tuesday",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.577011",
+      "issue_type": "scheduling_error"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Monday (time not passed)",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.577039",
+      "issue_type": "backend_scheduling_error"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Monday (time passed)",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.577049",
+      "issue_type": "backend_scheduling_error"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Tuesday",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.577058",
+      "issue_type": "backend_scheduling_error"
+    },
+    {
+      "test_name": "BackendScheduler error - Multiple days notification",
+      "passed": false,
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'",
+      "timestamp": "2025-09-14T15:30:20.577149",
+      "issue_type": "backend_scheduling_error"
+    },
+    {
+      "test_name": "Timezone consistency - IST timezone handling",
+      "passed": true,
+      "details": "IST 2024-01-15 12:00:00 -> UTC 2024-01-15 06:30:00+00:00 (expected 6:30)",
+      "timestamp": "2025-09-14T15:30:20.591789",
+      "issue_type": null
+    },
+    {
+      "test_name": "Timezone consistency - UTC timezone handling",
+      "passed": true,
+      "details": "UTC 2024-01-15 12:00:00 -> UTC 2024-01-15 12:00:00+00:00 (expected 12:0)",
+      "timestamp": "2025-09-14T15:30:20.591861",
+      "issue_type": null
+    },
+    {
+      "test_name": "ID generation - Same message, same time, same day",
+      "passed": false,
+      "details": "Generated 2 IDs, 1 unique. Unique: False",
+      "timestamp": "2025-09-14T15:30:20.594462",
+      "issue_type": "id_generation"
+    },
+    {
+      "test_name": "ID generation - Different messages, same time, same day",
+      "passed": true,
+      "details": "Generated 2 IDs, 2 unique. Unique: True",
+      "timestamp": "2025-09-14T15:30:20.597325",
+      "issue_type": null
+    },
+    {
+      "test_name": "ID generation - Same message, different times, same day",
+      "passed": true,
+      "details": "Generated 2 IDs, 2 unique. Unique: True",
+      "timestamp": "2025-09-14T15:30:20.600044",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Monday",
+      "passed": true,
+      "details": "Backend 0 -> JS 1 (expected 1), JS 1 -> Backend 0 (expected 0), Round-trip: 0",
+      "timestamp": "2025-09-14T15:30:20.600257",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Tuesday",
+      "passed": true,
+      "details": "Backend 1 -> JS 2 (expected 2), JS 2 -> Backend 1 (expected 1), Round-trip: 1",
+      "timestamp": "2025-09-14T15:30:20.600288",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Wednesday",
+      "passed": true,
+      "details": "Backend 2 -> JS 3 (expected 3), JS 3 -> Backend 2 (expected 2), Round-trip: 2",
+      "timestamp": "2025-09-14T15:30:20.600302",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Thursday",
+      "passed": true,
+      "details": "Backend 3 -> JS 4 (expected 4), JS 4 -> Backend 3 (expected 3), Round-trip: 3",
+      "timestamp": "2025-09-14T15:30:20.600372",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Friday",
+      "passed": true,
+      "details": "Backend 4 -> JS 5 (expected 5), JS 5 -> Backend 4 (expected 4), Round-trip: 4",
+      "timestamp": "2025-09-14T15:30:20.600383",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Saturday",
+      "passed": true,
+      "details": "Backend 5 -> JS 6 (expected 6), JS 6 -> Backend 5 (expected 5), Round-trip: 5",
+      "timestamp": "2025-09-14T15:30:20.600412",
+      "issue_type": null
+    },
+    {
+      "test_name": "Day conversion - Sunday",
+      "passed": true,
+      "details": "Backend 6 -> JS 0 (expected 0), JS 0 -> Backend 6 (expected 6), Round-trip: 6",
+      "timestamp": "2025-09-14T15:30:20.600529",
+      "issue_type": null
+    }
+  ],
+  "issues_found": [
+    {
+      "test_name": "UnifiedService error - Monday notification on Monday (time not passed)",
+      "issue_type": "scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "UnifiedService error - Monday notification on Monday (time passed)",
+      "issue_type": "scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "UnifiedService error - Monday notification on Tuesday",
+      "issue_type": "scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Monday (time not passed)",
+      "issue_type": "backend_scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Monday (time passed)",
+      "issue_type": "backend_scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "BackendScheduler error - Monday notification on Tuesday",
+      "issue_type": "backend_scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "BackendScheduler error - Multiple days notification",
+      "issue_type": "backend_scheduling_error",
+      "details": "Exception: cannot set 'now' attribute of immutable type 'datetime.datetime'"
+    },
+    {
+      "test_name": "ID generation - Same message, same time, same day",
+      "issue_type": "id_generation",
+      "details": "Generated 2 IDs, 1 unique. Unique: False"
+    }
+  ]
+}
