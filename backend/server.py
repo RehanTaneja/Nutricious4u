@@ -1434,16 +1434,21 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
     Dietician uploads a new diet PDF for a user. Replaces previous diet, updates timestamp, and returns the new URL.
     """
     try:
+        logger.info(f"[DIET UPLOAD] Starting diet upload for user {user_id} by dietician {dietician_id}")
+        logger.info(f"[DIET UPLOAD] File: {file.filename}, Size: {file.size} bytes")
         print(f"Starting diet upload for user {user_id} by dietician {dietician_id}")
         print(f"File: {file.filename}, Size: {file.size} bytes")
         
         # Read file data
         file_data = await file.read()
+        logger.info(f"[DIET UPLOAD] Read {len(file_data)} bytes from file")
         print(f"Read {len(file_data)} bytes from file")
         
         # Upload to Firebase Storage
+        logger.info(f"[DIET UPLOAD] Calling upload_diet_pdf with user_id={user_id}, filename={file.filename}")
         print(f"Calling upload_diet_pdf with user_id={user_id}, filename={file.filename}")
         pdf_url = upload_diet_pdf(user_id, file_data, file.filename)
+        logger.info(f"[DIET UPLOAD] Upload completed. PDF URL: {pdf_url}")
         print(f"Upload completed. PDF URL: {pdf_url}")
         
         # Store the filename in Firestore instead of the signed URL (which expires)
@@ -1524,10 +1529,12 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 }, merge=True))
                 
                 # Set new_diet_received flag in user profile for popup trigger
+                logger.info(f"[DIET UPLOAD] Setting new_diet_received=True for user {user_id}")
                 user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
                 await loop.run_in_executor(executor, lambda: user_profile_ref.update({
                     "new_diet_received": True
                 }))
+                logger.info(f"[DIET UPLOAD] Successfully set new_diet_received=True for user {user_id}")
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
                 print(f"Stored notifications with new PDF URL: {file.filename}")
@@ -1593,9 +1600,9 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
         
     except Exception as e:
-        print(f"Error uploading diet: {e}")
+        logger.error(f"[DIET UPLOAD ERROR] Error uploading diet for user {user_id}: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(f"[DIET UPLOAD ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Check Users with 1 Day Remaining (for scheduled jobs) ---
