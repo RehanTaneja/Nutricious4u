@@ -1529,11 +1529,25 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             if notifications:
                 # Store notifications in Firestore with the new PDF URL
                 user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
-                await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
-                    "diet_notifications": notifications,
-                    "extracted_at": datetime.now().isoformat(),
-                    "diet_pdf_url": file.filename,  # Use the new PDF filename
-                }, merge=True))
+                try:
+                    await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
+                        "diet_notifications": notifications,
+                        "extracted_at": datetime.now().isoformat(),
+                        "diet_pdf_url": file.filename,  # Use the new PDF filename
+                    }, merge=True))
+                    logger.info(f"[DIET UPLOAD] Successfully stored notifications in Firestore for user {user_id}")
+                except RuntimeError as e:
+                    if "cannot schedule new futures after shutdown" in str(e):
+                        logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call")
+                        # Use direct Firestore call as fallback
+                        user_notifications_ref.set({
+                            "diet_notifications": notifications,
+                            "extracted_at": datetime.now().isoformat(),
+                            "diet_pdf_url": file.filename,
+                        }, merge=True)
+                        logger.info(f"[DIET UPLOAD] Successfully stored notifications using direct Firestore call for user {user_id}")
+                    else:
+                        raise
                 
                 # Set new_diet_received flag in user profile for popup trigger
                 logger.info(f"[DIET UPLOAD] Setting new_diet_received=True for user {user_id}")
@@ -1542,31 +1556,73 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                     logger.info(f"[DIET UPLOAD] Created Firestore reference for user {user_id}")
                     
                     # Test if document exists first
-                    doc_exists = await loop.run_in_executor(executor, lambda: user_profile_ref.get().exists)
-                    logger.info(f"[DIET UPLOAD] Document exists check: {doc_exists}")
+                    try:
+                        doc_exists = await loop.run_in_executor(executor, lambda: user_profile_ref.get().exists)
+                        logger.info(f"[DIET UPLOAD] Document exists check: {doc_exists}")
+                    except RuntimeError as e:
+                        if "cannot schedule new futures after shutdown" in str(e):
+                            logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for flag setting")
+                            # Use direct Firestore call as fallback
+                            doc_exists = user_profile_ref.get().exists
+                            logger.info(f"[DIET UPLOAD] Document exists check (direct): {doc_exists}")
+                        else:
+                            raise
                     
                     if not doc_exists:
                         logger.error(f"[DIET UPLOAD] Document {user_id} does not exist in user_profiles collection!")
                         # Create the document with the flag
-                        await loop.run_in_executor(executor, lambda: user_profile_ref.set({
-                            "new_diet_received": True
-                        }, merge=True))
-                        logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True for user {user_id}")
+                        try:
+                            await loop.run_in_executor(executor, lambda: user_profile_ref.set({
+                                "new_diet_received": True
+                            }, merge=True))
+                            logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True for user {user_id}")
+                        except RuntimeError as e:
+                            if "cannot schedule new futures after shutdown" in str(e):
+                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document creation")
+                                user_profile_ref.set({
+                                    "new_diet_received": True
+                                }, merge=True)
+                                logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True using direct call for user {user_id}")
+                            else:
+                                raise
                     else:
                         # Update existing document
-                        await loop.run_in_executor(executor, lambda: user_profile_ref.update({
-                            "new_diet_received": True
-                        }))
-                        logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True for user {user_id}")
+                        try:
+                            await loop.run_in_executor(executor, lambda: user_profile_ref.update({
+                                "new_diet_received": True
+                            }))
+                            logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True for user {user_id}")
+                        except RuntimeError as e:
+                            if "cannot schedule new futures after shutdown" in str(e):
+                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document update")
+                                user_profile_ref.update({
+                                    "new_diet_received": True
+                                })
+                                logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True using direct call for user {user_id}")
+                            else:
+                                raise
                     
                     # Verify the update
-                    updated_doc = await loop.run_in_executor(executor, lambda: user_profile_ref.get())
-                    if updated_doc.exists:
-                        updated_data = updated_doc.to_dict()
-                        flag_value = updated_data.get("new_diet_received")
-                        logger.info(f"[DIET UPLOAD] Verification: new_diet_received={flag_value}")
-                    else:
-                        logger.error(f"[DIET UPLOAD] Verification failed: document does not exist after update")
+                    try:
+                        updated_doc = await loop.run_in_executor(executor, lambda: user_profile_ref.get())
+                        if updated_doc.exists:
+                            updated_data = updated_doc.to_dict()
+                            flag_value = updated_data.get("new_diet_received")
+                            logger.info(f"[DIET UPLOAD] Verification: new_diet_received={flag_value}")
+                        else:
+                            logger.error(f"[DIET UPLOAD] Verification failed: document does not exist after update")
+                    except RuntimeError as e:
+                        if "cannot schedule new futures after shutdown" in str(e):
+                            logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for verification")
+                            updated_doc = user_profile_ref.get()
+                            if updated_doc.exists:
+                                updated_data = updated_doc.to_dict()
+                                flag_value = updated_data.get("new_diet_received")
+                                logger.info(f"[DIET UPLOAD] Verification (direct): new_diet_received={flag_value}")
+                            else:
+                                logger.error(f"[DIET UPLOAD] Verification failed (direct): document does not exist after update")
+                        else:
+                            raise
                         
                 except Exception as flag_error:
                     logger.error(f"[DIET UPLOAD] Error setting new_diet_received flag: {flag_error}")
