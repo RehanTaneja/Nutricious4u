@@ -1530,11 +1530,42 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 
                 # Set new_diet_received flag in user profile for popup trigger
                 logger.info(f"[DIET UPLOAD] Setting new_diet_received=True for user {user_id}")
-                user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
-                await loop.run_in_executor(executor, lambda: user_profile_ref.update({
-                    "new_diet_received": True
-                }))
-                logger.info(f"[DIET UPLOAD] Successfully set new_diet_received=True for user {user_id}")
+                try:
+                    user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
+                    logger.info(f"[DIET UPLOAD] Created Firestore reference for user {user_id}")
+                    
+                    # Test if document exists first
+                    doc_exists = await loop.run_in_executor(executor, lambda: user_profile_ref.get().exists)
+                    logger.info(f"[DIET UPLOAD] Document exists check: {doc_exists}")
+                    
+                    if not doc_exists:
+                        logger.error(f"[DIET UPLOAD] Document {user_id} does not exist in user_profiles collection!")
+                        # Create the document with the flag
+                        await loop.run_in_executor(executor, lambda: user_profile_ref.set({
+                            "new_diet_received": True
+                        }, merge=True))
+                        logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True for user {user_id}")
+                    else:
+                        # Update existing document
+                        await loop.run_in_executor(executor, lambda: user_profile_ref.update({
+                            "new_diet_received": True
+                        }))
+                        logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True for user {user_id}")
+                    
+                    # Verify the update
+                    updated_doc = await loop.run_in_executor(executor, lambda: user_profile_ref.get())
+                    if updated_doc.exists:
+                        updated_data = updated_doc.to_dict()
+                        flag_value = updated_data.get("new_diet_received")
+                        logger.info(f"[DIET UPLOAD] Verification: new_diet_received={flag_value}")
+                    else:
+                        logger.error(f"[DIET UPLOAD] Verification failed: document does not exist after update")
+                        
+                except Exception as flag_error:
+                    logger.error(f"[DIET UPLOAD] Error setting new_diet_received flag: {flag_error}")
+                    import traceback
+                    logger.error(f"[DIET UPLOAD] Flag setting traceback: {traceback.format_exc()}")
+                    # Don't raise the error, just log it - diet upload should still succeed
                 
                 print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
                 print(f"Stored notifications with new PDF URL: {file.filename}")
