@@ -1524,7 +1524,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 }, merge=True))
                 
                 # Set new_diet_received flag in user profile for popup trigger
-                user_profile_ref = firestore_db.collection("users").document(user_id)
+                user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
                 await loop.run_in_executor(executor, lambda: user_profile_ref.update({
                     "new_diet_received": True
                 }))
@@ -1694,7 +1694,7 @@ async def get_new_diet_popup_trigger(user_id: str):
     """
     try:
         # Get user's profile to check new_diet_received flag
-        user_doc = firestore_db.collection("users").document(user_id).get()
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
         
         if not user_doc.exists:
             return {"showPopup": False, "reason": "User not found"}
@@ -2138,7 +2138,7 @@ async def extract_diet_notifications(user_id: str):
         }, merge=True)
         
         # Clear new_diet_received flag when extraction is completed
-        user_profile_ref = firestore_db.collection("users").document(user_id)
+        user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
         user_profile_ref.update({
             "new_diet_received": False
         })
