@@ -48,7 +48,7 @@ import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api'
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -1147,7 +1147,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       try {
         console.log('[Dashboard] Checking for new diet popup trigger...');
-        const { checkNewDietPopupTrigger } = require('./services/api');
         const response = await checkNewDietPopupTrigger(userId);
         
         if (response.showPopup) {
@@ -1857,7 +1856,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       console.log('[Auto Extraction] Starting extraction from backend API...');
       
       // Call backend API for extraction (same as manual extraction)
-      const { extractDietNotifications } = require('./services/api');
       const response = await extractDietNotifications(userId);
       
       console.log('[Auto Extraction] Backend response:', response);
@@ -1866,7 +1864,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       if (response.notifications && response.notifications.length > 0) {
         try {
           // Cancel existing diet notifications
-          const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+          const unifiedNotificationService = (await import('./services/unifiedNotificationService')).default;
           const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
           
           console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
