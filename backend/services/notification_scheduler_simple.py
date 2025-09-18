@@ -28,92 +28,11 @@ class SimpleNotificationScheduler:
 
     async def schedule_user_notifications(self, user_id: str) -> int:
         """
-        Schedule all active diet notifications for a user automatically.
-        This is called when dietician uploads a new diet.
+        DISABLED: Backend diet notification scheduling is disabled to prevent conflicts.
+        All diet notifications are now handled by the frontend for reliability.
         """
-        try:
-            logger.info(f"[SimpleNotificationScheduler] Scheduling notifications for user {user_id}")
-            
-            # Get user's diet notifications from Firestore
-            user_notifications_ref = self.db.collection("user_notifications").document(user_id)
-            notifications_doc = user_notifications_ref.get()
-            
-            if not notifications_doc.exists:
-                logger.info(f"[SimpleNotificationScheduler] No notifications found for user {user_id}")
-                return 0
-            
-            notifications_data = notifications_doc.to_dict()
-            diet_notifications = notifications_data.get("diet_notifications", [])
-            
-            if not diet_notifications:
-                logger.info(f"[SimpleNotificationScheduler] No diet notifications found for user {user_id}")
-                return 0
-            
-            logger.info(f"[SimpleNotificationScheduler] Found {len(diet_notifications)} diet notifications for user {user_id}")
-            
-            # Schedule each notification
-            scheduled_count = 0
-            for notification in diet_notifications:
-                try:
-                    # Check if notification is active
-                    if not notification.get("isActive", True):
-                        logger.info(f"[SimpleNotificationScheduler] Skipping inactive notification: {notification.get('message', 'Unknown')}")
-                        continue
-                    
-                    # Get notification details
-                    message = notification.get("message", "")
-                    time_str = notification.get("time", "")
-                    selected_days = notification.get("selectedDays", [])  # Preserve empty if no days assigned
-                    
-                    if not message or not time_str:
-                        logger.warning(f"[SimpleNotificationScheduler] Invalid notification data: {notification}")
-                        continue
-                    
-                    # Skip notifications with no selected days (preserve empty behavior)
-                    if not selected_days or len(selected_days) == 0:
-                        logger.info(f"[SimpleNotificationScheduler] Skipping notification with no selected days: {message}")
-                        continue
-                    
-                    # Parse time (format: "HH:MM")
-                    try:
-                        hour, minute = map(int, time_str.split(":"))
-                    except ValueError:
-                        logger.warning(f"[SimpleNotificationScheduler] Invalid time format: {time_str}")
-                        continue
-                    
-                    # Create scheduled notification record
-                    scheduled_notification = {
-                        "user_id": user_id,
-                        "notification_id": notification.get("id", f"diet_{datetime.now().timestamp()}"),
-                        "message": message,
-                        "time": time_str,
-                        "hour": hour,
-                        "minute": minute,
-                        "selectedDays": selected_days,
-                        "scheduled_for": self._calculate_next_occurrence(hour, minute, selected_days),
-                        "status": "scheduled",
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "source": "diet_pdf",
-                        "isActive": True
-                    }
-                    
-                    # Store in scheduled_notifications collection
-                    scheduled_ref = self.db.collection("scheduled_notifications").document(f"{user_id}_{notification.get('id', datetime.now().timestamp())}")
-                    scheduled_ref.set(scheduled_notification)
-                    
-                    scheduled_count += 1
-                    logger.info(f"[SimpleNotificationScheduler] Scheduled notification: {message} at {time_str}")
-                    
-                except Exception as notification_error:
-                    logger.error(f"[SimpleNotificationScheduler] Error scheduling notification {notification}: {notification_error}")
-                    continue
-            
-            logger.info(f"[SimpleNotificationScheduler] Successfully scheduled {scheduled_count} notifications for user {user_id}")
-            return scheduled_count
-            
-        except Exception as e:
-            logger.error(f"[SimpleNotificationScheduler] Error scheduling notifications for user {user_id}: {e}")
-            return 0
+        logger.info(f"[SimpleNotificationScheduler] DISABLED - Diet notifications for user {user_id} handled by frontend only")
+        return 0
 
     def _calculate_next_occurrence(self, hour: int, minute: int, selected_days: List[int]) -> str:
         """
@@ -153,95 +72,11 @@ class SimpleNotificationScheduler:
 
     async def send_due_notifications(self):
         """
-        Send notifications that are due to be sent.
-        Now actually sends scheduled diet notifications.
+        DISABLED: Backend diet notification sending is disabled to prevent conflicts.
+        All diet notifications are now handled by the frontend for reliability.
         """
-        try:
-            logger.info("[SimpleNotificationScheduler] Checking for due notifications...")
-            
-            # Get all scheduled notifications that are due
-            now = datetime.now(timezone.utc)
-            scheduled_ref = self.db.collection("scheduled_notifications")
-            
-            # Query for notifications that are due (scheduled_for <= now and status = "scheduled")
-            due_notifications = scheduled_ref.where("status", "==", "scheduled").where("scheduled_for", "<=", now.isoformat()).stream()
-            
-            sent_count = 0
-            for notification_doc in due_notifications:
-                try:
-                    notification_data = notification_doc.to_dict()
-                    user_id = notification_data.get("user_id")
-                    notification_id = notification_data.get("notification_id")
-                    message = notification_data.get("message", "")
-                    
-                    if not user_id or not message:
-                        logger.warning(f"[SimpleNotificationScheduler] Invalid notification data: {notification_data}")
-                        continue
-                    
-                    # Get user's notification token
-                    user_profile_ref = self.db.collection("user_profiles").document(user_id)
-                    user_profile = user_profile_ref.get()
-                    
-                    if not user_profile.exists:
-                        logger.warning(f"[SimpleNotificationScheduler] User profile not found: {user_id}")
-                        continue
-                    
-                    user_data = user_profile.to_dict()
-                    user_token = user_data.get("expoPushToken") or user_data.get("notificationToken")
-                    
-                    if not user_token:
-                        logger.warning(f"[SimpleNotificationScheduler] No notification token for user: {user_id}")
-                        continue
-                    
-                    # Send push notification
-                    from server import send_push_notification  # Import here to avoid circular imports
-                    
-                    try:
-                        send_push_notification(
-                            user_token,
-                            "Diet Reminder",
-                            message,
-                            {
-                                "type": "diet_reminder",
-                                "userId": user_id,
-                                "notificationId": notification_id,
-                                "timestamp": now.isoformat()
-                            }
-                        )
-                        
-                        # Update notification status to sent
-                        notification_doc.reference.update({
-                            "status": "sent",
-                            "sent_at": now.isoformat()
-                        })
-                        
-                        # CRITICAL FIX: Remove duplicate scheduling
-                        # The mobile app handles recurring notifications with repeats: true
-                        # We should NOT schedule next occurrence here to prevent duplicates
-                        # This fixes the issue of late notifications appearing after 22:00
-                        logger.info(f"Notification sent successfully - mobile app will handle next occurrence")
-                        
-                        sent_count += 1
-                        logger.info(f"[SimpleNotificationScheduler] Sent notification to user {user_id}: {message}")
-                        
-                    except Exception as send_error:
-                        logger.error(f"[SimpleNotificationScheduler] Error sending notification: {send_error}")
-                        # Mark as failed
-                        notification_doc.reference.update({
-                            "status": "failed",
-                            "failed_at": now.isoformat()
-                        })
-                        
-                except Exception as notification_error:
-                    logger.error(f"[SimpleNotificationScheduler] Error processing notification {notification_doc.id}: {notification_error}")
-                    continue
-            
-            logger.info(f"[SimpleNotificationScheduler] Sent {sent_count} due notifications")
-            return sent_count
-            
-        except Exception as e:
-            logger.error(f"[SimpleNotificationScheduler] Error sending due notifications: {e}")
-            return 0
+        logger.info("[SimpleNotificationScheduler] DISABLED - Diet notifications handled by frontend only")
+        return 0
 
     def _schedule_next_occurrence(self, notification_data: Dict[str, Any]):
         """

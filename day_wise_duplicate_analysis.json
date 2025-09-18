@@ -1,0 +1,44 @@
+{
+  "timestamp": "2025-09-18T04:42:29.850404+00:00",
+  "issue": "same_notification_different_days",
+  "user_report": "Monday 8am + Wednesday 11pm for same message",
+  "root_cause": "Different activities with same message but different times/days",
+  "current_implementation": "Creates separate notifications for each selected day",
+  "problem": "Day-wise loop creates multiple notifications for same activity",
+  "solutions": [
+    {
+      "solution": "Group notifications by message and time",
+      "priority": "HIGH",
+      "description": "Instead of creating separate notifications for each day, group them by message+time",
+      "implementation": "Modify scheduleDietNotifications to group by activityId",
+      "code_change": "Create single notification with all selectedDays, not separate ones"
+    },
+    {
+      "solution": "Add duplicate message detection",
+      "priority": "MEDIUM",
+      "description": "Detect if multiple activities have same message and warn user",
+      "implementation": "Check for duplicate messages during extraction",
+      "code_change": "Add validation in diet extraction process"
+    },
+    {
+      "solution": "Improve activity identification",
+      "priority": "MEDIUM",
+      "description": "Make activityId more specific to include day and time",
+      "implementation": "Include day and time in activityId calculation",
+      "code_change": "activityId: `${message}_${time}_${dayOfWeek}_${hours}_${minutes}`"
+    },
+    {
+      "solution": "Add user confirmation for duplicates",
+      "priority": "LOW",
+      "description": "Ask user to confirm when duplicate messages are detected",
+      "implementation": "Show popup when duplicate messages are found",
+      "code_change": "Add duplicate detection UI in extraction process"
+    }
+  ],
+  "immediate_fix": "Group notifications by message+time instead of creating separate ones",
+  "verification_steps": [
+    "Check diet PDF for multiple activities with same message",
+    "Check Firestore for duplicate notifications",
+    "Verify selectedDays and time values"
+  ]
+}

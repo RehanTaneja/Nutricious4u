@@ -1,0 +1,167 @@
+{
+  "timestamp": "2025-09-18T04:39:34.697819+00:00",
+  "issue_type": "recurring_notification_timing",
+  "root_cause": "Expo's repeat system doesn't support day-of-week specific repeats",
+  "issues": [
+    {
+      "issue": "Incorrect Repeat Interval Calculation",
+      "severity": "CRITICAL",
+      "description": "Frontend uses 7 days in milliseconds, but this doesn't account for day-of-week alignment",
+      "location": "mobileapp/services/unifiedNotificationService.ts:309",
+      "code": "repeatInterval: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds",
+      "problem": "7 days = 168 hours, but this doesn't ensure the notification repeats on the same day of week",
+      "example": "If notification scheduled for Monday 9:00 AM, next occurrence might be Tuesday 9:00 AM instead of next Monday 9:00 AM"
+    },
+    {
+      "issue": "No Day-of-Week Validation in Repeats",
+      "severity": "HIGH",
+      "description": "Repeat interval doesn't validate that the next occurrence is on the correct day",
+      "location": "mobileapp/services/unifiedNotificationService.ts:308-309",
+      "code": "repeats: true, // Enable weekly repeats for consistent delivery",
+      "problem": "Expo's repeat system doesn't understand 'weekly on specific day' - it just adds 7 days",
+      "example": "Monday notification at 9:00 AM \u2192 Next Monday at 9:00 AM (correct), but if there's any drift, it becomes Tuesday"
+    },
+    {
+      "issue": "Timezone Drift in Repeats",
+      "severity": "HIGH",
+      "description": "Repeating notifications don't account for timezone changes or daylight saving time",
+      "location": "mobileapp/services/unifiedNotificationService.ts:481-528",
+      "problem": "calculateDietNextOccurrence is only called once, not for each repeat",
+      "example": "If device timezone changes or DST occurs, repeat timing becomes incorrect"
+    }
+  ],
+  "expo_limitations": [
+    {
+      "limitation": "Expo Only Supports Time-Based Repeats",
+      "description": "Expo's repeat system only supports time intervals, not day-of-week specific repeats",
+      "impact": "Cannot reliably repeat 'every Monday at 9:00 AM' - only 'every 7 days from now'",
+      "evidence": "Expo documentation shows only timeInterval repeats, no calendar-based repeats"
+    },
+    {
+      "limitation": "No Calendar-Based Scheduling",
+      "description": "Expo doesn't support calendar-based scheduling like 'every Monday' or 'every Tuesday'",
+      "impact": "Must manually calculate next occurrence for each repeat",
+      "evidence": "No 'weekly' or 'monthly' repeat types in Expo Notifications API"
+    },
+    {
+      "limitation": "Repeat Timing Drift",
+      "description": "Time-based repeats can drift over time due to system delays or timezone changes",
+      "impact": "Monday 9:00 AM notification might become Monday 9:05 AM after several weeks",
+      "evidence": "System clock adjustments or app backgrounding can affect repeat timing"
+    }
+  ],
+  "implementation_problems": [
+    {
+      "problem": "Single Next Occurrence Calculation",
+      "description": "calculateDietNextOccurrence is only called once during initial scheduling",
+      "location": "mobileapp/services/unifiedNotificationService.ts:290",
+      "issue": "When notification repeats, it doesn't recalculate the next occurrence for the correct day",
+      "fix_needed": "Need to recalculate next occurrence for each repeat"
+    },
+    {
+      "problem": "No Repeat Handler",
+      "description": "No mechanism to handle when a notification repeats to schedule the next occurrence",
+      "location": "mobileapp/services/unifiedNotificationService.ts",
+      "issue": "Expo handles the repeat, but doesn't ensure it's on the correct day",
+      "fix_needed": "Need notification received handler to reschedule next occurrence"
+    },
+    {
+      "problem": "Day-of-Week Conversion Issues",
+      "description": "Day conversion logic might be incorrect for repeats",
+      "location": "mobileapp/services/unifiedNotificationService.ts:489",
+      "code": "const jsSelectedDay = (dayOfWeek + 1) % 7; // Convert Monday=0 to Sunday=0",
+      "issue": "This conversion might not work correctly for all day combinations",
+      "fix_needed": "Verify day conversion logic for all scenarios"
+    }
+  ],
+  "timing_scenarios": [
+    {
+      "scenario": "Monday 9:00 AM Notification",
+      "initial_schedule": "Monday 9:00 AM (correct)",
+      "first_repeat": "Next Monday 9:00 AM (should be correct)",
+      "problem": "After several weeks, might drift to Tuesday 9:00 AM or Monday 9:05 AM",
+      "cause": "Expo's 7-day repeat doesn't account for day-of-week alignment"
+    },
+    {
+      "scenario": "Wednesday 2:00 PM Notification",
+      "initial_schedule": "Wednesday 2:00 PM (correct)",
+      "first_repeat": "Next Wednesday 2:00 PM (should be correct)",
+      "problem": "Might appear on Thursday 2:00 PM after several repeats",
+      "cause": "Time drift or timezone changes affect repeat timing"
+    },
+    {
+      "scenario": "Friday 6:00 PM Notification",
+      "initial_schedule": "Friday 6:00 PM (correct)",
+      "first_repeat": "Next Friday 6:00 PM (should be correct)",
+      "problem": "Might appear on Saturday 6:00 PM or Friday 5:55 PM",
+      "cause": "System clock adjustments or app backgrounding"
+    }
+  ],
+  "solutions": [
+    {
+      "solution": "Disable Expo Repeats, Use Manual Rescheduling",
+      "priority": "CRITICAL",
+      "description": "Disable repeats: true and manually reschedule after each notification",
+      "implementation": "Use notification received handler to reschedule next occurrence",
+      "code_changes": [
+        "Set repeats: false in unifiedNotificationService.ts",
+        "Add notification received handler to reschedule",
+        "Recalculate next occurrence for correct day each time"
+      ],
+      "files": [
+        "mobileapp/services/unifiedNotificationService.ts",
+        "mobileapp/screens.tsx"
+      ]
+    },
+    {
+      "solution": "Fix Day-of-Week Calculation",
+      "priority": "HIGH",
+      "description": "Ensure day calculation is correct for all scenarios",
+      "implementation": "Test and fix the day conversion logic",
+      "code_changes": [
+        "Verify (dayOfWeek + 1) % 7 conversion",
+        "Add comprehensive day calculation tests",
+        "Handle edge cases properly"
+      ],
+      "files": [
+        "mobileapp/services/unifiedNotificationService.ts"
+      ]
+    },
+    {
+      "solution": "Add Timezone-Aware Scheduling",
+      "priority": "MEDIUM",
+      "description": "Ensure scheduling works correctly across timezones",
+      "implementation": "Use consistent timezone for all calculations",
+      "code_changes": [
+        "Use device timezone consistently",
+        "Handle DST changes properly",
+        "Add timezone validation"
+      ],
+      "files": [
+        "mobileapp/services/unifiedNotificationService.ts"
+      ]
+    },
+    {
+      "solution": "Add Repeat Validation",
+      "priority": "MEDIUM",
+      "description": "Validate that repeated notifications are on correct day",
+      "implementation": "Check day-of-week before showing notification",
+      "code_changes": [
+        "Add day validation in notification handler",
+        "Reschedule if on wrong day",
+        "Log timing issues for debugging"
+      ],
+      "files": [
+        "mobileapp/screens.tsx"
+      ]
+    }
+  ],
+  "recommended_fix": "Disable Expo repeats and use manual rescheduling",
+  "summary": {
+    "total_issues": 3,
+    "critical_issues": 1,
+    "high_issues": 2,
+    "main_problem": "Expo's 7-day repeat doesn't ensure day-of-week alignment",
+    "solution": "Manual rescheduling after each notification"
+  }
+}

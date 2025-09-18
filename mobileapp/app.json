@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Nutricious4u",
-    "slug": "nutricious4u",
+    "slug": "mobileapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
@@ -61,7 +61,7 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "nutricious4u",
-    "owner": "rt3546",
+    "owner": "rehantaneja",
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
@@ -92,7 +92,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "23b497a5-baac-44c7-82a4-487a59bfff5b"
+        "projectId": "56c008a1-a0af-423d-b407-f55c95410861"
       }
     },
     "platforms": [

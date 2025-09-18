@@ -1,0 +1,21 @@
+{
+  "timestamp": "2025-09-18T04:44:28.888296+00:00",
+  "issue": "dual_scheduling_systems",
+  "user_scenario": "Correct diet, same notification on Monday 8am + Wednesday 11pm",
+  "root_cause": "Both frontend and backend schedulers are active",
+  "frontend_system": {
+    "location": "mobileapp/services/unifiedNotificationService.ts",
+    "result": "Monday 8:00 AM (correct)"
+  },
+  "backend_system": {
+    "location": "backend/services/notification_scheduler_simple.py",
+    "result": "Wednesday 11:00 PM (wrong)"
+  },
+  "evidence": "Documentation says backend is disabled but SimpleNotificationScheduler still active",
+  "fix": "Completely disable backend scheduler to use only frontend",
+  "verification": [
+    "Check server logs for 'Backend notification scheduler DISABLED'",
+    "Check Firestore for Wednesday 11pm notifications",
+    "Check device for Monday 8am notifications"
+  ]
+}
