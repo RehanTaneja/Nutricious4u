@@ -611,9 +611,17 @@ async def log_food_item(request: FoodLogRequest):
             logger.info(f"[FOOD LOG DEBUG] - Food calories per 100g: {log_entry.food.calories}")
             logger.info(f"[FOOD LOG DEBUG] - Food protein per 100g: {log_entry.food.protein}")
             logger.info(f"[FOOD LOG DEBUG] - Food fat per 100g: {log_entry.food.fat}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected calories for this serving: {(log_entry.food.calories * float(log_entry.servingSize)) / 100}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected protein for this serving: {(log_entry.food.protein * float(log_entry.servingSize)) / 100}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected fat for this serving: {(log_entry.food.fat * float(log_entry.servingSize)) / 100}")
+            # Parse serving size to extract numeric value
+            try:
+                serving_size_num = float(log_entry.servingSize.split()[0])  # Extract first number
+            except (ValueError, IndexError):
+                serving_size_num = 100  # Default fallback
+                logger.warning(f"[FOOD LOG DEBUG] Could not parse serving size '{log_entry.servingSize}', using default 100")
+            
+            logger.info(f"[FOOD LOG DEBUG] - Parsed serving size: {serving_size_num}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected calories for this serving: {(log_entry.food.calories * serving_size_num) / 100}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected protein for this serving: {(log_entry.food.protein * serving_size_num) / 100}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected fat for this serving: {(log_entry.food.fat * serving_size_num) / 100}")
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
             # Delete food logs older than 7 days
@@ -676,8 +684,9 @@ async def get_food_log_summary(user_id: str):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                serving_size_num = float(serving_size)
-            except Exception:
+                # Parse serving size to extract numeric value (handle units like "2 slices")
+                serving_size_num = float(serving_size.split()[0]) if isinstance(serving_size, str) else float(serving_size)
+            except (ValueError, IndexError, AttributeError):
                 serving_size_num = 100
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
@@ -764,8 +773,9 @@ async def _get_food_log_summary_internal(user_id: str, loop):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                serving_size_num = float(serving_size)
-            except Exception:
+                # Parse serving size to extract numeric value (handle units like "2 slices")
+                serving_size_num = float(serving_size.split()[0]) if isinstance(serving_size, str) else float(serving_size)
+            except (ValueError, IndexError, AttributeError):
                 serving_size_num = 100
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
