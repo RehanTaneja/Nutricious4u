@@ -1549,7 +1549,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setWorkoutSummary(workoutData);
       
       // Set burnedToday from workout summary for today
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
       const todayWorkout = workoutData.history.find((d) => d.day === today);
       setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
     } catch (e) {
@@ -1591,7 +1591,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const delayedCheck = setTimeout(async () => {
         const checkDailyReset = async () => {
           try {
-            const today = new Date().toISOString().split('T')[0];
+            const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
             const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
             
             if (lastReset !== today) {
@@ -5662,7 +5662,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    last7Dates.push(d.toISOString().slice(0, 10)); // 'YYYY-MM-DD'
+    last7Dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); // 'YYYY-MM-DD'
   }
   // Map summary.history to a lookup by date
   const historyByDate: { [date: string]: any } = {};

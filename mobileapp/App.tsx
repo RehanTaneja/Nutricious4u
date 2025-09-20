@@ -192,7 +192,7 @@ function AppContent() {
     if (!user?.uid) return;
     
     try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'); // YYYY-MM-DD format
       const storedDate = await AsyncStorage.getItem(`lastResetDate_${user.uid}`);
       
       if (storedDate !== today) {
