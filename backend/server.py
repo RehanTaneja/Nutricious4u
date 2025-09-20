@@ -605,27 +605,15 @@ async def log_food_item(request: FoodLogRequest):
         )
         def log_food_in_db():
             log_entry.timestamp = datetime.utcnow()
-            
-            # Extract numeric value from serving size (e.g., "2 slices" -> 2.0)
-            import re
-            serving_size_str = str(log_entry.servingSize).strip()
-            numeric_match = re.search(r'(\d+(?:\.\d+)?)', serving_size_str)
-            if numeric_match:
-                serving_size_numeric = float(numeric_match.group(1))
-            else:
-                logger.warning(f"[FOOD LOG DEBUG] Could not extract numeric value from serving size: {serving_size_str}, using 100 as default")
-                serving_size_numeric = 100.0
-            
             logger.info(f"[FOOD LOG DEBUG] Logging food with details:")
             logger.info(f"[FOOD LOG DEBUG] - Food name: {log_entry.food.name}")
             logger.info(f"[FOOD LOG DEBUG] - Serving size: {log_entry.servingSize}")
-            logger.info(f"[FOOD LOG DEBUG] - Extracted numeric serving size: {serving_size_numeric}")
             logger.info(f"[FOOD LOG DEBUG] - Food calories per 100g: {log_entry.food.calories}")
             logger.info(f"[FOOD LOG DEBUG] - Food protein per 100g: {log_entry.food.protein}")
             logger.info(f"[FOOD LOG DEBUG] - Food fat per 100g: {log_entry.food.fat}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected calories for this serving: {(log_entry.food.calories * serving_size_numeric) / 100}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected protein for this serving: {(log_entry.food.protein * serving_size_numeric) / 100}")
-            logger.info(f"[FOOD LOG DEBUG] - Expected fat for this serving: {(log_entry.food.fat * serving_size_numeric) / 100}")
+            logger.info(f"[FOOD LOG DEBUG] - Actual calories for this serving: {log_entry.food.calories}")
+            logger.info(f"[FOOD LOG DEBUG] - Actual protein for this serving: {log_entry.food.protein}")
+            logger.info(f"[FOOD LOG DEBUG] - Actual fat for this serving: {log_entry.food.fat}")
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
             # Delete food logs older than 7 days
@@ -688,18 +676,15 @@ async def get_food_log_summary(user_id: str):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                # Extract numeric value from serving size (e.g., "2 slices" -> 2.0)
+                # Extract numeric value from serving size (e.g., "2 slices" -> 2)
                 import re
-                serving_size_str = str(serving_size).strip()
-                numeric_match = re.search(r'(\d+(?:\.\d+)?)', serving_size_str)
+                numeric_match = re.search(r'(\d+(?:\.\d+)?)', str(serving_size))
                 if numeric_match:
                     serving_size_num = float(numeric_match.group(1))
                 else:
-                    logger.warning(f"[SUMMARY DEBUG] Could not extract numeric value from serving size: {serving_size_str}, using 100 as default")
-                    serving_size_num = 100.0
-            except Exception as e:
-                logger.warning(f"[SUMMARY DEBUG] Error parsing serving size {serving_size}: {e}, using 100 as default")
-                serving_size_num = 100.0
+                    serving_size_num = 100
+            except Exception:
+                serving_size_num = 100
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
@@ -785,18 +770,15 @@ async def _get_food_log_summary_internal(user_id: str, loop):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                # Extract numeric value from serving size (e.g., "2 slices" -> 2.0)
+                # Extract numeric value from serving size (e.g., "2 slices" -> 2)
                 import re
-                serving_size_str = str(serving_size).strip()
-                numeric_match = re.search(r'(\d+(?:\.\d+)?)', serving_size_str)
+                numeric_match = re.search(r'(\d+(?:\.\d+)?)', str(serving_size))
                 if numeric_match:
                     serving_size_num = float(numeric_match.group(1))
                 else:
-                    logger.warning(f"[SUMMARY DEBUG] Could not extract numeric value from serving size: {serving_size_str}, using 100 as default")
-                    serving_size_num = 100.0
-            except Exception as e:
-                logger.warning(f"[SUMMARY DEBUG] Error parsing serving size {serving_size}: {e}, using 100 as default")
-                serving_size_num = 100.0
+                    serving_size_num = 100
+            except Exception:
+                serving_size_num = 100
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
