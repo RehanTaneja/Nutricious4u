@@ -1731,7 +1731,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         setFoodQty('');
         setNutritionData(null);
         setPendingFoodData(null);
-        fetchSummary();
+        
+        // Add delay to allow database write to complete before fetching summary
+        setTimeout(() => {
+          fetchSummary();
+        }, 500);
       } catch (error) {
         console.error('[Food Log] Error logging confirmed food:', error);
         setShowFoodError(true);
