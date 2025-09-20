@@ -613,8 +613,14 @@ async def log_food_item(request: FoodLogRequest):
             logger.info(f"[FOOD LOG DEBUG] - Food fat per 100g: {log_entry.food.fat}")
             # Parse serving size to extract numeric value
             try:
-                serving_size_num = float(log_entry.servingSize.split()[0])  # Extract first number
-            except (ValueError, IndexError):
+                # Extract the first number from the string, handling cases like "2 slices", "150g", "1 cup"
+                import re
+                match = re.search(r'(\d+\.?\d*)', log_entry.servingSize)
+                if match:
+                    serving_size_num = float(match.group(1))
+                else:
+                    raise ValueError("No number found in serving size")
+            except (ValueError, IndexError, AttributeError):
                 serving_size_num = 100  # Default fallback
                 logger.warning(f"[FOOD LOG DEBUG] Could not parse serving size '{log_entry.servingSize}', using default 100")
             
@@ -684,8 +690,17 @@ async def get_food_log_summary(user_id: str):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                # Parse serving size to extract numeric value (handle units like "2 slices")
-                serving_size_num = float(serving_size.split()[0]) if isinstance(serving_size, str) else float(serving_size)
+                # Parse serving size to extract numeric value (handle units like "2 slices", "150g")
+                if isinstance(serving_size, str):
+                    # Extract the first number from the string, handling cases like "2 slices", "150g", "1 cup"
+                    import re
+                    match = re.search(r'(\d+\.?\d*)', serving_size)
+                    if match:
+                        serving_size_num = float(match.group(1))
+                    else:
+                        raise ValueError("No number found in serving size")
+                else:
+                    serving_size_num = float(serving_size)
             except (ValueError, IndexError, AttributeError):
                 serving_size_num = 100
             calories = food_item.get("calories", 0)
@@ -773,8 +788,17 @@ async def _get_food_log_summary_internal(user_id: str, loop):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                # Parse serving size to extract numeric value (handle units like "2 slices")
-                serving_size_num = float(serving_size.split()[0]) if isinstance(serving_size, str) else float(serving_size)
+                # Parse serving size to extract numeric value (handle units like "2 slices", "150g")
+                if isinstance(serving_size, str):
+                    # Extract the first number from the string, handling cases like "2 slices", "150g", "1 cup"
+                    import re
+                    match = re.search(r'(\d+\.?\d*)', serving_size)
+                    if match:
+                        serving_size_num = float(match.group(1))
+                    else:
+                        raise ValueError("No number found in serving size")
+                else:
+                    serving_size_num = float(serving_size)
             except (ValueError, IndexError, AttributeError):
                 serving_size_num = 100
             calories = food_item.get("calories", 0)
