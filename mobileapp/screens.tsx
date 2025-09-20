@@ -5863,22 +5863,22 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
         <View style={styles.statusGrid}>
           <View style={styles.statusCard}>
             <Text style={[styles.statusLabel, { color: chartColors.calories }]}>Calories</Text>
-            <Text style={styles.statusValue}>{caloriesData[6]?.value || 0} / {targetCalories}</Text>
+            <Text style={styles.statusValue}>{Math.round(caloriesData[6]?.value || 0)} / {targetCalories}</Text>
           </View>
           <View style={styles.statusCard}>
             <Text style={[styles.statusLabel, { color: chartColors.protein }]}>Protein</Text>
-            <Text style={styles.statusValue}>{proteinData[6]?.value || 0} / {targetProtein}g</Text>
+            <Text style={styles.statusValue}>{Math.round(proteinData[6]?.value || 0)} / {targetProtein}g</Text>
           </View>
           <View style={styles.statusCard}>
             <Text style={[styles.statusLabel, { color: chartColors.fat }]}>Fat</Text>
-            <Text style={styles.statusValue}>{fatData[6]?.value || 0} / {targetFat}g</Text>
+            <Text style={styles.statusValue}>{Math.round(fatData[6]?.value || 0)} / {targetFat}g</Text>
           </View>
           <View style={styles.statusCard}>
 
           </View>
           <View style={styles.statusCard}>
             <Text style={[styles.statusLabel, { color: chartColors.burned }]}>Burned</Text>
-            <Text style={styles.statusValue}>{burnedToday} / {targetBurned}</Text>
+            <Text style={styles.statusValue}>{Math.round(burnedToday)} / {targetBurned}</Text>
           </View>
         </View>
 
@@ -10302,9 +10302,9 @@ function getFirebaseErrorMessage(error: any) {
   return firebaseErrorMessages[code] || error.message || 'An unknown error occurred.';
 }
 
-// Utility to ensure a safe number (never NaN)
+// Utility to ensure a safe number (never NaN) and round to whole number
 function safeNumber(n: any) {
-  return typeof n === 'number' && !isNaN(n) ? n : 0;
+  return typeof n === 'number' && !isNaN(n) ? Math.round(n) : 0;
 }
 
 // Helper to set isDietician: true for a user profile (run once for the dietician)
