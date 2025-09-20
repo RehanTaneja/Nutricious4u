@@ -2327,7 +2327,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               onChangeText={setFoodName}
               placeholder="e.g. Apple"
             />
-            <Text style={styles.modalLabel}>Quantity</Text>
+            <Text style={styles.modalLabel}>Quantity (use units like grams, slices, pieces, servings etc)</Text>
             <TextInput
               style={styles.modalInput}
               value={foodQty}
@@ -5912,45 +5912,46 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                 
                 return (
                   <View key={dayIndex} style={styles.barGroup}>
-                    {/* Calorie bar */}
-                    <View style={styles.barContainer}>
-                      <View 
-                        style={[
-                          styles.barGraphBar,
-                          {
-                            height: Math.max(2, (dayCalories / commonMax) * 200),
-                            backgroundColor: chartColors.calories,
-                            marginBottom: 2
-                          }
-                        ]}
-                      />
-                    </View>
-                    
-                    {/* Protein bar */}
-                    <View style={styles.barContainer}>
-                      <View 
-                        style={[
-                          styles.barGraphBar,
-                          {
-                            height: Math.max(2, (dayProtein / commonMax) * 200),
-                            backgroundColor: chartColors.protein,
-                            marginBottom: 2
-                          }
-                        ]}
-                      />
-                    </View>
-                    
-                    {/* Fat bar */}
-                    <View style={styles.barContainer}>
-                      <View 
-                        style={[
-                          styles.barGraphBar,
-                          {
-                            height: Math.max(2, (dayFat / commonMax) * 200),
-                            backgroundColor: chartColors.fat
-                          }
-                        ]}
-                      />
+                    {/* Three bars side by side */}
+                    <View style={styles.barRow}>
+                      {/* Calorie bar */}
+                      <View style={styles.barContainer}>
+                        <View 
+                          style={[
+                            styles.barGraphBar,
+                            {
+                              height: Math.max(2, (dayCalories / commonMax) * 200),
+                              backgroundColor: chartColors.calories,
+                            }
+                          ]}
+                        />
+                      </View>
+                      
+                      {/* Protein bar */}
+                      <View style={styles.barContainer}>
+                        <View 
+                          style={[
+                            styles.barGraphBar,
+                            {
+                              height: Math.max(2, (dayProtein / commonMax) * 200),
+                              backgroundColor: chartColors.protein,
+                            }
+                          ]}
+                        />
+                      </View>
+                      
+                      {/* Fat bar */}
+                      <View style={styles.barContainer}>
+                        <View 
+                          style={[
+                            styles.barGraphBar,
+                            {
+                              height: Math.max(2, (dayFat / commonMax) * 200),
+                              backgroundColor: chartColors.fat
+                            }
+                          ]}
+                        />
+                      </View>
                     </View>
                     
                     {/* Day label */}
@@ -5978,8 +5979,6 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
           </View>
         </View>
 
-        {/* Charts */}
-        {renderChart(burnedData, 'Calories Burned', chartColors.burned, targetBurned, xLabels)}
       </ScrollView>
     </SafeAreaView>
   );
@@ -9439,14 +9438,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 2,
   },
+  barRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    height: 200,
+  },
   barContainer: {
-    width: 20,
+    width: 15,
     height: 200,
     justifyContent: 'flex-end',
     alignItems: 'center',
+    marginHorizontal: 1,
   },
   barGraphBar: {
-    width: 20,
+    width: 15,
     borderRadius: 2,
     minHeight: 2,
   },
@@ -11073,8 +11079,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         );
       }
       
-      // Handle diet reminder notifications
-      if (data?.type === 'diet_reminder') {
+      // Handle dietician diet reminder notifications
+      if (data?.type === 'dietician_diet_reminder') {
         console.log('[DieticianDashboard] User needs new diet:', data.userId);
         // Show reminder to upload new diet
         Alert.alert(
@@ -11099,7 +11105,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       }
       
       // Handle multiple users needing new diets
-      if (data?.type === 'diet_reminder' && data?.users && Array.isArray(data.users)) {
+      if (data?.type === 'dietician_diet_reminder' && data?.users && Array.isArray(data.users)) {
         console.log('[DieticianDashboard] Multiple users need new diets:', data.users.length);
         const userNames = data.users.map((user: any) => user.name || user.userId).join(', ');
         Alert.alert(

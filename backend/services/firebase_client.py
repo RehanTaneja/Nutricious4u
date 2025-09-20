@@ -268,10 +268,13 @@ def get_user_notification_token(user_id: str) -> str:
     try:
         doc = db.collection("user_profiles").document(user_id).get()
         if not doc.exists:
+            print(f"[NOTIFICATION DEBUG] User {user_id} document does not exist")
             return None
         # Check for both expoPushToken and notificationToken
         data = doc.to_dict()
-        return data.get("expoPushToken") or data.get("notificationToken")
+        token = data.get("expoPushToken") or data.get("notificationToken")
+        print(f"[NOTIFICATION DEBUG] User {user_id} token: {token[:20] if token else 'None'}...")
+        return token
     except Exception as e:
         print(f"Failed to get notification token: {e}")
         return None
@@ -282,7 +285,7 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
     Send push notification using Expo's push service
     """
     if not token:
-        print("No notification token provided")
+        print("[NOTIFICATION DEBUG] No notification token provided")
         return False
     
     try:
@@ -294,6 +297,12 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
             "body": body,
             "data": data or {}
         }
+        
+        print(f"[NOTIFICATION DEBUG] Sending notification:")
+        print(f"  - Token: {token[:20]}...")
+        print(f"  - Title: {title}")
+        print(f"  - Body: {body}")
+        print(f"  - Data: {data}")
         
         # Send to Expo's push service
         response = requests.post(
@@ -311,7 +320,7 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
             if result.get("data", {}).get("status") == "error":
                 print(f"Expo push error: {result}")
                 return False
-            print(f"Push notification sent successfully: {title} - {body}")
+            print(f"[NOTIFICATION DEBUG] Push notification sent successfully: {title} - {body}")
             return True
         else:
             print(f"Failed to send push notification: {response.status_code} - {response.text}")
@@ -337,8 +346,11 @@ def get_dietician_notification_token() -> str:
         
         for user in dietician_query:
             data = user.to_dict()
-            return data.get("expoPushToken") or data.get("notificationToken")
+            token = data.get("expoPushToken") or data.get("notificationToken")
+            print(f"[NOTIFICATION DEBUG] Dietician token: {token[:20] if token else 'None'}...")
+            return token
         
+        print("[NOTIFICATION DEBUG] No dietician found in database")
         return None
     except Exception as e:
         print(f"Failed to get dietician notification token: {e}")
@@ -418,7 +430,7 @@ def check_users_with_one_day_remaining():
                     dietician_token,
                     "Diet Reminder",
                     message,
-                    {"type": "diet_reminder", "users": one_day_users}
+                    {"type": "dietician_diet_reminder", "users": one_day_users}
                 )
                 print(f"Sent diet reminder notification to dietician: {message}")
             else:
