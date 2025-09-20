@@ -616,8 +616,8 @@ async def log_food_item(request: FoodLogRequest):
             logger.info(f"[FOOD LOG DEBUG] - Actual fat for this serving: {log_entry.food.fat}")
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
-            # Delete food logs older than 7 days
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            # Delete food logs older than 7 days (keep 7 days of data)
+            seven_days_ago = datetime.now() - timedelta(days=8)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
             old_logs = list(old_logs_query.stream())
             for doc in old_logs:
@@ -1496,8 +1496,8 @@ async def log_routine(user_id: str, routine_id: str):
                 "calories": float(routine_obj.burned) / n_workout
             }
             firestore_db.collection("workout_logs").add(workout_log)
-        # Delete food logs older than 7 days
-        seven_days_ago = now - timedelta(days=7)
+        # Delete food logs older than 7 days (keep 7 days of data)
+        seven_days_ago = now - timedelta(days=8)
         food_logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         old_food_logs = list(food_logs_ref.where("timestamp", "<", seven_days_ago).stream())
         for doc in old_food_logs:
