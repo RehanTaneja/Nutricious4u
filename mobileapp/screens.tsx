@@ -5933,7 +5933,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: (dayProtein / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
+                              height: ((dayProtein * 4) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
                               backgroundColor: chartColors.protein,
                               width: '100%',
                             }}
@@ -5944,7 +5944,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: (dayFat / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
+                              height: ((dayFat * 9) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
                               backgroundColor: chartColors.fat,
                               width: '100%',
                             }}
