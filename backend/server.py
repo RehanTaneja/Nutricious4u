@@ -605,6 +605,15 @@ async def log_food_item(request: FoodLogRequest):
         )
         def log_food_in_db():
             log_entry.timestamp = datetime.utcnow()
+            logger.info(f"[FOOD LOG DEBUG] Logging food with details:")
+            logger.info(f"[FOOD LOG DEBUG] - Food name: {log_entry.food.name}")
+            logger.info(f"[FOOD LOG DEBUG] - Serving size: {log_entry.servingSize}")
+            logger.info(f"[FOOD LOG DEBUG] - Food calories per 100g: {log_entry.food.calories}")
+            logger.info(f"[FOOD LOG DEBUG] - Food protein per 100g: {log_entry.food.protein}")
+            logger.info(f"[FOOD LOG DEBUG] - Food fat per 100g: {log_entry.food.fat}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected calories for this serving: {(log_entry.food.calories * float(log_entry.servingSize)) / 100}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected protein for this serving: {(log_entry.food.protein * float(log_entry.servingSize)) / 100}")
+            logger.info(f"[FOOD LOG DEBUG] - Expected fat for this serving: {(log_entry.food.fat * float(log_entry.servingSize)) / 100}")
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
             # Delete food logs older than 7 days
