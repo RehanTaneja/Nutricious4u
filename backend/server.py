@@ -554,7 +554,7 @@ async def get_food_nutrition(food_name: str, quantity: str = "100"):
             calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
             protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
             fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
-            per_100g=True
+            per_100g=False  # Gemini already calculated for the specific serving size
         )
         
         return {"food": food.dict(), "success": True}
@@ -596,7 +596,7 @@ async def log_food_item(request: FoodLogRequest):
             calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
             protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
             fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
-            per_100g=True
+            per_100g=False  # Gemini already calculated for the specific serving size
         )
         log_entry = FoodLog(
             userId=user_id,
@@ -682,9 +682,35 @@ async def get_food_log_summary(user_id: str):
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
-            history[log_date]["calories"] += (calories * serving_size_num) / 100
-            history[log_date]["protein"] += (protein * serving_size_num) / 100
-            history[log_date]["fat"] += (fat * serving_size_num) / 100
+            per_100g = food_item.get("per_100g", True)
+            
+            # If per_100g is True, apply serving size multiplier
+            # If per_100g is False, values are already calculated for the serving
+            if per_100g:
+                calculated_calories = (calories * serving_size_num) / 100
+                calculated_protein = (protein * serving_size_num) / 100
+                calculated_fat = (fat * serving_size_num) / 100
+            else:
+                calculated_calories = calories
+                calculated_protein = protein
+                calculated_fat = fat
+            
+            logger.info(f"[SUMMARY DEBUG] Processing log for {log_date}:")
+            logger.info(f"[SUMMARY DEBUG] - Food: {food_item.get('name', 'Unknown')}")
+            logger.info(f"[SUMMARY DEBUG] - Serving size: {serving_size_num}g")
+            logger.info(f"[SUMMARY DEBUG] - Per 100g: {per_100g}")
+            logger.info(f"[SUMMARY DEBUG] - Raw calories: {calories}")
+            logger.info(f"[SUMMARY DEBUG] - Raw protein: {protein}")
+            logger.info(f"[SUMMARY DEBUG] - Raw fat: {fat}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated calories: {calculated_calories}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated protein: {calculated_protein}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated fat: {calculated_fat}")
+            
+            history[log_date]["calories"] += calculated_calories
+            history[log_date]["protein"] += calculated_protein
+            history[log_date]["fat"] += calculated_fat
+            
+            logger.info(f"[SUMMARY DEBUG] - Running totals for {log_date}: calories={history[log_date]['calories']}, protein={history[log_date]['protein']}, fat={history[log_date]['fat']}")
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         today_str = today.strftime('%Y-%m-%d')
@@ -744,9 +770,35 @@ async def _get_food_log_summary_internal(user_id: str, loop):
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
-            history[log_date]["calories"] += (calories * serving_size_num) / 100
-            history[log_date]["protein"] += (protein * serving_size_num) / 100
-            history[log_date]["fat"] += (fat * serving_size_num) / 100
+            per_100g = food_item.get("per_100g", True)
+            
+            # If per_100g is True, apply serving size multiplier
+            # If per_100g is False, values are already calculated for the serving
+            if per_100g:
+                calculated_calories = (calories * serving_size_num) / 100
+                calculated_protein = (protein * serving_size_num) / 100
+                calculated_fat = (fat * serving_size_num) / 100
+            else:
+                calculated_calories = calories
+                calculated_protein = protein
+                calculated_fat = fat
+            
+            logger.info(f"[SUMMARY DEBUG] Processing log for {log_date}:")
+            logger.info(f"[SUMMARY DEBUG] - Food: {food_item.get('name', 'Unknown')}")
+            logger.info(f"[SUMMARY DEBUG] - Serving size: {serving_size_num}g")
+            logger.info(f"[SUMMARY DEBUG] - Per 100g: {per_100g}")
+            logger.info(f"[SUMMARY DEBUG] - Raw calories: {calories}")
+            logger.info(f"[SUMMARY DEBUG] - Raw protein: {protein}")
+            logger.info(f"[SUMMARY DEBUG] - Raw fat: {fat}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated calories: {calculated_calories}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated protein: {calculated_protein}")
+            logger.info(f"[SUMMARY DEBUG] - Calculated fat: {calculated_fat}")
+            
+            history[log_date]["calories"] += calculated_calories
+            history[log_date]["protein"] += calculated_protein
+            history[log_date]["fat"] += calculated_fat
+            
+            logger.info(f"[SUMMARY DEBUG] - Running totals for {log_date}: calories={history[log_date]['calories']}, protein={history[log_date]['protein']}, fat={history[log_date]['fat']}")
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         today_str = today.strftime('%Y-%m-%d')
