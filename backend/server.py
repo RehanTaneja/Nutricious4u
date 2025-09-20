@@ -3530,6 +3530,8 @@ async def reset_daily_data(userId: str):
         deleted_count = 0
         
         # Update the lastFoodLogDate to today
+        # The daily reset only affects the display counters, not the actual logged data
+        # Counters are calculated from food logs, so we don't need to reset them here
         firestore_db.collection("user_profiles").document(userId).update({
             "lastFoodLogDate": today_str
         })

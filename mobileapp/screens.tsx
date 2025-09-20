@@ -1595,7 +1595,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
             
             if (lastReset !== today) {
-              console.log('[Dashboard] Daily reset needed, refreshing data');
+              console.log('[Dashboard] Daily reset needed, calling reset function');
+              try {
+                await resetDailyData(userId);
+                await AsyncStorage.setItem(`lastResetDate_${userId}`, today);
+                console.log('[Dashboard] Daily reset completed');
+              } catch (error) {
+                console.error('[Dashboard] Error during daily reset:', error);
+              }
               fetchSummary();
             }
           } catch (error) {
@@ -5665,7 +5672,6 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     last7Dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); // 'YYYY-MM-DD'
   }
   // Map summary.history to a lookup by date
-  // Backend returns dates in descending order (newest first), but we need them in ascending order (oldest first)
   const historyByDate: { [date: string]: any } = {};
   (summary?.history || []).forEach((item: any) => {
     if (item.day) {
@@ -5920,7 +5926,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         style={[
                           styles.barGraphBar,
                           {
-                            height: Math.max(8, (dayCalories / commonMax) * 200),
+                            height: Math.max(2, (dayCalories / commonMax) * 200),
                             backgroundColor: chartColors.calories,
                             flexDirection: 'column',
                             justifyContent: 'flex-end',
@@ -5931,7 +5937,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: ((dayProtein * 4) / dayCalories) * Math.max(8, (dayCalories / commonMax) * 200),
+                              height: ((dayProtein * 4) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
                               backgroundColor: chartColors.protein,
                               width: '100%',
                             }}
@@ -5942,7 +5948,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: ((dayFat * 9) / dayCalories) * Math.max(8, (dayCalories / commonMax) * 200),
+                              height: ((dayFat * 9) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
                               backgroundColor: chartColors.fat,
                               width: '100%',
                             }}
