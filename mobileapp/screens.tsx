@@ -5916,45 +5916,40 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                 
                 return (
                   <View key={dayIndex} style={styles.barGroup}>
-                    {/* Three bars side by side */}
-                    <View style={styles.barRow}>
-                      {/* Calorie bar */}
-                      <View style={styles.barContainer}>
-                        <View 
-                          style={[
-                            styles.barGraphBar,
-                            {
-                              height: Math.max(2, (dayCalories / commonMax) * 200),
-                              backgroundColor: chartColors.calories,
-                            }
-                          ]}
-                        />
-                      </View>
-                      
-                      {/* Protein bar */}
-                      <View style={styles.barContainer}>
-                        <View 
-                          style={[
-                            styles.barGraphBar,
-                            {
-                              height: Math.max(2, (dayProtein / commonMax) * 200),
+                    {/* Single stacked bar showing calories with protein/fat proportions */}
+                    <View style={styles.barContainer}>
+                      <View 
+                        style={[
+                          styles.barGraphBar,
+                          {
+                            height: Math.max(2, (dayCalories / commonMax) * 200),
+                            backgroundColor: chartColors.calories,
+                            flexDirection: 'column',
+                            justifyContent: 'flex-end',
+                          }
+                        ]}
+                      >
+                        {/* Protein segment (proportional to calories) */}
+                        {dayCalories > 0 && (
+                          <View 
+                            style={{
+                              height: (dayProtein / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
                               backgroundColor: chartColors.protein,
-                            }
-                          ]}
-                        />
-                      </View>
-                      
-                      {/* Fat bar */}
-                      <View style={styles.barContainer}>
-                        <View 
-                          style={[
-                            styles.barGraphBar,
-                            {
-                              height: Math.max(2, (dayFat / commonMax) * 200),
-                              backgroundColor: chartColors.fat
-                            }
-                          ]}
-                        />
+                              width: '100%',
+                            }}
+                          />
+                        )}
+                        
+                        {/* Fat segment (proportional to calories) */}
+                        {dayCalories > 0 && (
+                          <View 
+                            style={{
+                              height: (dayFat / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
+                              backgroundColor: chartColors.fat,
+                              width: '100%',
+                            }}
+                          />
+                        )}
                       </View>
                     </View>
                     
@@ -9449,14 +9444,14 @@ const styles = StyleSheet.create({
     height: 200,
   },
   barContainer: {
-    width: 15,
+    width: 25,
     height: 200,
     justifyContent: 'flex-end',
     alignItems: 'center',
-    marginHorizontal: 1,
+    marginHorizontal: 2,
   },
   barGraphBar: {
-    width: 15,
+    width: 25,
     borderRadius: 2,
     minHeight: 2,
   },
