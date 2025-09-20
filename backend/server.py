@@ -578,7 +578,7 @@ async def log_food_item(request: FoodLogRequest):
             if user_doc.exists:
                 user_data = user_doc.to_dict()
                 last_food_log_date = user_data.get("lastFoodLogDate")
-                today = datetime.utcnow().strftime('%Y-%m-%d')
+                today = datetime.now().strftime('%Y-%m-%d')
                 
                 if last_food_log_date != today:
                     logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
@@ -604,7 +604,7 @@ async def log_food_item(request: FoodLogRequest):
             servingSize=request.servingSize
         )
         def log_food_in_db():
-            log_entry.timestamp = datetime.utcnow()
+            log_entry.timestamp = datetime.now()
             logger.info(f"[FOOD LOG DEBUG] Logging food with details:")
             logger.info(f"[FOOD LOG DEBUG] - Food name: {log_entry.food.name}")
             logger.info(f"[FOOD LOG DEBUG] - Serving size: {log_entry.servingSize}")
@@ -617,7 +617,7 @@ async def log_food_item(request: FoodLogRequest):
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
             # Delete food logs older than 7 days
-            seven_days_ago = datetime.utcnow() - timedelta(days=7)
+            seven_days_ago = datetime.now() - timedelta(days=7)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
             old_logs = list(old_logs_query.stream())
             for doc in old_logs:
@@ -642,7 +642,7 @@ async def get_food_log_summary(user_id: str):
             raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
         
         # Simplified version without timeout handling
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
@@ -719,9 +719,15 @@ async def get_food_log_summary(user_id: str):
             logger.info(f"[SUMMARY DEBUG] - Running totals for {log_date}: calories={history[log_date]['calories']}, protein={history[log_date]['protein']}, fat={history[log_date]['fat']}")
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
-        today_str = today.strftime('%Y-%m-%d')
-        if today_str not in history:
-            history[today_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        # Ensure we have data for all 7 days, even if some days have no food logs
+        for i in range(7):
+            day_date = today - timedelta(days=i)
+            day_str = day_date.strftime('%Y-%m-%d')
+            if day_str not in history:
+                history[day_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
         logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
@@ -736,7 +742,7 @@ async def get_food_log_summary(user_id: str):
 async def _get_food_log_summary_internal(user_id: str, loop):
     """Internal function to get food log summary with better error handling"""
     try:
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
@@ -813,9 +819,15 @@ async def _get_food_log_summary_internal(user_id: str, loop):
             logger.info(f"[SUMMARY DEBUG] - Running totals for {log_date}: calories={history[log_date]['calories']}, protein={history[log_date]['protein']}, fat={history[log_date]['fat']}")
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
-        today_str = today.strftime('%Y-%m-%d')
-        if today_str not in history:
-            history[today_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        # Ensure we have data for all 7 days, even if some days have no food logs
+        for i in range(7):
+            day_date = today - timedelta(days=i)
+            day_str = day_date.strftime('%Y-%m-%d')
+            if day_str not in history:
+                history[day_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
         logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
@@ -862,7 +874,7 @@ async def get_workout_log_summary(user_id: str):
     loop = asyncio.get_event_loop()
     try:
         logger.info(f"[WORKOUT SUMMARY] Fetching workout summary for user: {user_id}")
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logs_ref = firestore_db.collection("workout_logs")
         # Only logs for this user and in the last 7 days
@@ -2852,7 +2864,7 @@ async def scan_food_photo(
         )
         loop = asyncio.get_event_loop()
         def log_food_in_db():
-            log_entry.timestamp = datetime.utcnow()
+            log_entry.timestamp = datetime.now()
             firestore_db.collection(f"users/{userId}/food_logs").add(log_entry.dict())
         await loop.run_in_executor(executor, log_food_in_db)
         return log_entry.dict()
@@ -3510,7 +3522,7 @@ async def reset_daily_data(userId: str):
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get today's date in UTC
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
         # Clear today's food logs to reset daily nutritional values
