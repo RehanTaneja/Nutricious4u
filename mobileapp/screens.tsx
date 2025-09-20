@@ -9403,6 +9403,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
     color: COLORS.text,
+    textAlign: 'center',
   },
   barGraphArea: {
     height: 250,
