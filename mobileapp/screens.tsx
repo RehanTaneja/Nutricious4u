@@ -70,8 +70,8 @@ function calculateTargets({ weight, height, age, gender, activityLevel }:{ weigh
   } else {
     bmr = 10 * weight + 6.25 * height - 5 * age - 161;
   }
-  const calories = Math.round(bmr * multiplier);
-  const protein = Math.round(weight * 1.6); // 1.6g per kg
+  const calories = Math.round((bmr * multiplier) - 500); // Subtract 500 for calorie deficit
+  const protein = Math.round(weight * 0.8); // 0.8g per kg
   const fat = Math.round((calories * 0.25) / 9); // 25% calories from fat
   return { calories, protein, fat };
 }
@@ -5878,28 +5878,107 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
           </View>
         </View>
 
+        {/* Weekly Consumption Bar Graph */}
+        <View style={styles.barGraphContainer}>
+          <Text style={styles.barGraphTitle}>Weekly Consumption</Text>
+          <View style={styles.barGraphArea}>
+            {/* Y-axis labels */}
+            <View style={styles.barYAxis}>
+              {[1, 0.75, 0.5, 0.25, 0].map((ratio, index) => {
+                const commonMax = 3000; // Use calories max as common scale
+                const labelHeight = (ratio * 200) + 25; // 200px chart height + 25px offset
+                return (
+                  <Text 
+                    key={index} 
+                    style={[
+                      styles.barYLabel,
+                      { position: 'absolute', bottom: labelHeight }
+                    ]}
+                  >
+                    {Math.round(commonMax * ratio)}
+                  </Text>
+                );
+              })}
+            </View>
+            
+            {/* Chart content */}
+            <View style={styles.barChartContent}>
+              {/* Bars for each day */}
+              {last7Dates.map((date, dayIndex) => {
+                const dayCalories = caloriesData[dayIndex]?.value || 0;
+                const dayProtein = proteinData[dayIndex]?.value || 0;
+                const dayFat = fatData[dayIndex]?.value || 0;
+                const commonMax = 3000;
+                
+                return (
+                  <View key={dayIndex} style={styles.barGroup}>
+                    {/* Calorie bar */}
+                    <View style={styles.barContainer}>
+                      <View 
+                        style={[
+                          styles.barGraphBar,
+                          {
+                            height: Math.max(2, (dayCalories / commonMax) * 200),
+                            backgroundColor: chartColors.calories,
+                            marginBottom: 2
+                          }
+                        ]}
+                      />
+                    </View>
+                    
+                    {/* Protein bar */}
+                    <View style={styles.barContainer}>
+                      <View 
+                        style={[
+                          styles.barGraphBar,
+                          {
+                            height: Math.max(2, (dayProtein / commonMax) * 200),
+                            backgroundColor: chartColors.protein,
+                            marginBottom: 2
+                          }
+                        ]}
+                      />
+                    </View>
+                    
+                    {/* Fat bar */}
+                    <View style={styles.barContainer}>
+                      <View 
+                        style={[
+                          styles.barGraphBar,
+                          {
+                            height: Math.max(2, (dayFat / commonMax) * 200),
+                            backgroundColor: chartColors.fat
+                          }
+                        ]}
+                      />
+                    </View>
+                    
+                    {/* Day label */}
+                    <Text style={styles.barXLabel}>{xLabels[dayIndex]}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+          
+          {/* Legend */}
+          <View style={styles.barLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: chartColors.calories }]} />
+              <Text style={styles.legendText}>Calories</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: chartColors.protein }]} />
+              <Text style={styles.legendText}>Protein</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: chartColors.fat }]} />
+              <Text style={styles.legendText}>Fat</Text>
+            </View>
+          </View>
+        </View>
+
         {/* Charts */}
-        {renderChart(
-          caloriesData,
-          'Calories Trend',
-          chartColors.calories,
-          targetCalories,
-          xLabels
-        )}
-        {renderChart(
-          proteinData,
-          'Protein Trend', 
-          chartColors.protein,
-          targetProtein,
-          xLabels
-        )}
-        {renderChart(
-          fatData,
-          'Fat Trend',
-          chartColors.fat, 
-          targetFat,
-          xLabels
-        )}
         {renderChart(burnedData, 'Calories Burned', chartColors.burned, targetBurned, xLabels)}
       </ScrollView>
     </SafeAreaView>
@@ -9309,6 +9388,96 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // Bar Graph Styles
+  barGraphContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  barGraphTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: COLORS.text,
+  },
+  barGraphArea: {
+    height: 250,
+    position: 'relative',
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  barYAxis: {
+    width: 40,
+    height: 200,
+    paddingVertical: 10,
+    position: 'relative',
+    justifyContent: 'flex-end',
+  },
+  barYLabel: {
+    fontSize: 12,
+    color: COLORS.placeholder,
+    textAlign: 'right',
+    width: 35,
+  },
+  barChartContent: {
+    flex: 1,
+    height: 200,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    paddingHorizontal: 8,
+    marginBottom: 30,
+  },
+  barGroup: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  barContainer: {
+    width: 20,
+    height: 200,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  barGraphBar: {
+    width: 20,
+    borderRadius: 2,
+    minHeight: 2,
+  },
+  barXLabel: {
+    fontSize: 12,
+    color: COLORS.placeholder,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  barLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: '500',
+  },
 });
 
 export { 
@@ -9638,9 +9807,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   const getPlanName = (planId: string) => {
     switch (planId) {
-      case '1month': return '1 Month Plan';
       case '2months': return '2 Months Plan';
       case '3months': return '3 Months Plan';
+      case '6months': return '6 Months Plan';
       default: return 'Unknown Plan';
     }
   };
@@ -9649,24 +9818,24 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   
   const availablePlans = [
     {
-      planId: '1month',
-      name: '1 Month Plan',
-      duration: '1 month',
-      price: 5500,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect for getting started with your fitness journey'
-    },
-    {
       planId: '2months',
       name: '2 Months Plan',
       duration: '2 months',
-      price: 10000,
+      price: 9000,
       description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Great value for consistent progress tracking'
     },
     {
       planId: '3months',
       name: '3 Months Plan',
       duration: '3 months',
-      price: 14000,
+      price: 12000,
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect balance of features and value'
+    },
+    {
+      planId: '6months',
+      name: '6 Months Plan',
+      duration: '6 months',
+      price: 20000,
       description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Best value for long-term fitness goals'
     }
   ];

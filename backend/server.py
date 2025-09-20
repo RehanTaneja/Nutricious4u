@@ -138,7 +138,7 @@ class UserProfile(BaseModel):
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
     # Subscription fields
-    subscriptionPlan: Optional[str] = None  # '1month', '2months', '3months'
+    subscriptionPlan: Optional[str] = None  # '2months', '3months', '6months'
     subscriptionStartDate: Optional[str] = None
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = 0.0
@@ -2910,9 +2910,9 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         
         # Get plan details
         plan_prices = {
-            "1month": 5500.0,
-            "2months": 10000.0,
-            "3months": 14000.0
+            "2months": 9000.0,
+            "3months": 12000.0,
+            "6months": 20000.0
         }
         
         if current_plan not in plan_prices:
@@ -2923,12 +2923,12 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         from datetime import datetime, timedelta
         
         start_date = datetime.now()
-        if current_plan == "1month":
-            end_date = start_date + timedelta(days=30)
-        elif current_plan == "2months":
+        if current_plan == "2months":
             end_date = start_date + timedelta(days=60)
         elif current_plan == "3months":
             end_date = start_date + timedelta(days=90)
+        elif current_plan == "6months":
+            end_date = start_date + timedelta(days=180)
         
         # Calculate new total amount
         new_total = current_total + plan_prices[current_plan]
@@ -3099,9 +3099,9 @@ async def send_new_subscription_notification(user_id: str, user_data: dict, plan
 def get_plan_name(plan_id: str) -> str:
     """Get plan name from plan ID"""
     plan_names = {
-        "1month": "1 Month Plan",
         "2months": "2 Months Plan",
-        "3months": "3 Months Plan"
+        "3months": "3 Months Plan",
+        "6months": "6 Months Plan"
     }
     return plan_names.get(plan_id, "Unknown Plan")
 
@@ -3151,26 +3151,10 @@ async def get_subscription_plans():
                 "isFree": True
             },
             {
-                "planId": "1month",
-                "name": "1 Month Plan",
-                "duration": "1 month",
-                "price": 5500.0,
-                "description": "Access to premium features for 1 month",
-                "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning"
-                ],
-                "isFree": False
-            },
-            {
                 "planId": "2months", 
                 "name": "2 Months Plan",
                 "duration": "2 months",
-                "price": 10000.0,
+                "price": 9000.0,
                 "description": "Access to premium features for 2 months",
                 "features": [
                     "Personalized diet plans",
@@ -3187,7 +3171,7 @@ async def get_subscription_plans():
                 "planId": "3months", 
                 "name": "3 Months Plan",
                 "duration": "3 months",
-                "price": 14000.0,
+                "price": 12000.0,
                 "description": "Access to premium features for 3 months",
                 "features": [
                     "Personalized diet plans",
@@ -3198,6 +3182,26 @@ async def get_subscription_plans():
                     "Custom meal planning",
                     "Progress reports",
                     "Nutritional counseling"
+                ],
+                "isFree": False
+            },
+            {
+                "planId": "6months", 
+                "name": "6 Months Plan",
+                "duration": "6 months",
+                "price": 20000.0,
+                "description": "Access to premium features for 6 months",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning",
+                    "Progress reports",
+                    "Nutritional counseling",
+                    "Monthly check-ins",
+                    "Priority customer support"
                 ],
                 "isFree": False
             }
@@ -3215,9 +3219,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         # Get plan details
         plan_prices = {
-            "1month": 5500.0,
-            "2months": 10000.0,
-            "3months": 14000.0
+            "2months": 9000.0,
+            "3months": 12000.0,
+            "6months": 20000.0
         }
         
         if request.planId not in plan_prices:
@@ -3240,12 +3244,12 @@ async def select_subscription(request: SelectSubscriptionRequest):
         from datetime import datetime, timedelta
         
         start_date = datetime.now()
-        if request.planId == "1month":
-            end_date = start_date + timedelta(days=30)
-        elif request.planId == "2months":
+        if request.planId == "2months":
             end_date = start_date + timedelta(days=60)
         elif request.planId == "3months":
             end_date = start_date + timedelta(days=90)
+        elif request.planId == "6months":
+            end_date = start_date + timedelta(days=180)
         
         # Check if user already has an active subscription
         has_active_subscription = user_data.get("isSubscriptionActive", False)
@@ -3470,9 +3474,9 @@ async def add_subscription_amount(userId: str, planId: str):
         
         # Get plan details
         plan_prices = {
-            "1month": 5500.0,
-            "2months": 10000.0,
-            "3months": 14000.0
+            "2months": 9000.0,
+            "3months": 12000.0,
+            "6months": 20000.0
         }
         
         if planId not in plan_prices:
@@ -3634,9 +3638,9 @@ async def get_user_details(user_id: str):
         
         # Format plan name for display
         plan_names = {
-            "1month": "1 Month Plan",
             "2months": "2 Months Plan",
-            "3months": "3 Months Plan"
+            "3months": "3 Months Plan",
+            "6months": "6 Months Plan"
         }
         plan_display_name = plan_names.get(subscription_plan, subscription_plan or "No Plan")
         

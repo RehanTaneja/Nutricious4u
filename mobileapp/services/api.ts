@@ -441,7 +441,7 @@ export interface UserProfile {
   lastDietUpload?: string; // Timestamp of last diet upload
   dieticianId?: string; // ID of the dietician who uploaded the diet
   // Subscription fields
-  subscriptionPlan?: string; // '1month', '2months', '3months'
+  subscriptionPlan?: string; // '2months', '3months', '6months'
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
   totalAmountPaid?: number;
