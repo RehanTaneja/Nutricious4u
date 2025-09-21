@@ -5717,9 +5717,10 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   // Add burnedData from workoutSummary if available
   const burnedData = (route.params?.workoutSummary?.history || []).map((item: any) => ({ value: item.calories || 0 }));
   while (burnedData.length < 7) burnedData.unshift({ value: 0 });
-  // X-axis labels (DD/MM)
+  // X-axis labels (DD/MM) - Parse date components separately to avoid timezone issues
   const xLabels = last7Dates.map(date => {
-    const d = new Date(date);
+    const [year, month, day] = date.split('-');
+    const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
   });
 
