@@ -1502,7 +1502,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   // --- Persist calories burned for the current day ---
   const getTodayKey = () => {
     const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Load burnedToday from AsyncStorage on mount or day change
@@ -1549,7 +1552,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setWorkoutSummary(workoutData);
       
       // Set burnedToday from workout summary for today
-      const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+      // Use consistent local date calculation
+      const todayDate = new Date();
+      const todayYear = todayDate.getFullYear();
+      const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
+      const todayDay = String(todayDate.getDate()).padStart(2, '0');
+      const today = `${todayYear}-${todayMonth}-${todayDay}`;
+      
       const todayWorkout = workoutData.history.find((d) => d.day === today);
       setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
     } catch (e) {
@@ -1591,8 +1600,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const delayedCheck = setTimeout(async () => {
         const checkDailyReset = async () => {
           try {
-            const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+            // Use consistent local date calculation
+            const todayDate = new Date();
+            const todayYear = todayDate.getFullYear();
+            const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
+            const todayDay = String(todayDate.getDate()).padStart(2, '0');
+            const today = `${todayYear}-${todayMonth}-${todayDay}`;
+            
             const lastReset = await AsyncStorage.getItem(`lastResetDate_${userId}`);
+            
+            console.log(`[Dashboard] Reset check: stored=${lastReset}, today=${today}`);
             
             if (lastReset !== today) {
               console.log('[Dashboard] Daily reset needed, calling reset function');
@@ -1840,15 +1857,24 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     );
   }
 
-  // Find today's data by date string instead of relying on array order
-  // This handles timezone differences between frontend and backend
-  const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+  // Find today's data by date string - using consistent local date calculation
+  const todayDate = new Date();
+  const todayYear = todayDate.getFullYear();
+  const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
+  const todayDay = String(todayDate.getDate()).padStart(2, '0');
+  const today = `${todayYear}-${todayMonth}-${todayDay}`;
+  
+  console.log(`[Dashboard] Looking for today's data: ${today}`);
+  console.log(`[Dashboard] Available history dates:`, summary?.history?.map(item => item.day));
+  
   const todayData = summary?.history?.find((item: any) => item.day === today) || {
     calories: 0,
     protein: 0,
     fat: 0,
     carbs: 0
   };
+  
+  console.log(`[Dashboard] Today's data found:`, todayData);
 
   // Get targets from userProfile if available
   const targetCalories = userProfile?.targetCalories || 2000;
@@ -5694,23 +5720,39 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     fetchFreshSummary();
   }, []);
 
-  // --- Build last 7 days (rolling window) ---
+  // --- Build last 7 days (rolling window) - Fixed date alignment ---
   const today = new Date();
   const last7Dates: string[] = [];
+  
+  // Generate dates from 6 days ago to today (chronological order)
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    last7Dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); // 'YYYY-MM-DD'
+    // Use local date components to avoid timezone issues
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    last7Dates.push(`${year}-${month}-${day}`);
   }
+  
+  console.log('[Bar Graph] Generated last7Dates:', last7Dates);
+  console.log('[Bar Graph] Backend history dates:', (summary?.history || []).map((item: any) => item.day));
+  
   // Map summary.history to a lookup by date
   const historyByDate: { [date: string]: any } = {};
   (summary?.history || []).forEach((item: any) => {
     if (item.day) {
       historyByDate[item.day] = item;
+      console.log(`[Bar Graph] Mapped data for ${item.day}:`, { calories: item.calories, protein: item.protein, fat: item.fat });
     }
   });
-  // Build data arrays for each metric
-  const caloriesData = last7Dates.map(date => ({ value: historyByDate[date]?.calories || 0 }));
+  
+  // Build data arrays for each metric with proper date matching
+  const caloriesData = last7Dates.map(date => {
+    const value = historyByDate[date]?.calories || 0;
+    console.log(`[Bar Graph] Calories for ${date}: ${value}`);
+    return { value };
+  });
   const proteinData = last7Dates.map(date => ({ value: historyByDate[date]?.protein || 0 }));
   const fatData = last7Dates.map(date => ({ value: historyByDate[date]?.fat || 0 }));
 
@@ -5721,8 +5763,12 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   const xLabels = last7Dates.map(date => {
     const [year, month, day] = date.split('-');
     const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+    const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+    console.log(`[Bar Graph] Date ${date} -> Label ${label}`);
+    return label;
   });
+  
+  console.log('[Bar Graph] Final xLabels:', xLabels);
 
   // Chart colors
   const chartColors = {

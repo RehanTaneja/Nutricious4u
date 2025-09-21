@@ -1,0 +1,228 @@
+{
+  "test_timestamp": "2025-09-21T00:32:50.467790",
+  "issues_found": [
+    "Missing data for some of the last 7 days",
+    "Bar graph overflow detected - bars exceeding container height",
+    "Date label calculation errors in bar graph"
+  ],
+  "detailed_results": {
+    "date_handling": {
+      "frontend_today": "2025-09-21",
+      "backend_today": "2025-09-21",
+      "dates_match": true,
+      "problematic_last7": [
+        "2025-09-15",
+        "2025-09-16",
+        "2025-09-17",
+        "2025-09-18",
+        "2025-09-19",
+        "2025-09-20",
+        "2025-09-21"
+      ],
+      "correct_last7": [
+        "2025-09-15",
+        "2025-09-16",
+        "2025-09-17",
+        "2025-09-18",
+        "2025-09-19",
+        "2025-09-20",
+        "2025-09-21"
+      ],
+      "last7_dates_correct": true,
+      "current_time": "2025-09-21T00:32:50.443529",
+      "timezone": "EDT"
+    },
+    "reset_functionality": {
+      "reset_success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "data_consistency": {
+      "summary_success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "timezone_issues": {
+      "local_time": "2025-09-21T00:32:50.466900",
+      "utc_time": "2025-09-21T04:32:50.467265",
+      "local_timezone": "EDT",
+      "time_difference_hours": -4.000000101388889,
+      "formats": {
+        "frontend_format": "2025-09-21",
+        "backend_format": "2025-09-21",
+        "iso_format": "2025-09-21T00:32:50.466900",
+        "utc_iso_format": "2025-09-21T04:32:50.467265"
+      },
+      "date_parsing_test": {
+        "input": "2024-09-21",
+        "output": "21/09"
+      }
+    },
+    "bar_graph_data": {
+      "test_data": [
+        {
+          "day": "2024-09-15",
+          "calories": 2800
+        },
+        {
+          "day": "2024-09-16",
+          "calories": 3200
+        },
+        {
+          "day": "2024-09-17",
+          "calories": 1500
+        },
+        {
+          "day": "2024-09-18",
+          "calories": 2200
+        },
+        {
+          "day": "2024-09-19",
+          "calories": 3500
+        },
+        {
+          "day": "2024-09-20",
+          "calories": 1800
+        },
+        {
+          "day": "2024-09-21",
+          "calories": 0
+        }
+      ],
+      "bar_heights": [
+        {
+          "date": "2024-09-15",
+          "calories": 2800,
+          "calculated_height": 186.66666666666666,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        },
+        {
+          "date": "2024-09-16",
+          "calories": 3200,
+          "calculated_height": 213.33333333333334,
+          "exceeds_container": true,
+          "overflow_amount": 13.333333333333343
+        },
+        {
+          "date": "2024-09-17",
+          "calories": 1500,
+          "calculated_height": 100.0,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        },
+        {
+          "date": "2024-09-18",
+          "calories": 2200,
+          "calculated_height": 146.66666666666666,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        },
+        {
+          "date": "2024-09-19",
+          "calories": 3500,
+          "calculated_height": 233.33333333333334,
+          "exceeds_container": true,
+          "overflow_amount": 33.33333333333334
+        },
+        {
+          "date": "2024-09-20",
+          "calories": 1800,
+          "calculated_height": 120.0,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        },
+        {
+          "date": "2024-09-21",
+          "calories": 0,
+          "calculated_height": 2,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        }
+      ],
+      "overflow_bars": [
+        {
+          "date": "2024-09-16",
+          "calories": 3200,
+          "calculated_height": 213.33333333333334,
+          "exceeds_container": true,
+          "overflow_amount": 13.333333333333343
+        },
+        {
+          "date": "2024-09-19",
+          "calories": 3500,
+          "calculated_height": 233.33333333333334,
+          "exceeds_container": true,
+          "overflow_amount": 33.33333333333334
+        }
+      ],
+      "problematic_date_labels": [
+        {
+          "date": "2024-09-15",
+          "label": "15/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-16",
+          "label": "16/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-17",
+          "label": "17/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-18",
+          "label": "18/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-19",
+          "label": "19/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-20",
+          "label": "20/08",
+          "error": "Month calculation error"
+        },
+        {
+          "date": "2024-09-21",
+          "label": "21/08",
+          "error": "Month calculation error"
+        }
+      ],
+      "correct_date_labels": [
+        {
+          "date": "2024-09-15",
+          "label": "15/09"
+        },
+        {
+          "date": "2024-09-16",
+          "label": "16/09"
+        },
+        {
+          "date": "2024-09-17",
+          "label": "17/09"
+        },
+        {
+          "date": "2024-09-18",
+          "label": "18/09"
+        },
+        {
+          "date": "2024-09-19",
+          "label": "19/09"
+        },
+        {
+          "date": "2024-09-20",
+          "label": "20/09"
+        },
+        {
+          "date": "2024-09-21",
+          "label": "21/09"
+        }
+      ],
+      "max_height_limit": 200,
+      "common_max_calories": 3000
+    }
+  }
+}

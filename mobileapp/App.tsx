@@ -192,28 +192,44 @@ function AppContent() {
     if (!user?.uid) return;
     
     try {
-      const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'); // YYYY-MM-DD format
+      // Use consistent local date calculation
+      const todayDate = new Date();
+      const todayYear = todayDate.getFullYear();
+      const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
+      const todayDay = String(todayDate.getDate()).padStart(2, '0');
+      const today = `${todayYear}-${todayMonth}-${todayDay}`;
+      
       const storedDate = await AsyncStorage.getItem(`lastResetDate_${user.uid}`);
+      
+      console.log(`[Daily Reset] Checking reset: stored=${storedDate}, today=${today}`);
       
       if (storedDate !== today) {
         console.log('[Daily Reset] New day detected, resetting daily data');
         
-        // Reset daily data by calling the backend with timeout  
-        const resetPromise = resetDailyData(user.uid);
-        
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Daily reset timeout')), 15000) // Increased timeout
-        );
-        
-        await Promise.race([resetPromise, timeoutPromise]);
-        
-        // Store the new date
-        await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
-        setLastResetDate(today);
-        
-        // Dashboard data reset completed
-        console.log('[Daily Reset] Dashboard data reset completed');
+        try {
+          // Reset daily data by calling the backend with timeout  
+          const resetPromise = resetDailyData(user.uid);
+          
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Daily reset timeout')), 15000)
+          );
+          
+          await Promise.race([resetPromise, timeoutPromise]);
+          
+          // Store the new date
+          await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
+          setLastResetDate(today);
+          
+          console.log(`[Daily Reset] Successfully reset daily data for ${today}`);
+        } catch (resetError) {
+          console.error('[Daily Reset] Failed to reset daily data:', resetError);
+          // Still update the stored date to prevent continuous retry
+          await AsyncStorage.setItem(`lastResetDate_${user.uid}`, today);
+          setLastResetDate(today);
+        }
+      } else {
+        console.log('[Daily Reset] No reset needed - same day');
       }
     } catch (error: any) {
       console.error('[Daily Reset] Error resetting daily data:', error);

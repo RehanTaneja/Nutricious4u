@@ -641,9 +641,12 @@ async def get_food_log_summary(user_id: str):
             logger.error("[SUMMARY] Firebase is not available, returning service unavailable")
             raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
         
-        # Simplified version without timeout handling
+        # Get today's date and calculate the last 7 days (consistent with frontend)
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_week = today - timedelta(days=6)
+        start_of_week = today - timedelta(days=6)  # 6 days ago to today = 7 days total
+        
+        logger.info(f"[SUMMARY] Fetching logs from {start_of_week.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')} for user {user_id}")
+        
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
         # Use datetime object for query, not isoformat string
@@ -721,11 +724,14 @@ async def get_food_log_summary(user_id: str):
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         
         # Ensure we have data for all 7 days, even if some days have no food logs
-        for i in range(7):
+        # Generate the same 7 days that the frontend expects (6 days ago to today)
+        for i in range(6, -1, -1):  # 6 days ago to today (matches frontend logic)
             day_date = today - timedelta(days=i)
             day_str = day_date.strftime('%Y-%m-%d')
             if day_str not in history:
                 history[day_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        logger.info(f"[SUMMARY] Generated date range for last 7 days ending {today.strftime('%Y-%m-%d')}")
         
         # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
@@ -821,11 +827,14 @@ async def _get_food_log_summary_internal(user_id: str, loop):
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         
         # Ensure we have data for all 7 days, even if some days have no food logs
-        for i in range(7):
+        # Generate the same 7 days that the frontend expects (6 days ago to today)
+        for i in range(6, -1, -1):  # 6 days ago to today (matches frontend logic)
             day_date = today - timedelta(days=i)
             day_str = day_date.strftime('%Y-%m-%d')
             if day_str not in history:
                 history[day_str] = {"calories": 0, "protein": 0, "fat": 0}
+        
+        logger.info(f"[SUMMARY] Generated date range for last 7 days ending {today.strftime('%Y-%m-%d')}")
         
         # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
@@ -3521,22 +3530,26 @@ async def reset_daily_data(userId: str):
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get today's date in local time (consistent with frontend)
+        # Get today's date (consistent with frontend date format)
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
-        # Note: We don't delete food logs - they should be preserved for historical data
-        # The daily reset only affects the display counters, not the actual logged data
-        deleted_count = 0
+        logger.info(f"[DAILY RESET] Resetting daily data for user {userId} on {today_str}")
         
-        # Update the lastFoodLogDate to today
-        # The daily reset only affects the display counters, not the actual logged data
-        # Counters are calculated from food logs, so we don't need to reset them here
+        # Note: We don't delete food logs - they should be preserved for historical data
+        # The daily reset only affects how we calculate "today's" data in summaries
+        # by updating the lastFoodLogDate which serves as a reference point
+        
+        # Update the lastFoodLogDate to today - this helps the summary calculation
+        # know that a new day has started and should reset counters
         firestore_db.collection("user_profiles").document(userId).update({
-            "lastFoodLogDate": today_str
+            "lastFoodLogDate": today_str,
+            "lastResetTimestamp": datetime.now().isoformat()
         })
         
-        logger.info(f"[DAILY RESET] Reset daily data for user {userId} on {today_str}. Deleted {deleted_count} food logs.")
+        logger.info(f"[DAILY RESET] Successfully reset daily data for user {userId} on {today_str}. Food logs preserved.")
+        
+        return {"success": True, "resetDate": today_str, "message": "Daily data reset successfully"}
         
         return {
             "success": True, 

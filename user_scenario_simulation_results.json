@@ -1,0 +1,89 @@
+{
+  "simulation_timestamp": "2025-09-21T00:36:26.847985",
+  "user_scenario": "20/09 high calories, 21/09 should reset to 0",
+  "results": {
+    "original_problem": {
+      "date_20th_label_old": "20/08",
+      "date_21st_label_old": "21/08",
+      "high_calories": 3500,
+      "old_bar_height": 233.33333333333334,
+      "bar_exceeds_container": true,
+      "overflow_amount": 33.33333333333334
+    },
+    "fixed_scenario": {
+      "date_20th_label_fixed": "20/09",
+      "date_21st_label_fixed": "21/09",
+      "high_calories": 3500,
+      "fixed_bar_height": 200,
+      "bar_properly_capped": true,
+      "calories_after_reset": 0,
+      "reset_bar_height": 2,
+      "proper_reset": true
+    },
+    "reset_scenario": {
+      "timeline": [
+        {
+          "time": "2024-09-20 23:59",
+          "calories": 3200,
+          "description": "Before midnight - high calories from yesterday"
+        },
+        {
+          "time": "2024-09-21 00:00",
+          "calories": 0,
+          "description": "After midnight - should be reset to 0"
+        },
+        {
+          "time": "2024-09-21 08:00",
+          "calories": 0,
+          "description": "Morning - should still be 0"
+        }
+      ],
+      "last_reset_date": "2024-09-20",
+      "current_date": "2024-09-21",
+      "reset_needed": true,
+      "reset_logic_working": true
+    },
+    "comparison": {
+      "date_labels": {
+        "20th_september": {
+          "before": "20/08",
+          "after": "20/09",
+          "fixed": true
+        },
+        "21st_september": {
+          "before": "21/08",
+          "after": "21/09",
+          "fixed": true
+        }
+      },
+      "bar_graph_overflow": {
+        "before": {
+          "height": 233.33333333333334,
+          "exceeds_container": true,
+          "overflow_amount": 33.33333333333334
+        },
+        "after": {
+          "height": 200,
+          "exceeds_container": false,
+          "overflow_amount": 0
+        },
+        "fixed": true
+      },
+      "reset_functionality": {
+        "before": {
+          "description": "Calories not properly reset, showing wrong values"
+        },
+        "after": {
+          "calories_after_reset": 0,
+          "proper_reset": true
+        },
+        "fixed": true
+      }
+    },
+    "fixes_verified": [
+      "Date labels now show correct dates",
+      "Bar graph overflow prevented",
+      "Reset functionality now works properly"
+    ]
+  }
+}

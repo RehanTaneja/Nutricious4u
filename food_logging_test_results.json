@@ -1,0 +1,59 @@
+{
+  "summary": {
+    "total_tests": 8,
+    "passed": 8,
+    "failed": 0,
+    "success_rate": 100.0,
+    "timestamp": "2025-09-21T02:33:02.160397"
+  },
+  "detailed_results": [
+    {
+      "test": "Date Generation Consistency",
+      "success": true,
+      "details": "Frontend: ['2025-09-15', '2025-09-16', '2025-09-17', '2025-09-18', '2025-09-19', '2025-09-20', '2025-09-21'], Backend: ['2025-09-15', '2025-09-16', '2025-09-17', '2025-09-18', '2025-09-19', '2025-09-20', '2025-09-21']",
+      "timestamp": "2025-09-21T02:33:02.158335"
+    },
+    {
+      "test": "Today Date Calculation Format",
+      "success": true,
+      "details": "New: 2025-09-21, Properly formatted: True",
+      "timestamp": "2025-09-21T02:33:02.158349"
+    },
+    {
+      "test": "Bar Graph Date Alignment",
+      "success": true,
+      "details": "Today included: True, Chronological: True",
+      "timestamp": "2025-09-21T02:33:02.158380"
+    },
+    {
+      "test": "Reset Function Logic",
+      "success": true,
+      "details": "All test cases passed",
+      "timestamp": "2025-09-21T02:33:02.158392"
+    },
+    {
+      "test": "Backend Reset Logic",
+      "success": true,
+      "details": "Reset would set lastFoodLogDate to 2025-09-21",
+      "timestamp": "2025-09-21T02:33:02.158401"
+    },
+    {
+      "test": "Backend Summary Logic",
+      "success": true,
+      "details": "Generated 7 dates, includes today: True",
+      "timestamp": "2025-09-21T02:33:02.158418"
+    },
+    {
+      "test": "Edge Cases - Date Formatting",
+      "success": true,
+      "details": "All edge case dates formatted correctly",
+      "timestamp": "2025-09-21T02:33:02.158428"
+    },
+    {
+      "test": "Edge Cases - Timezone Awareness",
+      "success": true,
+      "details": "UTC vs Local difference: 14400s, Different TZ: True",
+      "timestamp": "2025-09-21T02:33:02.160293"
+    }
+  ]
+}

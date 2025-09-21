@@ -1,0 +1,121 @@
+{
+  "verification_timestamp": "2025-09-21T00:42:19.557369",
+  "reset_logic_correct": true,
+  "issues_found": [],
+  "detailed_results": {
+    "simulated_logs": {
+      "total_logs": 18,
+      "days_covered": 7,
+      "today_logs": 0,
+      "yesterday_logs": 3
+    },
+    "daily_summary": {
+      "relevant_logs_count": 18,
+      "days_with_data": 6,
+      "history": [
+        {
+          "day": "2025-09-21",
+          "calories": 0,
+          "protein": 0,
+          "fat": 0
+        },
+        {
+          "day": "2025-09-20",
+          "calories": 3200,
+          "protein": 115,
+          "fat": 85
+        },
+        {
+          "day": "2025-09-19",
+          "calories": 1700,
+          "protein": 75,
+          "fat": 60
+        },
+        {
+          "day": "2025-09-18",
+          "calories": 1700,
+          "protein": 75,
+          "fat": 60
+        },
+        {
+          "day": "2025-09-17",
+          "calories": 1700,
+          "protein": 75,
+          "fat": 60
+        },
+        {
+          "day": "2025-09-16",
+          "calories": 1700,
+          "protein": 75,
+          "fat": 60
+        },
+        {
+          "day": "2025-09-15",
+          "calories": 1700,
+          "protein": 75,
+          "fat": 60
+        }
+      ],
+      "today_calories": 0,
+      "yesterday_calories": 3200
+    },
+    "reset_behavior": {
+      "reset_needed": true,
+      "old_last_date": "2024-09-20",
+      "new_last_date": "2025-09-21",
+      "logs_deleted": 0,
+      "historical_data_preserved": true
+    },
+    "bar_graph_verification": {
+      "dates_covered": 7,
+      "today_calories": 0,
+      "yesterday_calories": 3200,
+      "bar_heights": [
+        {
+          "date": "2025-09-21",
+          "calories": 0,
+          "height": 2,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-20",
+          "calories": 3200,
+          "height": 200,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-19",
+          "calories": 1700,
+          "height": 113.33333333333333,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-18",
+          "calories": 1700,
+          "height": 113.33333333333333,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-17",
+          "calories": 1700,
+          "height": 113.33333333333333,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-16",
+          "calories": 1700,
+          "height": 113.33333333333333,
+          "exceeds_container": false
+        },
+        {
+          "date": "2025-09-15",
+          "calories": 1700,
+          "height": 113.33333333333333,
+          "exceeds_container": false
+        }
+      ],
+      "any_overflow": false,
+      "historical_data_intact": true
+    }
+  }
+}
