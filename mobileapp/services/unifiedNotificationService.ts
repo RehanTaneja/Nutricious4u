@@ -103,30 +103,53 @@ export class UnifiedNotificationService {
       let trigger: any;
 
       if (scheduledFor) {
-        // Schedule for specific date/time
-        const secondsUntilTrigger = Math.floor((scheduledFor.getTime() - Date.now()) / 1000);
-        
-        // CRITICAL FIX: Prevent immediate triggers and ensure minimum delay
-        if (secondsUntilTrigger <= 0) {
-          logger.warn(`[UnifiedNotificationService] Attempted to schedule notification for past time: ${scheduledFor.toISOString()}, scheduling for 1 minute from now`);
+        // FIXED: Use proper calendar-based triggers for diet notifications
+        if (type === 'diet') {
+          // Use calendar trigger for proper weekly recurring
+          const dayOfWeek = scheduledFor.getDay();
+          const hour = scheduledFor.getHours();
+          const minute = scheduledFor.getMinutes();
+          
           trigger = {
-            type: 'timeInterval',
-            seconds: 60, // Minimum 1 minute delay
-            repeats: repeats || false
+            type: 'calendar',
+            dateComponents: {
+              weekday: dayOfWeek + 1, // Expo uses 1=Sunday, 2=Monday, etc.
+              hour: hour,
+              minute: minute
+            },
+            repeats: true // This enables proper weekly recurring
           };
-        } else if (secondsUntilTrigger < 60) {
-          // If less than 1 minute, add buffer
-          trigger = {
-            type: 'timeInterval',
-            seconds: 60,
-            repeats: repeats || false
-          };
+          
+          console.log(`[NOTIFICATION TRIGGER] ✅ Using calendar trigger:`);
+          console.log(`  Weekday: ${dayOfWeek + 1} (${['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek + 1]})`);
+          console.log(`  Time: ${hour}:${String(minute).padStart(2, '0')}`);
+          console.log(`  Repeats: true (weekly)`);
         } else {
-          trigger = {
-            type: 'timeInterval',
-            seconds: secondsUntilTrigger,
-            repeats: repeats || false
-          };
+          // For non-diet notifications, use timeInterval as before
+          const secondsUntilTrigger = Math.floor((scheduledFor.getTime() - Date.now()) / 1000);
+          
+          // CRITICAL FIX: Prevent immediate triggers and ensure minimum delay
+          if (secondsUntilTrigger <= 0) {
+            logger.warn(`[UnifiedNotificationService] Attempted to schedule notification for past time: ${scheduledFor.toISOString()}, scheduling for 1 minute from now`);
+            trigger = {
+              type: 'timeInterval',
+              seconds: 60, // Minimum 1 minute delay
+              repeats: repeats || false
+            };
+          } else if (secondsUntilTrigger < 60) {
+            // If less than 1 minute, add buffer
+            trigger = {
+              type: 'timeInterval',
+              seconds: 60,
+              repeats: repeats || false
+            };
+          } else {
+            trigger = {
+              type: 'timeInterval',
+              seconds: secondsUntilTrigger,
+              repeats: repeats || false
+            };
+          }
         }
       } else {
         // Schedule immediately with minimum delay
@@ -270,10 +293,13 @@ export class UnifiedNotificationService {
     return fallback;
   }
 
-  // Schedule diet notifications locally with improved day-wise scheduling
+  // Schedule diet notifications locally with improved day-wise scheduling and proper recurring
   async scheduleDietNotifications(notifications: any[]): Promise<string[]> {
     try {
       const scheduledIds: string[] = [];
+      
+      // First, cancel any existing diet notifications to prevent duplicates
+      await this.cancelExistingDietNotifications();
       
       for (const notification of notifications) {
         const { message, time, selectedDays } = notification;
@@ -284,7 +310,10 @@ export class UnifiedNotificationService {
           // Create separate notifications for each selected day to ensure proper day-wise delivery
           for (let i = 0; i < selectedDays.length; i++) {
             const dayOfWeek = selectedDays[i];
-            const notificationId = `diet_${Date.now()}_${Math.random()}_${hours}_${minutes}_day${dayOfWeek}`;
+            
+            // Use predictable ID for better management
+            const activityId = `${message.replace(/[^a-zA-Z0-9]/g, '_')}_${time}_day${dayOfWeek}`.substring(0, 50);
+            const notificationId = `diet_${activityId}_${hours}_${minutes}_${dayOfWeek}`;
             
             // Calculate the next occurrence for this specific day
             const nextOccurrence = this.calculateDietNextOccurrence(hours, minutes, dayOfWeek);
@@ -301,30 +330,30 @@ export class UnifiedNotificationService {
                 extractedFrom: notification.extractedFrom,
                 notificationId: notificationId,
                 // Add activity identifier to prevent duplicates
-                activityId: `${message}_${time}_day${dayOfWeek}`,
+                activityId: activityId,
                 originalSelectedDays: selectedDays // Keep original for reference
               },
               scheduledFor: nextOccurrence,
-              repeats: true, // Enable weekly repeats for consistent delivery
-              repeatInterval: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+              repeats: true, // FIXED: Enable proper weekly repeats using calendar trigger
+              repeatInterval: undefined, // Not needed for calendar triggers
             };
 
             const scheduledId = await this.scheduleNotification(unifiedNotification);
             scheduledIds.push(scheduledId);
             
             // COMPREHENSIVE LOGGING FOR DEBUGGING
-            console.log('[NOTIFICATION DEBUG] UnifiedNotificationService scheduled diet notification for day', dayOfWeek);
-            console.log('[NOTIFICATION DEBUG] Message:', message);
-            console.log('[NOTIFICATION DEBUG] Time:', time);
-            console.log('[NOTIFICATION DEBUG] Day of week:', dayOfWeek);
-            console.log('[NOTIFICATION DEBUG] Scheduled ID:', scheduledId);
-            console.log('[NOTIFICATION DEBUG] Platform:', Platform.OS);
-            console.log('[NOTIFICATION DEBUG] Is EAS build:', !__DEV__);
-            console.log('[NOTIFICATION DEBUG] Repeats:', true);
-            console.log('[NOTIFICATION DEBUG] Repeat interval:', '7 days');
+            console.log('[DIET NOTIFICATION] ✅ Scheduled notification:');
+            console.log('  Message:', message);
+            console.log('  Time:', time);
+            console.log('  Frontend Day:', dayOfWeek, '(' + ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dayOfWeek] + ')');
+            console.log('  Next Occurrence:', nextOccurrence.toLocaleString());
+            console.log('  Scheduled ID:', scheduledId);
+            console.log('  Activity ID:', activityId);
+            console.log('  Platform:', Platform.OS);
+            console.log('  Local Time Now:', new Date().toLocaleString());
           }
         } else {
-          console.log('[NOTIFICATION DEBUG] Skipping notification - no valid days or inactive:', {
+          console.log('[DIET NOTIFICATION] ⏭️ Skipping notification - no valid days or inactive:', {
             message: message?.substring(0, 50),
             selectedDays,
             isActive: notification.isActive
@@ -332,11 +361,42 @@ export class UnifiedNotificationService {
         }
       }
 
+      console.log(`[DIET NOTIFICATION] ✅ Successfully scheduled ${scheduledIds.length} notifications`);
       logger.log('[UnifiedNotificationService] Scheduled diet notifications:', scheduledIds);
       return scheduledIds;
     } catch (error) {
+      console.error('[DIET NOTIFICATION] ❌ Failed to schedule notifications:', error);
       logger.error('[UnifiedNotificationService] Failed to schedule diet notifications:', error);
       throw error;
+    }
+  }
+
+  // Cancel existing diet notifications to prevent duplicates
+  private async cancelExistingDietNotifications(): Promise<void> {
+    try {
+      console.log('[DIET NOTIFICATION] 🧹 Cancelling existing diet notifications...');
+      
+      // Get all scheduled notifications
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      
+      // Filter for diet notifications
+      const dietNotifications = scheduledNotifications.filter(notification => 
+        notification.identifier.startsWith('diet_') || 
+        (notification.content.data && notification.content.data.type === 'diet')
+      );
+      
+      console.log(`[DIET NOTIFICATION] Found ${dietNotifications.length} existing diet notifications`);
+      
+      // Cancel each diet notification
+      for (const notification of dietNotifications) {
+        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        console.log(`[DIET NOTIFICATION] ✅ Cancelled: ${notification.identifier}`);
+      }
+      
+      console.log(`[DIET NOTIFICATION] 🧹 Cancelled ${dietNotifications.length} existing notifications`);
+    } catch (error) {
+      console.error('[DIET NOTIFICATION] ❌ Error cancelling existing notifications:', error);
+      // Don't throw error - this is cleanup, continue with scheduling
     }
   }
 
@@ -478,15 +538,28 @@ export class UnifiedNotificationService {
   }
 
   // Calculate next occurrence for diet notifications - using same method as custom reminders
+  // FIXED: Proper day conversion and time calculation
   private calculateDietNextOccurrence(hours: number, minutes: number, dayOfWeek?: number): Date {
     const now = new Date();
     const currentDay = now.getDay(); // 0=Sunday, 1=Monday, etc.
-    const targetTime = new Date(now);
-    targetTime.setHours(hours, minutes, 0, 0);
+    
+    console.log(`[TIME CALC] Calculating next occurrence for ${hours}:${String(minutes).padStart(2, '0')}`);
+    console.log(`[TIME CALC] Current time: ${now.toLocaleString()}`);
+    console.log(`[TIME CALC] Current day: ${currentDay} (${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]})`);
 
     if (dayOfWeek !== undefined) {
-      // Convert selectedDays to match JavaScript day format (0=Sunday)
-      const jsSelectedDay = (dayOfWeek + 1) % 7; // Convert Monday=0 to Sunday=0
+      // FIXED: Correct day conversion from frontend format to JavaScript format
+      // Frontend: 0=Monday, 1=Tuesday, ..., 6=Sunday
+      // JavaScript: 0=Sunday, 1=Monday, ..., 6=Saturday
+      let jsSelectedDay: number;
+      if (dayOfWeek === 6) {
+        jsSelectedDay = 0; // Sunday
+      } else {
+        jsSelectedDay = dayOfWeek + 1; // Monday=1, Tuesday=2, etc.
+      }
+      
+      console.log(`[TIME CALC] Frontend day: ${dayOfWeek} (${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dayOfWeek]})`);
+      console.log(`[TIME CALC] JavaScript day: ${jsSelectedDay} (${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][jsSelectedDay]})`);
       
       // Find next occurrence for the specific day
       for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
@@ -498,12 +571,16 @@ export class UnifiedNotificationService {
           const occurrence = new Date(checkDate);
           occurrence.setHours(hours, minutes, 0, 0);
 
+          console.log(`[TIME CALC] Found matching day at offset ${dayOffset}: ${occurrence.toLocaleString()}`);
+
           // If this is today and time hasn't passed, use today
           if (dayOffset === 0 && occurrence > now) {
+            console.log(`[TIME CALC] ✅ Scheduling for today (time hasn't passed)`);
             return occurrence;
           }
           // If this is today but time has passed, or it's a future day
           if (dayOffset > 0) {
+            console.log(`[TIME CALC] ✅ Scheduling for future day (offset: ${dayOffset})`);
             return occurrence;
           }
         }
@@ -513,15 +590,21 @@ export class UnifiedNotificationService {
       const fallback = new Date(now);
       fallback.setDate(now.getDate() + 7);
       fallback.setHours(hours, minutes, 0, 0);
+      console.log(`[TIME CALC] ⚠️ Using fallback (next week): ${fallback.toLocaleString()}`);
       return fallback;
     } else {
-      // Daily occurrence - same logic as custom reminders
+      // Daily occurrence
+      const targetTime = new Date(now);
+      targetTime.setHours(hours, minutes, 0, 0);
+      
       if (targetTime > now) {
+        console.log(`[TIME CALC] ✅ Daily - scheduling for today`);
         return targetTime; // Today if time hasn't passed
       } else {
         const tomorrow = new Date(now);
         tomorrow.setDate(now.getDate() + 1);
         tomorrow.setHours(hours, minutes, 0, 0);
+        console.log(`[TIME CALC] ✅ Daily - scheduling for tomorrow`);
         return tomorrow;
       }
     }
@@ -569,6 +652,50 @@ export class UnifiedNotificationService {
   private handleDietReminderNotification(data: any): void {
     // This will be handled by the app's notification listener
     logger.log('[UnifiedNotificationService] Diet reminder notification handled:', data);
+  }
+
+  // Schedule appointment booking notification to dietician
+  async scheduleAppointmentNotification(
+    userName: string,
+    appointmentDate: string,
+    timeSlot: string,
+    userEmail: string
+  ): Promise<string> {
+    try {
+      console.log('[APPOINTMENT NOTIFICATION] 📅 Scheduling appointment notification to dietician');
+      console.log('  User:', userName);
+      console.log('  Date:', appointmentDate);
+      console.log('  Time:', timeSlot);
+      console.log('  Email:', userEmail);
+      
+      const unifiedNotification: UnifiedNotification = {
+        id: `appointment_${Date.now()}_${Math.random()}`,
+        title: 'New Appointment Booked',
+        body: `${userName} has booked an appointment for ${appointmentDate} at ${timeSlot}`,
+        type: 'appointment_booked',
+        data: {
+          userName,
+          appointmentDate,
+          timeSlot,
+          userEmail,
+          type: 'appointment_booked',
+          target: 'dietician'
+        },
+        scheduledFor: new Date(), // Send immediately
+        repeats: false
+      };
+
+      const scheduledId = await this.scheduleNotification(unifiedNotification);
+      
+      console.log('[APPOINTMENT NOTIFICATION] ✅ Appointment notification scheduled:', scheduledId);
+      logger.log('[UnifiedNotificationService] Appointment notification scheduled:', scheduledId);
+      
+      return scheduledId;
+    } catch (error) {
+      console.error('[APPOINTMENT NOTIFICATION] ❌ Failed to schedule appointment notification:', error);
+      logger.error('[UnifiedNotificationService] Failed to schedule appointment notification:', error);
+      throw error;
+    }
   }
 }
 

@@ -4899,7 +4899,59 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const backgroundSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data;
       
-      // Handle diet reminder interactions
+      console.log('[NOTIFICATION CLICK] User clicked notification:', data?.type);
+      console.log('[NOTIFICATION CLICK] Notification data:', data);
+      
+      // CRITICAL FIX: Handle diet notification clicks - navigate to diet
+      if (data?.type === 'diet' || data?.type === 'new_diet' || data?.type === 'diet_reminder') {
+        console.log('[DIET NOTIFICATION CLICK] 🍎 User clicked diet notification - opening diet...');
+        
+        try {
+          const userId = auth.currentUser?.uid;
+          if (!userId) {
+            console.error('[DIET NOTIFICATION CLICK] No user ID available');
+            return;
+          }
+          
+          // Get user's diet and open it directly (same as "My Diet" button)
+          console.log('[DIET NOTIFICATION CLICK] Fetching user diet...');
+          const dietData = await getUserDiet(userId);
+          
+          if (dietData && dietData.dietPdfUrl) {
+            console.log('[DIET NOTIFICATION CLICK] ✅ Opening diet PDF:', dietData.dietPdfUrl);
+            
+            // Open the diet PDF directly (same logic as My Diet button)
+            if (Platform.OS === 'ios') {
+              // iOS: Use WebView for better compatibility
+              navigation.navigate('WebView', {
+                url: dietData.dietPdfUrl,
+                title: 'My Diet Plan'
+              });
+            } else {
+              // Android: Use Linking
+              await Linking.openURL(dietData.dietPdfUrl);
+            }
+            
+            console.log('[DIET NOTIFICATION CLICK] ✅ Diet opened successfully');
+          } else {
+            console.warn('[DIET NOTIFICATION CLICK] No diet PDF found for user');
+            Alert.alert(
+              'No Diet Available',
+              'No diet plan found. Please contact your dietician to upload a diet plan.',
+              [{ text: 'OK' }]
+            );
+          }
+        } catch (error) {
+          console.error('[DIET NOTIFICATION CLICK] Error opening diet:', error);
+          Alert.alert(
+            'Error',
+            'Failed to open diet plan. Please try again or use the My Diet button.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+      
+      // Handle diet reminder interactions (legacy)
       if (data?.type === 'diet_reminder' && data?.source === 'diet_pdf') {
         console.log('[Diet Notifications] User interacted with diet reminder');
         
@@ -4923,6 +4975,19 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           if (data.userId) {
             navigation.navigate('DieticianMessage', { userId: data.userId });
           }
+        }
+      }
+      
+      // Handle appointment notification interactions (for dieticians)
+      if (data?.type === 'appointment_booked') {
+        console.log('[APPOINTMENT NOTIFICATION CLICK] 📅 Dietician clicked appointment notification');
+        
+        // Navigate to appointments screen for dietician
+        try {
+          navigation.navigate('DieticianDashboard');
+          console.log('[APPOINTMENT NOTIFICATION CLICK] ✅ Navigated to appointments');
+        } catch (error) {
+          console.error('[APPOINTMENT NOTIFICATION CLICK] Navigation error:', error);
         }
       }
     });
@@ -5833,7 +5898,8 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
               }]} />
               {/* Data points as bars instead of SVG */}
               {chartData.map((item: any, index: number) => {
-                const barHeight = (item.value / maxValue) * chartHeight;
+                const rawBarHeight = (item.value / maxValue) * chartHeight;
+                const safeBarHeight = Math.max(2, Math.min(rawBarHeight, chartHeight));
                 const barWidth = Math.max(20, chartWidth / 10);
                 const x = (index / (chartData.length - 1)) * (chartWidth - barWidth);
                 return (
@@ -5842,7 +5908,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                     left: x,
                     bottom: 0,
                     width: barWidth,
-                    height: barHeight,
+                    height: safeBarHeight,
                     backgroundColor: color + '80',
                     borderRadius: 2,
                     marginHorizontal: 2
@@ -6009,7 +6075,17 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                 const dayCalories = caloriesData[dayIndex]?.value || 0;
                 const dayProtein = proteinData[dayIndex]?.value || 0;
                 const dayFat = fatData[dayIndex]?.value || 0;
-                const commonMax = 3000;
+                
+                // Dynamic max value based on actual data, but ensure bars don't overflow
+                const maxCaloriesInData = Math.max(...caloriesData.map(d => d.value || 0));
+                const dynamicMax = Math.max(3000, maxCaloriesInData * 1.1); // At least 3000, or 110% of max data
+                const maxBarHeight = 200; // Container height limit
+                
+                // Calculate bar height with strict overflow protection
+                const rawBarHeight = (dayCalories / dynamicMax) * maxBarHeight;
+                const safeBarHeight = Math.max(2, Math.min(rawBarHeight, maxBarHeight));
+                
+                console.log(`[Bar Graph] Day ${dayIndex}: calories=${dayCalories}, dynamicMax=${dynamicMax}, rawHeight=${rawBarHeight.toFixed(1)}, safeHeight=${safeBarHeight}`);
                 
                 return (
                   <View key={dayIndex} style={styles.barGroup}>
@@ -6019,7 +6095,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         style={[
                           styles.barGraphBar,
                           {
-                            height: Math.max(2, (dayCalories / commonMax) * 200),
+                            height: safeBarHeight,
                             backgroundColor: chartColors.calories,
                             flexDirection: 'column',
                             justifyContent: 'flex-end',
@@ -6030,7 +6106,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: ((dayProtein * 4) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
+                              height: Math.min(((dayProtein * 4) / dayCalories) * safeBarHeight, safeBarHeight),
                               backgroundColor: chartColors.protein,
                               width: '100%',
                             }}
@@ -6041,7 +6117,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
                         {dayCalories > 0 && (
                           <View 
                             style={{
-                              height: ((dayFat * 9) / dayCalories) * Math.max(2, (dayCalories / commonMax) * 200),
+                              height: Math.min(((dayFat * 9) / dayCalories) * safeBarHeight, safeBarHeight),
                               backgroundColor: chartColors.fat,
                               width: '100%',
                             }}
@@ -10763,6 +10839,24 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         const result = appointmentRef.id;
         
         console.log('[Appointment Debug] ✅ Appointment saved successfully with atomic transaction, ID:', result);
+        
+        // Send notification to dietician about new appointment booking
+        try {
+          console.log('[Appointment Notification] Sending notification to dietician...');
+          
+          const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+          await unifiedNotificationService.scheduleAppointmentNotification(
+            userName,
+            formatDate(selectedDate),
+            selectedTimeSlot,
+            appointmentData.userEmail
+          );
+          
+          console.log('[Appointment Notification] ✅ Dietician notification sent successfully');
+        } catch (notificationError) {
+          console.error('[Appointment Notification] Failed to send dietician notification:', notificationError);
+          // Don't fail the appointment booking if notification fails
+        }
       
       setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
       setShowSuccess(true);

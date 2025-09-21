@@ -1,0 +1,157 @@
+{
+  "analysis_timestamp": "2025-09-21T17:46:23.626843",
+  "total_issues": 9,
+  "critical_issues_count": 2,
+  "analyses": {
+    "Subscription Expiry": {
+      "status": "IMPLEMENTED",
+      "issues_count": 3,
+      "issues": [
+        {
+          "issue": "Timing accuracy",
+          "description": "Depends on scheduled job running exactly at right time",
+          "risk": "Medium - notifications might be delayed"
+        },
+        {
+          "issue": "Dietician token availability",
+          "description": "Requires dietician to have valid notification token",
+          "risk": "High - notification won't be sent if no token"
+        },
+        {
+          "issue": "Cross-platform consistency",
+          "description": "Different behavior on iOS vs Android",
+          "risk": "Medium - platform-specific issues"
+        }
+      ],
+      "flow": {
+        "trigger": "Backend scheduled job checks users daily",
+        "detection": "User has 1 day remaining in subscription",
+        "target": "Dietician (nutricious4u@gmail.com)",
+        "notification_type": "user_subscription_expired",
+        "message": "User {name} ({id}) subscription ({plan}) has expired.",
+        "backend_endpoint": "/users/check-one-day-remaining",
+        "implementation": "backend/server.py lines 1800-2964"
+      }
+    },
+    "New Diet Arrival": {
+      "status": "PARTIALLY_WORKING",
+      "critical_issue": "Navigation not implemented",
+      "issues_count": 1,
+      "issues": [
+        {
+          "issue": "Diet notification navigation",
+          "description": "Clicking diet notification opens app but doesn't navigate to diet",
+          "current_behavior": "Opens app to dashboard",
+          "expected_behavior": "Should open diet directly like 'My Diet' button",
+          "fix_needed": "Add navigation handling in notification response listener"
+        }
+      ],
+      "flow": {
+        "trigger": "Dietician uploads diet PDF via /users/{user_id}/diet/upload",
+        "target": "Specific user who received the diet",
+        "notification_type": "new_diet",
+        "title": "New Diet Has Arrived!",
+        "body": "Your dietician has uploaded a new diet plan for you.",
+        "navigation": "Should open diet directly (NEEDS FIXING)",
+        "backend_implementation": "backend/server.py lines 1524-1788",
+        "frontend_handling": "mobileapp/screens.tsx lines 1268-1300"
+      }
+    },
+    "Message Notifications": {
+      "status": "IMPLEMENTED",
+      "issues_count": 2,
+      "issues": [
+        {
+          "issue": "Duplicate notifications",
+          "description": "Both backend and Firebase Functions might send notifications",
+          "risk": "Medium - users might get duplicate message notifications"
+        },
+        {
+          "issue": "Targeting accuracy",
+          "description": "Need to ensure correct recipient based on sender",
+          "risk": "High - wrong person might get notification"
+        }
+      ],
+      "flow": {
+        "trigger": "User or dietician sends message",
+        "endpoint": "/send-message-notification",
+        "targets": {
+          "to_dietician": "When user sends message to dietician",
+          "to_user": "When dietician sends message to user"
+        },
+        "notification_type": "message_notification",
+        "backend_implementation": "backend/server.py lines 2457-2527",
+        "frontend_implementation": "mobileapp/screens.tsx lines 6784-6835"
+      }
+    },
+    "Appointment Booking": {
+      "status": "NEEDS_VERIFICATION",
+      "issues_count": 1,
+      "issues": [
+        {
+          "issue": "Appointment notification implementation unclear",
+          "description": "Need to verify if appointment booking sends notification to dietician",
+          "action_needed": "Check appointment booking code for notification logic"
+        }
+      ],
+      "flow": {
+        "trigger": "User books appointment",
+        "target": "Dietician",
+        "expected_type": "appointment_booked",
+        "expected_message": "User {name} has booked an appointment for {date} at {time}",
+        "implementation_status": "NEEDS_VERIFICATION"
+      }
+    },
+    "Navigation Handling": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "critical_issue": {
+        "issue": "Diet notification navigation missing",
+        "description": "Clicking diet notification should open diet PDF directly",
+        "current_behavior": "No navigation, just logs interaction",
+        "expected_behavior": "Navigate to diet screen and open PDF",
+        "implementation_needed": "Add navigation logic in notification response handler"
+      },
+      "issues_count": 2,
+      "issues": [
+        {
+          "notification_type": "diet_reminder",
+          "issue": "Missing navigation",
+          "current": "Logs interaction but no navigation",
+          "needed": "Should navigate to appropriate screen"
+        },
+        {
+          "notification_type": "new_diet",
+          "issue": "Missing navigation",
+          "current": "No specific handling found",
+          "needed": "Should navigate to appropriate screen"
+        }
+      ],
+      "current": {
+        "listener": "Notifications.addNotificationResponseReceivedListener",
+        "location": "mobileapp/screens.tsx lines 4897-4909",
+        "current_handling": {
+          "diet_reminder": "Logs interaction but no navigation",
+          "message_notification": "Refreshes message list",
+          "new_diet": "No specific handling found"
+        }
+      }
+    }
+  },
+  "critical_issues": [
+    {
+      "category": "New Diet Arrival",
+      "issue": "Navigation not implemented"
+    },
+    {
+      "category": "Navigation Handling",
+      "issue": "Diet notification navigation missing"
+    }
+  ],
+  "action_plan": [
+    "Fix diet notification navigation",
+    "Verify appointment notifications",
+    "Test cross-platform functionality",
+    "Prevent message duplicates",
+    "Enhance platform consistency"
+  ]
+}

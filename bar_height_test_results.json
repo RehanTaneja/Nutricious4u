@@ -1,0 +1,74 @@
+{
+  "summary": {
+    "all_passed": true,
+    "dynamic_max": 8800.0,
+    "max_bar_height": 200,
+    "chart_height": 140,
+    "timestamp": "2025-09-21T04:14:16.665646"
+  },
+  "detailed_results": [
+    {
+      "case": "Normal day",
+      "calories": 1800,
+      "raw_height": 40.9,
+      "safe_height": 40.9,
+      "protein_height": 10.9,
+      "fat_height": 12.3,
+      "within_limits": true
+    },
+    {
+      "case": "High calorie day",
+      "calories": 3500,
+      "raw_height": 79.5,
+      "safe_height": 79.5,
+      "protein_height": 13.6,
+      "fat_height": 20.5,
+      "within_limits": true
+    },
+    {
+      "case": "Very high day",
+      "calories": 5000,
+      "raw_height": 113.6,
+      "safe_height": 113.6,
+      "protein_height": 18.2,
+      "fat_height": 30.7,
+      "within_limits": true
+    },
+    {
+      "case": "Extreme day",
+      "calories": 8000,
+      "raw_height": 181.8,
+      "safe_height": 181.8,
+      "protein_height": 27.3,
+      "fat_height": 40.9,
+      "within_limits": true
+    },
+    {
+      "case": "Low calorie day",
+      "calories": 800,
+      "raw_height": 18.2,
+      "safe_height": 18.2,
+      "protein_height": 5.5,
+      "fat_height": 6.1,
+      "within_limits": true
+    },
+    {
+      "case": "Zero calories",
+      "calories": 0,
+      "raw_height": 0.0,
+      "safe_height": 2,
+      "protein_height": 0,
+      "fat_height": 0,
+      "within_limits": true
+    },
+    {
+      "case": "Minimal calories",
+      "calories": 50,
+      "raw_height": 1.1,
+      "safe_height": 2,
+      "protein_height": 0.8,
+      "fat_height": 0.7,
+      "within_limits": true
+    }
+  ]
+}
