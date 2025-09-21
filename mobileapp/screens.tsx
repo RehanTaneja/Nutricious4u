@@ -5667,11 +5667,14 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 500;
 
   // --- Build last 7 days (rolling window) ---
+  // Generate dates in the same order as backend (ascending order)
   const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - 6); // Start from 6 days ago
   const last7Dates: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i); // Go forward: startOfWeek+0, startOfWeek+1, ..., startOfWeek+6
     last7Dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); // 'YYYY-MM-DD'
   }
   // Map summary.history to a lookup by date
