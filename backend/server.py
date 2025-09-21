@@ -3521,7 +3521,7 @@ async def reset_daily_data(userId: str):
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get today's date in UTC
+        # Get today's date in local time (consistent with frontend)
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
