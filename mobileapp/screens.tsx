@@ -5657,7 +5657,12 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
 
 // --- Tracking Details Screen ---
 const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: any }) => {
-  const { summary, burnedToday, userProfile, workoutSummary } = route.params || {};
+  const { summary: initialSummary, burnedToday: initialBurnedToday, userProfile, workoutSummary } = route.params || {};
+  
+  // State for fresh data
+  const [summary, setSummary] = useState(initialSummary);
+  const [burnedToday, setBurnedToday] = useState(initialBurnedToday || 0);
+  const [loading, setLoading] = useState(false);
   
   // Get targets from userProfile if available
   const targetCalories = userProfile?.targetCalories || 2000;
@@ -5666,15 +5671,35 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
 
   const targetBurned = userProfile?.caloriesBurnedGoal ?? 500;
 
+  // Fetch fresh summary data
+  const fetchFreshSummary = async () => {
+    if (!userProfile?.uid) return;
+    
+    setLoading(true);
+    try {
+      const response = await getLogSummary(userProfile.uid);
+      if (response) {
+        setSummary(response);
+        console.log('[TrackingDetails] Fresh summary data loaded');
+      }
+    } catch (error) {
+      console.error('[TrackingDetails] Error fetching fresh summary:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch fresh data when screen loads
+  useEffect(() => {
+    fetchFreshSummary();
+  }, []);
+
   // --- Build last 7 days (rolling window) ---
-  // Generate dates in the same order as backend (ascending order)
   const today = new Date();
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - 6); // Start from 6 days ago
   const last7Dates: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(startOfWeek);
-    d.setDate(startOfWeek.getDate() + i); // Go forward: startOfWeek+0, startOfWeek+1, ..., startOfWeek+6
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
     last7Dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); // 'YYYY-MM-DD'
   }
   // Map summary.history to a lookup by date
@@ -5869,9 +5894,24 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
         <Text style={styles.screenTitle}>Consumption</Text>
-        <View style={{ minWidth: 40 }} />
+        <TouchableOpacity 
+          onPress={fetchFreshSummary}
+          style={{ padding: 4, minWidth: 40, alignItems: 'flex-end' }}
+        >
+          <Text style={{ fontSize: 18, color: COLORS.primaryDark }}>↻</Text>
+        </TouchableOpacity>
       </View>
-      <ScrollView style={{ marginTop: 16 }}>
+      <ScrollView 
+        style={{ marginTop: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={fetchFreshSummary}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
         {/* Current Status Cards */}
         <View style={styles.statusGrid}>
           <View style={styles.statusCard}>
