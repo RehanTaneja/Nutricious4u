@@ -1840,7 +1840,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     );
   }
 
-  const todayData = summary?.history?.[0] || {
+  // Find today's data by date string instead of relying on array order
+  // This handles timezone differences between frontend and backend
+  const today = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+  const todayData = summary?.history?.find((item: any) => item.day === today) || {
     calories: 0,
     protein: 0,
     fat: 0,
