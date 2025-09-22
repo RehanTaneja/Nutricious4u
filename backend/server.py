@@ -554,7 +554,7 @@ async def get_food_nutrition(food_name: str, quantity: str = "100"):
             calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
             protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
             fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
-            per_100g=False  # Gemini already calculated for the specific serving size
+            per_100g=True
         )
         
         return {"food": food.dict(), "success": True}
@@ -578,7 +578,7 @@ async def log_food_item(request: FoodLogRequest):
             if user_doc.exists:
                 user_data = user_doc.to_dict()
                 last_food_log_date = user_data.get("lastFoodLogDate")
-                today = datetime.now().strftime('%Y-%m-%d')
+                today = datetime.utcnow().strftime('%Y-%m-%d')
                 
                 if last_food_log_date != today:
                     logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
@@ -596,7 +596,7 @@ async def log_food_item(request: FoodLogRequest):
             calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
             protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
             fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
-            per_100g=False  # Gemini already calculated for the specific serving size
+            per_100g=True
         )
         log_entry = FoodLog(
             userId=user_id,
@@ -604,37 +604,11 @@ async def log_food_item(request: FoodLogRequest):
             servingSize=request.servingSize
         )
         def log_food_in_db():
-            log_entry.timestamp = datetime.now()
-            
-            # Enhanced logging for debugging tracker issues
-            logger.info(f"[FOOD LOG DEBUG] 🍎 Logging food with comprehensive details:")
-            logger.info(f"[FOOD LOG DEBUG] - User ID: {user_id}")
-            logger.info(f"[FOOD LOG DEBUG] - Food name: {log_entry.food.name}")
-            logger.info(f"[FOOD LOG DEBUG] - Serving size: {log_entry.servingSize}")
-            logger.info(f"[FOOD LOG DEBUG] - Timestamp: {log_entry.timestamp}")
-            logger.info(f"[FOOD LOG DEBUG] - Date for storage: {log_entry.timestamp.strftime('%Y-%m-%d')}")
-            logger.info(f"[FOOD LOG DEBUG] - Food calories: {log_entry.food.calories}")
-            logger.info(f"[FOOD LOG DEBUG] - Food protein: {log_entry.food.protein}")
-            logger.info(f"[FOOD LOG DEBUG] - Food fat: {log_entry.food.fat}")
-            logger.info(f"[FOOD LOG DEBUG] - Per 100g flag: {log_entry.food.per_100g}")
-            
-            # Store in Firestore
-            doc_ref = firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
-            logger.info(f"[FOOD LOG] ✅ Written to Firestore with ID: {doc_ref[1].id}")
-            logger.info(f"[FOOD LOG] Full document data: {log_entry.dict()}")
-            
-            # Verify the write was successful
-            try:
-                written_doc = firestore_db.collection(f"users/{user_id}/food_logs").document(doc_ref[1].id).get()
-                if written_doc.exists:
-                    logger.info(f"[FOOD LOG] ✅ Verification: Document exists in database")
-                    logger.info(f"[FOOD LOG] Stored data verification: {written_doc.to_dict()}")
-                else:
-                    logger.error(f"[FOOD LOG] ❌ Verification failed: Document not found after write")
-            except Exception as verify_error:
-                logger.error(f"[FOOD LOG] ❌ Verification error: {verify_error}")
+            log_entry.timestamp = datetime.utcnow()
+            firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
+            logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
             # Delete food logs older than 7 days
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            seven_days_ago = datetime.utcnow() - timedelta(days=7)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
             old_logs = list(old_logs_query.stream())
             for doc in old_logs:
@@ -658,12 +632,9 @@ async def get_food_log_summary(user_id: str):
             logger.error("[SUMMARY] Firebase is not available, returning service unavailable")
             raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
         
-        # Get today's date and calculate the last 7 days (consistent with frontend)
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_week = today - timedelta(days=6)  # 6 days ago to today = 7 days total
-        
-        logger.info(f"[SUMMARY] Fetching logs from {start_of_week.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')} for user {user_id}")
-        
+        # Simplified version without timeout handling
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_week = today - timedelta(days=6)
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
         # Use datetime object for query, not isoformat string
@@ -696,79 +667,23 @@ async def get_food_log_summary(user_id: str):
                 food_item = {}
             serving_size = log.get("servingSize", "100")
             try:
-                # Extract numeric value from serving size (e.g., "2 slices" -> 2)
-                import re
-                numeric_match = re.search(r'(\d+(?:\.\d+)?)', str(serving_size))
-                if numeric_match:
-                    serving_size_num = float(numeric_match.group(1))
-                else:
-                    serving_size_num = 100
+                serving_size_num = float(serving_size)
             except Exception:
                 serving_size_num = 100
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
-            per_100g = food_item.get("per_100g", True)
-            
-            # If per_100g is True, apply serving size multiplier
-            # If per_100g is False, values are already calculated for the serving
-            if per_100g:
-                calculated_calories = (calories * serving_size_num) / 100
-                calculated_protein = (protein * serving_size_num) / 100
-                calculated_fat = (fat * serving_size_num) / 100
-            else:
-                calculated_calories = calories
-                calculated_protein = protein
-                calculated_fat = fat
-            
-            logger.info(f"[SUMMARY DEBUG] Processing log for {log_date}:")
-            logger.info(f"[SUMMARY DEBUG] - Food: {food_item.get('name', 'Unknown')}")
-            logger.info(f"[SUMMARY DEBUG] - Serving size: {serving_size_num}g")
-            logger.info(f"[SUMMARY DEBUG] - Per 100g: {per_100g}")
-            logger.info(f"[SUMMARY DEBUG] - Raw calories: {calories}")
-            logger.info(f"[SUMMARY DEBUG] - Raw protein: {protein}")
-            logger.info(f"[SUMMARY DEBUG] - Raw fat: {fat}")
-            logger.info(f"[SUMMARY DEBUG] - Calculated calories: {calculated_calories}")
-            logger.info(f"[SUMMARY DEBUG] - Calculated protein: {calculated_protein}")
-            logger.info(f"[SUMMARY DEBUG] - Calculated fat: {calculated_fat}")
-            
-            history[log_date]["calories"] += calculated_calories
-            history[log_date]["protein"] += calculated_protein
-            history[log_date]["fat"] += calculated_fat
-            
-            logger.info(f"[SUMMARY DEBUG] - Running totals for {log_date}: calories={history[log_date]['calories']}, protein={history[log_date]['protein']}, fat={history[log_date]['fat']}")
+            history[log_date]["calories"] += (calories * serving_size_num) / 100
+            history[log_date]["protein"] += (protein * serving_size_num) / 100
+            history[log_date]["fat"] += (fat * serving_size_num) / 100
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
-        
-        # Ensure we have data for all 7 days, even if some days have no food logs
-        # Generate the same 7 days that the frontend expects (6 days ago to today)
-        for i in range(6, -1, -1):  # 6 days ago to today (matches frontend logic)
-            day_date = today - timedelta(days=i)
-            day_str = day_date.strftime('%Y-%m-%d')
-            if day_str not in history:
-                history[day_str] = {"calories": 0, "protein": 0, "fat": 0}
-        
-        logger.info(f"[SUMMARY] Generated date range for last 7 days ending {today.strftime('%Y-%m-%d')}")
-        
-        # Sort dates in descending order (most recent first)
+        today_str = today.strftime('%Y-%m-%d')
+        if today_str not in history:
+            history[today_str] = {"calories": 0, "protein": 0, "fat": 0}
         sorted_dates = sorted(history.keys(), reverse=True)
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
-        # Enhanced logging for debugging tracker issues
-        logger.info(f"[SUMMARY] 📊 Returning summary for user {user_id}")
-        logger.info(f"[SUMMARY] Total days in history: {len(formatted_history)}")
-        logger.info(f"[SUMMARY] Date order: {[item['day'] for item in formatted_history]}")
-        logger.info(f"[SUMMARY] Today's date (backend): {today.strftime('%Y-%m-%d')}")
-        
-        # Log today's specific data for debugging
-        today_str = today.strftime('%Y-%m-%d')
-        today_data_in_history = next((item for item in formatted_history if item['day'] == today_str), None)
-        
-        logger.info(f"[SUMMARY] Today's data in response: {today_data_in_history}")
-        
-        # Log all history data for debugging
-        for item in formatted_history:
-            logger.info(f"[SUMMARY] Date {item['day']}: calories={item['calories']}, protein={item['protein']}, fat={item['fat']}")
-        
+        logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
         return LogSummaryResponse(history=formatted_history)
         
     except HTTPException:
@@ -3577,26 +3492,25 @@ async def reset_daily_data(userId: str):
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get today's date (consistent with frontend date format)
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Get today's date in UTC
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
-        logger.info(f"[DAILY RESET] Resetting daily data for user {userId} on {today_str}")
+        # Clear today's food logs to reset daily nutritional values
+        food_logs_ref = firestore_db.collection(f"users/{userId}/food_logs")
+        today_logs = food_logs_ref.where("timestamp", ">=", today).stream()
         
-        # Note: We don't delete food logs - they should be preserved for historical data
-        # The daily reset only affects how we calculate "today's" data in summaries
-        # by updating the lastFoodLogDate which serves as a reference point
+        deleted_count = 0
+        for doc in today_logs:
+            doc.reference.delete()
+            deleted_count += 1
         
-        # Update the lastFoodLogDate to today - this helps the summary calculation
-        # know that a new day has started and should reset counters
+        # Update the lastFoodLogDate to today
         firestore_db.collection("user_profiles").document(userId).update({
-            "lastFoodLogDate": today_str,
-            "lastResetTimestamp": datetime.now().isoformat()
+            "lastFoodLogDate": today_str
         })
         
-        logger.info(f"[DAILY RESET] Successfully reset daily data for user {userId} on {today_str}. Food logs preserved.")
-        
-        return {"success": True, "resetDate": today_str, "message": "Daily data reset successfully"}
+        logger.info(f"[DAILY RESET] Reset daily data for user {userId} on {today_str}. Deleted {deleted_count} food logs.")
         
         return {
             "success": True, 
