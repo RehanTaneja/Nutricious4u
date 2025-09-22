@@ -605,17 +605,34 @@ async def log_food_item(request: FoodLogRequest):
         )
         def log_food_in_db():
             log_entry.timestamp = datetime.now()
-            logger.info(f"[FOOD LOG DEBUG] Logging food with details:")
+            
+            # Enhanced logging for debugging tracker issues
+            logger.info(f"[FOOD LOG DEBUG] 🍎 Logging food with comprehensive details:")
+            logger.info(f"[FOOD LOG DEBUG] - User ID: {user_id}")
             logger.info(f"[FOOD LOG DEBUG] - Food name: {log_entry.food.name}")
             logger.info(f"[FOOD LOG DEBUG] - Serving size: {log_entry.servingSize}")
-            logger.info(f"[FOOD LOG DEBUG] - Food calories per 100g: {log_entry.food.calories}")
-            logger.info(f"[FOOD LOG DEBUG] - Food protein per 100g: {log_entry.food.protein}")
-            logger.info(f"[FOOD LOG DEBUG] - Food fat per 100g: {log_entry.food.fat}")
-            logger.info(f"[FOOD LOG DEBUG] - Actual calories for this serving: {log_entry.food.calories}")
-            logger.info(f"[FOOD LOG DEBUG] - Actual protein for this serving: {log_entry.food.protein}")
-            logger.info(f"[FOOD LOG DEBUG] - Actual fat for this serving: {log_entry.food.fat}")
-            firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
-            logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
+            logger.info(f"[FOOD LOG DEBUG] - Timestamp: {log_entry.timestamp}")
+            logger.info(f"[FOOD LOG DEBUG] - Date for storage: {log_entry.timestamp.strftime('%Y-%m-%d')}")
+            logger.info(f"[FOOD LOG DEBUG] - Food calories: {log_entry.food.calories}")
+            logger.info(f"[FOOD LOG DEBUG] - Food protein: {log_entry.food.protein}")
+            logger.info(f"[FOOD LOG DEBUG] - Food fat: {log_entry.food.fat}")
+            logger.info(f"[FOOD LOG DEBUG] - Per 100g flag: {log_entry.food.per_100g}")
+            
+            # Store in Firestore
+            doc_ref = firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
+            logger.info(f"[FOOD LOG] ✅ Written to Firestore with ID: {doc_ref[1].id}")
+            logger.info(f"[FOOD LOG] Full document data: {log_entry.dict()}")
+            
+            # Verify the write was successful
+            try:
+                written_doc = firestore_db.collection(f"users/{user_id}/food_logs").document(doc_ref[1].id).get()
+                if written_doc.exists:
+                    logger.info(f"[FOOD LOG] ✅ Verification: Document exists in database")
+                    logger.info(f"[FOOD LOG] Stored data verification: {written_doc.to_dict()}")
+                else:
+                    logger.error(f"[FOOD LOG] ❌ Verification failed: Document not found after write")
+            except Exception as verify_error:
+                logger.error(f"[FOOD LOG] ❌ Verification error: {verify_error}")
             # Delete food logs older than 7 days
             seven_days_ago = datetime.now() - timedelta(days=7)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
@@ -736,7 +753,22 @@ async def get_food_log_summary(user_id: str):
         # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
-        logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
+        # Enhanced logging for debugging tracker issues
+        logger.info(f"[SUMMARY] 📊 Returning summary for user {user_id}")
+        logger.info(f"[SUMMARY] Total days in history: {len(formatted_history)}")
+        logger.info(f"[SUMMARY] Date order: {[item['day'] for item in formatted_history]}")
+        logger.info(f"[SUMMARY] Today's date (backend): {today.strftime('%Y-%m-%d')}")
+        
+        # Log today's specific data for debugging
+        today_str = today.strftime('%Y-%m-%d')
+        today_data_in_history = next((item for item in formatted_history if item['day'] == today_str), None)
+        
+        logger.info(f"[SUMMARY] Today's data in response: {today_data_in_history}")
+        
+        # Log all history data for debugging
+        for item in formatted_history:
+            logger.info(f"[SUMMARY] Date {item['day']}: calories={item['calories']}, protein={item['protein']}, fat={item['fat']}")
+        
         return LogSummaryResponse(history=formatted_history)
         
     except HTTPException:
@@ -839,7 +871,22 @@ async def _get_food_log_summary_internal(user_id: str, loop):
         # Sort dates in descending order (most recent first)
         sorted_dates = sorted(history.keys(), reverse=True)
         formatted_history = [{"day": date, **history[date]} for date in sorted_dates]
-        logger.info(f"[SUMMARY] Returning summary for user {user_id}: {formatted_history}")
+        # Enhanced logging for debugging tracker issues
+        logger.info(f"[SUMMARY] 📊 Returning summary for user {user_id}")
+        logger.info(f"[SUMMARY] Total days in history: {len(formatted_history)}")
+        logger.info(f"[SUMMARY] Date order: {[item['day'] for item in formatted_history]}")
+        logger.info(f"[SUMMARY] Today's date (backend): {today.strftime('%Y-%m-%d')}")
+        
+        # Log today's specific data for debugging
+        today_str = today.strftime('%Y-%m-%d')
+        today_data_in_history = next((item for item in formatted_history if item['day'] == today_str), None)
+        
+        logger.info(f"[SUMMARY] Today's data in response: {today_data_in_history}")
+        
+        # Log all history data for debugging
+        for item in formatted_history:
+            logger.info(f"[SUMMARY] Date {item['day']}: calories={item['calories']}, protein={item['protein']}, fat={item['fat']}")
+        
         return LogSummaryResponse(history=formatted_history)
         
     except Exception as e:

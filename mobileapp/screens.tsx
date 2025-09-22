@@ -1536,12 +1536,32 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
     setLoading(true);
     setError('');
+    
+    console.log('[FETCH SUMMARY] 🔄 Starting summary fetch for user:', userId);
+    console.log('[FETCH SUMMARY] Current time:', new Date().toLocaleString());
+    
     try {
       // SEQUENTIAL API calls to prevent 499 errors - don't use Promise.all
-      console.log('[Dashboard] Fetching food log summary...');
+      console.log('[FETCH SUMMARY] 📊 Calling getLogSummary API...');
       const foodData = await getLogSummary(userId);
-      console.log('[Dashboard] Food log summary received:', foodData);
+      
+      console.log('[FETCH SUMMARY] ✅ Food log summary received');
+      console.log('[FETCH SUMMARY] Summary data:', {
+        historyLength: foodData?.history?.length || 0,
+        dailySummary: foodData?.daily_summary,
+        historyDates: foodData?.history?.map(item => item.day) || []
+      });
+      
+      // Log today's specific data
+      const todayDateForLogging = new Date();
+      const todayForLogging = `${todayDateForLogging.getFullYear()}-${String(todayDateForLogging.getMonth() + 1).padStart(2, '0')}-${String(todayDateForLogging.getDate()).padStart(2, '0')}`;
+      const todayDataInResponse = foodData?.history?.find((item: any) => item.day === todayForLogging);
+      
+      console.log('[FETCH SUMMARY] Today\'s date calculated as:', todayForLogging);
+      console.log('[FETCH SUMMARY] Today\'s data in response:', todayDataInResponse);
+      
       setSummary(foodData);
+      console.log('[FETCH SUMMARY] ✅ Summary state updated');
       
       // Add delay between API calls to prevent connection conflicts
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -1552,14 +1572,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setWorkoutSummary(workoutData);
       
       // Set burnedToday from workout summary for today
-      // Use consistent local date calculation
-      const todayDate = new Date();
-      const todayYear = todayDate.getFullYear();
-      const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
-      const todayDay = String(todayDate.getDate()).padStart(2, '0');
-      const today = `${todayYear}-${todayMonth}-${todayDay}`;
+      // Use consistent local date calculation for workout
+      const workoutTodayDate = new Date();
+      const workoutTodayYear = workoutTodayDate.getFullYear();
+      const workoutTodayMonth = String(workoutTodayDate.getMonth() + 1).padStart(2, '0');
+      const workoutTodayDay = String(workoutTodayDate.getDate()).padStart(2, '0');
+      const workoutToday = `${workoutTodayYear}-${workoutTodayMonth}-${workoutTodayDay}`;
       
-      const todayWorkout = workoutData.history.find((d) => d.day === today);
+      const todayWorkout = workoutData.history.find((d) => d.day === workoutToday);
       setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
     } catch (e) {
       console.error('[Dashboard] Error fetching summary data:', e);
@@ -1746,8 +1766,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       try {
         setFoodLoading(true);
         // Now log the food with the confirmed data
-        console.log('[Food Log] Confirming and logging food with user-edited nutrition data');
-        await logFood(userId, pendingFoodData.name, pendingFoodData.quantity);
+        console.log('[Food Log] 🍎 Confirming and logging food with user-edited nutrition data');
+        console.log('[Food Log] Food name:', pendingFoodData.name);
+        console.log('[Food Log] Quantity:', pendingFoodData.quantity);
+        console.log('[Food Log] User ID:', userId);
+        console.log('[Food Log] Current time:', new Date().toLocaleString());
+        
+        // Log the food and track the response
+        const logResult = await logFood(userId, pendingFoodData.name, pendingFoodData.quantity);
+        console.log('[Food Log] ✅ logFood API response:', logResult);
+        
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
@@ -1756,10 +1784,29 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         setNutritionData(null);
         setPendingFoodData(null);
         
-        // Add delay to allow database write to complete before fetching summary
-        setTimeout(() => {
-          fetchSummary();
-        }, 500);
+        // Enhanced summary refresh with comprehensive logging
+        console.log('[Food Log] 🔄 Starting summary refresh after food logging...');
+        
+        // Increase delay and add retry logic
+        setTimeout(async () => {
+          try {
+            console.log('[Food Log] Calling fetchSummary...');
+            await fetchSummary();
+            console.log('[Food Log] ✅ Summary refresh completed');
+          } catch (refreshError) {
+            console.error('[Food Log] ❌ Summary refresh failed:', refreshError);
+            // Retry once after additional delay
+            setTimeout(async () => {
+              try {
+                console.log('[Food Log] 🔁 Retrying summary refresh...');
+                await fetchSummary();
+                console.log('[Food Log] ✅ Retry successful');
+              } catch (retryError) {
+                console.error('[Food Log] ❌ Retry also failed:', retryError);
+              }
+            }, 1000);
+          }
+        }, 1000); // Increased delay to 1000ms
       } catch (error) {
         console.error('[Food Log] Error logging confirmed food:', error);
         setShowFoodError(true);
@@ -1864,20 +1911,48 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const todayDay = String(todayDate.getDate()).padStart(2, '0');
   const today = `${todayYear}-${todayMonth}-${todayDay}`;
   
-  console.log(`[Dashboard] Looking for today's data: ${today}`);
-  console.log(`[Dashboard] Available history dates:`, summary?.history?.map(item => item.day));
+  console.log(`[TRACKER DATA] 📅 Looking for today's data: ${today}`);
+  console.log(`[TRACKER DATA] Available history dates:`, summary?.history?.map(item => item.day));
+  console.log(`[TRACKER DATA] Summary object:`, {
+    hasHistory: !!summary?.history,
+    historyLength: summary?.history?.length || 0,
+    hasDailySummary: !!summary?.daily_summary
+  });
   
-  const todayData = summary?.history?.find((item: any) => item.day === today) || {
-    calories: 0,
-    protein: 0,
-    fat: 0,
-    carbs: 0
-  };
+  // Enhanced today data search with debugging
+  let todayData = summary?.history?.find((item: any) => item.day === today);
   
-  console.log(`[Dashboard] Today's data found:`, todayData);
-
-  // Get targets from userProfile if available
+  console.log(`[TRACKER DATA] Raw today data from history:`, todayData);
+  
+  // Fallback to daily_summary if no history data found
+  if (!todayData && summary?.daily_summary) {
+    console.log(`[TRACKER DATA] ⚠️ No history data for today, using daily_summary as fallback`);
+    todayData = {
+      day: today, // Add required day property
+      calories: summary.daily_summary.calories || 0,
+      protein: summary.daily_summary.protein || 0,
+      fat: summary.daily_summary.fat || 0,
+      carbs: 0 // daily_summary doesn't have carbs field
+    };
+  }
+  
+  // Final fallback
+  if (!todayData) {
+    console.log(`[TRACKER DATA] ⚠️ No data found for today, using zeros`);
+    todayData = {
+      day: today, // Add required day property
+      calories: 0,
+      protein: 0,
+      fat: 0,
+      carbs: 0
+    };
+  }
+  
+  // Get targets from userProfile if available (moved up to fix variable declaration order)
   const targetCalories = userProfile?.targetCalories || 2000;
+  
+  console.log(`[TRACKER DATA] ✅ Final today's data:`, todayData);
+  console.log(`[TRACKER DATA] Calories for display: ${todayData?.calories || 0}/${targetCalories}`);
   const targetProtein = userProfile?.targetProtein || 150;
   const targetFat = userProfile?.targetFat || 65;
 
