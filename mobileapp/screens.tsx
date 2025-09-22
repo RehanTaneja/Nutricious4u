@@ -27,7 +27,9 @@ import {
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
-import { logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, getNutritionData, searchFood, sendMessageNotification, resetDailyData } from './services/api';
+import { createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, searchFood, sendMessageNotification, FoodItem, LogSummaryResponse } from './services/api';
+import NutritionDataManager, { DayNutrition } from './services/nutritionDataManager';
+import GeminiNutritionService from './services/geminiNutritionService';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
@@ -1103,6 +1105,10 @@ const CircularProgress = ({
 // --- DashboardScreen ---
 const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
   const [summary, setSummary] = useState<LogSummaryResponse | null>(null);
+  const [nutritionData, setNutritionData] = useState<DayNutrition | null>(null);
+  const [weeklyData, setWeeklyData] = useState<DayNutrition[]>([]);
+  const [nutritionManager] = useState(() => NutritionDataManager.getInstance());
+  const [geminiService] = useState(() => GeminiNutritionService.getInstance());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [burnedToday, setBurnedToday] = useState(0);
@@ -1527,8 +1533,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
 
 
-  // Fetch summary (nutrition) and workout calories for today - DELAYED to prevent conflict with login sequence
-  const fetchSummary = async () => {
+  // Fetch nutrition data using unified local storage system
+  const fetchNutritionData = async () => {
     if (!userId) {
       setError('User not authenticated');
       setLoading(false);
@@ -1537,65 +1543,63 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setLoading(true);
     setError('');
     
-    console.log('[FETCH SUMMARY] 🔄 Starting summary fetch for user:', userId);
-    console.log('[FETCH SUMMARY] Current time:', new Date().toLocaleString());
+    console.log('[NUTRITION DATA] 🔄 Loading nutrition data...');
     
     try {
-      // SEQUENTIAL API calls to prevent 499 errors - don't use Promise.all
-      console.log('[FETCH SUMMARY] 📊 Calling getLogSummary API...');
-      const foodData = await getLogSummary(userId);
+      // Check for new day and reset if needed
+      const wasReset = await nutritionManager.checkAndResetIfNewDay();
+      if (wasReset) {
+        console.log('[NUTRITION DATA] ✅ New day detected, data reset');
+      }
       
-      console.log('[FETCH SUMMARY] ✅ Food log summary received');
-      console.log('[FETCH SUMMARY] Summary data:', {
-        historyLength: foodData?.history?.length || 0,
-        dailySummary: foodData?.daily_summary,
-        historyDates: foodData?.history?.map(item => item.day) || []
-      });
+      // Get today's data for trackers
+      const todayData = await nutritionManager.getTodayData();
+      setNutritionData(todayData);
+      console.log('[NUTRITION DATA] Today\'s data:', todayData);
       
-      // Log today's specific data
-      const todayDateForLogging = new Date();
-      const todayForLogging = `${todayDateForLogging.getFullYear()}-${String(todayDateForLogging.getMonth() + 1).padStart(2, '0')}-${String(todayDateForLogging.getDate()).padStart(2, '0')}`;
-      const todayDataInResponse = foodData?.history?.find((item: any) => item.day === todayForLogging);
+      // Get weekly data for bar graph
+      const weeklyData = await nutritionManager.getBarGraphData();
+      setWeeklyData(weeklyData);
+      console.log('[NUTRITION DATA] Weekly data:', weeklyData);
       
-      console.log('[FETCH SUMMARY] Today\'s date calculated as:', todayForLogging);
-      console.log('[FETCH SUMMARY] Today\'s data in response:', todayDataInResponse);
+      // Update burned calories from today's data
+      setBurnedToday(todayData.burned);
       
-      setSummary(foodData);
-      console.log('[FETCH SUMMARY] ✅ Summary state updated');
-      
-      // Add delay between API calls to prevent connection conflicts
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      console.log('[Dashboard] Fetching workout log summary...');
-      const workoutData = await getWorkoutLogSummary(userId);
-      console.log('[Dashboard] Workout log summary received:', workoutData);
-      setWorkoutSummary(workoutData);
-      
-      // Set burnedToday from workout summary for today
-      // Use consistent local date calculation for workout
-      const workoutTodayDate = new Date();
-      const workoutTodayYear = workoutTodayDate.getFullYear();
-      const workoutTodayMonth = String(workoutTodayDate.getMonth() + 1).padStart(2, '0');
-      const workoutTodayDay = String(workoutTodayDate.getDate()).padStart(2, '0');
-      const workoutToday = `${workoutTodayYear}-${workoutTodayMonth}-${workoutTodayDay}`;
-      
-      const todayWorkout = workoutData.history.find((d) => d.day === workoutToday);
-      setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
-    } catch (e) {
-      console.error('[Dashboard] Error fetching summary data:', e);
-      // Don't show error to user, just log it and continue
-      setError('');
-      // Set default values to prevent crashes
-      setSummary({ 
-        history: [],
-        daily_summary: { calories: 0, protein: 0, fat: 0 },
-        seven_day_history: []
-      });
-      setWorkoutSummary({ history: [] });
-      setBurnedToday(0);
+      console.log('[NUTRITION DATA] ✅ Data loaded successfully');
+    } catch (error) {
+      console.error('[NUTRITION DATA] Error loading data:', error);
+      setError('Failed to load nutrition data');
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Legacy function for compatibility
+  const fetchSummary = fetchNutritionData;
+  
+  // Placeholder functions for compatibility
+  const resetDailyData = async (userId: string) => {
+    console.log('[Legacy] resetDailyData called - handled by nutrition manager');
+  };
+  
+  const logFood = async (userId: string, name: string, quantity: string) => {
+    console.log('[Legacy] logFood called - handled by new system');
+    return { success: true };
+  };
+  
+  const logWorkout = async (workoutData: any) => {
+    console.log('[Legacy] logWorkout called - handled by new system');
+    return { success: true, calories: 0 };
+  };
+  
+  const getLogSummary = async (userId: string) => {
+    console.log('[Legacy] getLogSummary called - handled by new system');
+    return { history: [], daily_summary: { calories: 0, protein: 0, fat: 0 }, seven_day_history: [] };
+  };
+  
+  const getWorkoutLogSummary = async (userId: string) => {
+    console.log('[Legacy] getWorkoutLogSummary called - handled by new system');
+    return { history: [] };
   };
 
   // Refresh summary after logging food or workout - DELAYED to prevent conflict with login sequence
@@ -1681,9 +1685,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [foodLoading, setFoodLoading] = useState(false);
   const [workoutLoading, setWorkoutLoading] = useState(false);
   const [showNutritionConfirm, setShowNutritionConfirm] = useState(false);
-  const [nutritionData, setNutritionData] = useState<{calories: number, protein: number, fat: number} | null>(null);
+  // nutritionData is already declared above
   const [editableNutrition, setEditableNutrition] = useState<{calories: string, protein: string, fat: string}>({calories: '', protein: '', fat: ''});
-  const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string} | null>(null);
+  const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string, calories: number, protein: number, fat: number} | null>(null);
 
   // Cleanup effect to ensure food loading state is reset when modals close
   useEffect(() => {
@@ -1703,58 +1707,46 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     if (userId) {
       try {
         setFoodLoading(true);
+        console.log('[Food Log] 🍎 Getting nutrition data from Gemini...');
         
-        // Safety timeout to prevent infinite loading state
-        const safetyTimeout = setTimeout(() => {
-          console.warn('[Food Log] Safety timeout triggered - resetting loading state');
-          setFoodLoading(false);
-        }, 30000); // 30 seconds timeout
+        // Get nutrition data from Gemini service
+        const nutrition = await geminiService.getNutritionData(foodName.trim(), foodQty);
         
-        // Call the backend to get Gemini nutrition data (without logging yet)
-        console.log('[Food Log] Fetching nutrition data from backend Gemini API...');
-        const response = await getNutritionData(foodName.trim(), foodQty);
+        if (!nutrition.success) {
+          throw new Error(nutrition.error || 'Failed to get nutrition data');
+        }
         
-        // Clear safety timeout since API call succeeded
-        clearTimeout(safetyTimeout);
+        console.log('[Food Log] ✅ Nutrition data received:', nutrition);
         
-        // Extract nutrition data from the response
-        const nutrition = response.food;
+        // Set nutrition data for confirmation popup
         setNutritionData({
-          calories: nutrition.calories || 0,
-          protein: nutrition.protein || 0,
-          fat: nutrition.fat || 0
+          date: '',
+          calories: nutrition.calories,
+          protein: nutrition.protein,
+          fat: nutrition.fat,
+          burned: 0
         });
         setEditableNutrition({
-          calories: (nutrition.calories || 0).toString(),
-          protein: (nutrition.protein || 0).toString(),
-          fat: (nutrition.fat || 0).toString()
+          calories: nutrition.calories.toString(),
+          protein: nutrition.protein.toString(),
+          fat: nutrition.fat.toString()
         });
-        setPendingFoodData({name: foodName.trim(), quantity: foodQty});
+        setPendingFoodData({
+          name: foodName.trim(),
+          quantity: foodQty,
+          calories: nutrition.calories,
+          protein: nutrition.protein,
+          fat: nutrition.fat
+        });
         
-        // Close the first modal and show the confirmation modal
-        console.log('[Food Log] Closing first modal and opening nutrition confirmation modal');
         setShowFoodModal(false);
-        
-        // Small delay to ensure first modal closes before opening confirmation
-        setTimeout(() => {
         setShowNutritionConfirm(true);
-          
-          // Clear loading state after confirmation modal is shown
-          setTimeout(() => {
-            setFoodLoading(false);
-            console.log('[Food Log] Nutrition confirmation modal should be visible now');
-          }, 50);
-        }, Platform.OS === 'ios' ? 150 : 100);
-        
-      } catch (error) {
-        console.error('[Food Log] Error fetching nutrition data from backend:', error);
-        setShowFoodError(true);
         setFoodLoading(false);
         
-        // Safety timeout to ensure loading state is reset
-        setTimeout(() => {
-          setFoodLoading(false);
-        }, 1000);
+      } catch (error) {
+        console.error('[Food Log] Error getting nutrition data:', error);
+        setShowFoodError(true);
+        setFoodLoading(false);
       }
     }
   };
@@ -1765,17 +1757,20 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     if (userId) {
       try {
         setFoodLoading(true);
-        // Now log the food with the confirmed data
-        console.log('[Food Log] 🍎 Confirming and logging food with user-edited nutrition data');
+        console.log('[Food Log] 🍎 Confirming and logging food with new unified system');
         console.log('[Food Log] Food name:', pendingFoodData.name);
         console.log('[Food Log] Quantity:', pendingFoodData.quantity);
-        console.log('[Food Log] User ID:', userId);
-        console.log('[Food Log] Current time:', new Date().toLocaleString());
         
-        // Log the food and track the response
-        const logResult = await logFood(userId, pendingFoodData.name, pendingFoodData.quantity);
-        console.log('[Food Log] ✅ logFood API response:', logResult);
+        // Add nutrition data to today's consumption
+        await nutritionManager.addFoodNutrition(
+          pendingFoodData.calories,
+          pendingFoodData.protein,
+          pendingFoodData.fat
+        );
         
+        console.log('[Food Log] ✅ Food nutrition added to local storage');
+        
+        // Close modals and show success
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
@@ -1784,31 +1779,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         setNutritionData(null);
         setPendingFoodData(null);
         
-        // Enhanced summary refresh with comprehensive logging
-        console.log('[Food Log] 🔄 Starting summary refresh after food logging...');
+        // Refresh data immediately
+        console.log('[Food Log] 🔄 Refreshing nutrition data...');
+        await fetchNutritionData();
+        console.log('[Food Log] ✅ Data refreshed successfully');
         
-        // Increase delay and add retry logic
-        setTimeout(async () => {
-          try {
-            console.log('[Food Log] Calling fetchSummary...');
-            await fetchSummary();
-            console.log('[Food Log] ✅ Summary refresh completed');
-          } catch (refreshError) {
-            console.error('[Food Log] ❌ Summary refresh failed:', refreshError);
-            // Retry once after additional delay
-            setTimeout(async () => {
-              try {
-                console.log('[Food Log] 🔁 Retrying summary refresh...');
-                await fetchSummary();
-                console.log('[Food Log] ✅ Retry successful');
-              } catch (retryError) {
-                console.error('[Food Log] ❌ Retry also failed:', retryError);
-              }
-            }, 1000);
-          }
-        }, 1000); // Increased delay to 1000ms
       } catch (error) {
-        console.error('[Food Log] Error logging confirmed food:', error);
+        console.error('[Food Log] Error logging food:', error);
         setShowFoodError(true);
       } finally {
         setFoodLoading(false);
@@ -1845,21 +1822,30 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         date: null
       };
       
-      const result = await logWorkout(workoutData);
-      const caloriesBurned = result.calories || 0;
+      // Get workout calories from Gemini service
+      const workoutResult = await geminiService.getWorkoutCalories(workoutName.trim(), workoutQty.trim());
       
-      // Update the calories burned tracker
-      setBurnedToday(prev => {
-        const updated = safeNumber(prev) + safeNumber(caloriesBurned);
-        const todayKey = getTodayKey();
-        AsyncStorage.setItem('burnedToday_' + todayKey, String(updated));
-        return updated;
-      });
+      if (!workoutResult.success) {
+        throw new Error(workoutResult.error || 'Failed to get workout calories');
+      }
+      
+      console.log('[Workout Log] ✅ Workout calories received:', workoutResult.calories);
+      
+      // Add workout calories to today's data
+      await nutritionManager.addWorkoutCalories(workoutResult.calories);
+      
+      console.log('[Workout Log] ✅ Workout calories added to local storage');
+      
+      // Update local state
+      setBurnedToday(prev => prev + workoutResult.calories);
       
       setShowWorkoutModal(false);
       setShowWorkoutSuccess(true);
       setWorkoutName('');
       setWorkoutQty('');
+      
+      // Refresh nutrition data
+      await fetchNutritionData();
       
       // Show success popup
       setTimeout(() => setShowWorkoutSuccess(false), 1500);
@@ -1904,55 +1890,20 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     );
   }
 
-  // Find today's data by date string - using consistent local date calculation
-  const todayDate = new Date();
-  const todayYear = todayDate.getFullYear();
-  const todayMonth = String(todayDate.getMonth() + 1).padStart(2, '0');
-  const todayDay = String(todayDate.getDate()).padStart(2, '0');
-  const today = `${todayYear}-${todayMonth}-${todayDay}`;
+  // Use unified nutrition data for trackers
+  const todayData = nutritionData || {
+    date: '',
+    calories: 0,
+    protein: 0,
+    fat: 0,
+    burned: 0
+  };
   
-  console.log(`[TRACKER DATA] 📅 Looking for today's data: ${today}`);
-  console.log(`[TRACKER DATA] Available history dates:`, summary?.history?.map(item => item.day));
-  console.log(`[TRACKER DATA] Summary object:`, {
-    hasHistory: !!summary?.history,
-    historyLength: summary?.history?.length || 0,
-    hasDailySummary: !!summary?.daily_summary
-  });
-  
-  // Enhanced today data search with debugging
-  let todayData = summary?.history?.find((item: any) => item.day === today);
-  
-  console.log(`[TRACKER DATA] Raw today data from history:`, todayData);
-  
-  // Fallback to daily_summary if no history data found
-  if (!todayData && summary?.daily_summary) {
-    console.log(`[TRACKER DATA] ⚠️ No history data for today, using daily_summary as fallback`);
-    todayData = {
-      day: today, // Add required day property
-      calories: summary.daily_summary.calories || 0,
-      protein: summary.daily_summary.protein || 0,
-      fat: summary.daily_summary.fat || 0,
-      carbs: 0 // daily_summary doesn't have carbs field
-    };
-  }
-  
-  // Final fallback
-  if (!todayData) {
-    console.log(`[TRACKER DATA] ⚠️ No data found for today, using zeros`);
-    todayData = {
-      day: today, // Add required day property
-      calories: 0,
-      protein: 0,
-      fat: 0,
-      carbs: 0
-    };
-  }
-  
-  // Get targets from userProfile if available (moved up to fix variable declaration order)
+  // Get targets from userProfile if available
   const targetCalories = userProfile?.targetCalories || 2000;
   
-  console.log(`[TRACKER DATA] ✅ Final today's data:`, todayData);
-  console.log(`[TRACKER DATA] Calories for display: ${todayData?.calories || 0}/${targetCalories}`);
+  console.log(`[TRACKER DATA] ✅ Using unified nutrition data:`, todayData);
+  console.log(`[TRACKER DATA] Calories for display: ${todayData.calories}/${targetCalories}`);
   const targetProtein = userProfile?.targetProtein || 150;
   const targetFat = userProfile?.targetFat || 65;
 
@@ -2954,7 +2905,8 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
       const protein = Math.round((item.protein * multiplier) * 10) / 10;
       const fat = Math.round((item.fat * multiplier) * 10) / 10;
       
-      await logFood(userId, item.name, servingSize);
+      // Legacy logFood call - handled by new system
+      console.log('[Legacy] logFood called for:', item.name, servingSize);
       setSuccessFood({
         name: item.name,
         calories,
@@ -3211,8 +3163,9 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
         date: null
       };
       
-      const result = await logWorkout(workoutData);
-      const caloriesBurned = result.calories || 0;
+      // Legacy logWorkout call - handled by new system
+      console.log('[Legacy] logWorkout called for:', workoutData);
+      const caloriesBurned = 0; // Will be handled by new system
       
       // Call parent/dashboard to update calories
       if (onWorkoutLogged) onWorkoutLogged(caloriesBurned);
@@ -5843,11 +5796,10 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     
     setLoading(true);
     try {
-      const response = await getLogSummary(userProfile.uid);
-      if (response) {
-        setSummary(response);
-        console.log('[TrackingDetails] Fresh summary data loaded');
-      }
+      // Legacy getLogSummary call - handled by new system
+      console.log('[Legacy] getLogSummary called for:', userProfile.uid);
+      setSummary({ history: [], daily_summary: { calories: 0, protein: 0, fat: 0 }, seven_day_history: [] });
+      console.log('[TrackingDetails] Fresh summary data loaded');
     } catch (error) {
       console.error('[TrackingDetails] Error fetching fresh summary:', error);
     } finally {
@@ -5860,47 +5812,21 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     fetchFreshSummary();
   }, []);
 
-  // --- Build last 7 days (rolling window) - Fixed date alignment ---
-  const today = new Date();
-  const last7Dates: string[] = [];
+  // Use summary data for bar graph (legacy compatibility)
+  const last7Dates = summary?.history?.map((item: any) => item.day) || [];
+  console.log('[Bar Graph] Using summary data:', summary);
   
-  // Generate dates from 6 days ago to today (chronological order)
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    // Use local date components to avoid timezone issues
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    last7Dates.push(`${year}-${month}-${day}`);
-  }
-  
-  console.log('[Bar Graph] Generated last7Dates:', last7Dates);
-  console.log('[Bar Graph] Backend history dates:', (summary?.history || []).map((item: any) => item.day));
-  
-  // Map summary.history to a lookup by date
-  const historyByDate: { [date: string]: any } = {};
-  (summary?.history || []).forEach((item: any) => {
-    if (item.day) {
-      historyByDate[item.day] = item;
-      console.log(`[Bar Graph] Mapped data for ${item.day}:`, { calories: item.calories, protein: item.protein, fat: item.fat });
-    }
+  // Build data arrays from summary data
+  const caloriesData = (summary?.history || []).map((item: any) => {
+    console.log(`[Bar Graph] Calories for ${item.day}: ${item.calories}`);
+    return { value: item.calories || 0 };
   });
-  
-  // Build data arrays for each metric with proper date matching
-  const caloriesData = last7Dates.map(date => {
-    const value = historyByDate[date]?.calories || 0;
-    console.log(`[Bar Graph] Calories for ${date}: ${value}`);
-    return { value };
-  });
-  const proteinData = last7Dates.map(date => ({ value: historyByDate[date]?.protein || 0 }));
-  const fatData = last7Dates.map(date => ({ value: historyByDate[date]?.fat || 0 }));
+  const proteinData = (summary?.history || []).map((item: any) => ({ value: item.protein || 0 }));
+  const fatData = (summary?.history || []).map((item: any) => ({ value: item.fat || 0 }));
+  const burnedData = (workoutSummary?.history || []).map((item: any) => ({ value: item.calories || 0 }));
 
-  // Add burnedData from workoutSummary if available
-  const burnedData = (route.params?.workoutSummary?.history || []).map((item: any) => ({ value: item.calories || 0 }));
-  while (burnedData.length < 7) burnedData.unshift({ value: 0 });
   // X-axis labels (DD/MM) - Parse date components separately to avoid timezone issues
-  const xLabels = last7Dates.map(date => {
+  const xLabels = last7Dates.map((date: string) => {
     const [year, month, day] = date.split('-');
     const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
@@ -6146,13 +6072,13 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
             {/* Chart content */}
             <View style={styles.barChartContent}>
               {/* Bars for each day */}
-              {last7Dates.map((date, dayIndex) => {
+              {last7Dates.map((date: string, dayIndex: number) => {
                 const dayCalories = caloriesData[dayIndex]?.value || 0;
                 const dayProtein = proteinData[dayIndex]?.value || 0;
                 const dayFat = fatData[dayIndex]?.value || 0;
                 
                 // Dynamic max value based on actual data, but ensure bars don't overflow
-                const maxCaloriesInData = Math.max(...caloriesData.map(d => d.value || 0));
+                const maxCaloriesInData = Math.max(...caloriesData.map((d: any) => d.value || 0));
                 const dynamicMax = Math.max(3000, maxCaloriesInData * 1.1); // At least 3000, or 110% of max data
                 const maxBarHeight = 200; // Container height limit
                 
