@@ -593,21 +593,42 @@ async def log_food_item(request: FoodLogRequest):
             logger.warning(f"[FOOD LOG] Error checking daily reset: {reset_error}")
             # Continue with food logging even if reset fails
         
+        # COMPREHENSIVE LOGGING: Trace every step of nutrition data handling
+        logger.info(f"[FOOD LOG TRACE] 🔍 Starting nutrition data analysis...")
+        logger.info(f"[FOOD LOG TRACE] - Food name: {request.foodName}")
+        logger.info(f"[FOOD LOG TRACE] - Serving size: {request.servingSize}")
+        logger.info(f"[FOOD LOG TRACE] - Provided calories: {request.calories}")
+        logger.info(f"[FOOD LOG TRACE] - Provided protein: {request.protein}")
+        logger.info(f"[FOOD LOG TRACE] - Provided fat: {request.fat}")
+        
         # Use provided nutrition data if available, otherwise get from Gemini
         if request.calories is not None and request.protein is not None and request.fat is not None:
-            logger.info(f"[FOOD LOG] Using provided nutrition data: calories={request.calories}, protein={request.protein}, fat={request.fat}")
+            logger.info(f"[FOOD LOG TRACE] ✅ Using provided nutrition data from frontend")
+            logger.info(f"[FOOD LOG TRACE] - Raw calories value: {request.calories} (type: {type(request.calories)})")
+            logger.info(f"[FOOD LOG TRACE] - Raw protein value: {request.protein} (type: {type(request.protein)})")
+            logger.info(f"[FOOD LOG TRACE] - Raw fat value: {request.fat} (type: {type(request.fat)})")
+            
+            # CRITICAL FIX: Frontend provides TOTAL calories for the serving, not per-100g
+            # We need to store these as total calories and set per_100g=False
             food = FoodItem(
                 name=request.foodName,
                 calories=request.calories,
                 protein=request.protein,
                 fat=request.fat,
-                per_100g=True  # Frontend provides per-100g values
+                per_100g=False  # These are TOTAL calories for the serving, not per-100g
             )
+            
+            logger.info(f"[FOOD LOG TRACE] ✅ Created FoodItem with provided data (TOTAL calories):")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.calories: {food.calories} (TOTAL for serving)")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.protein: {food.protein} (TOTAL for serving)")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.fat: {food.fat} (TOTAL for serving)")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.per_100g: {food.per_100g} (FALSE = total calories)")
+            
             nutrition = {"calories": request.calories, "protein": request.protein, "fat": request.fat, "raw": "provided"}
         else:
-            logger.info(f"[FOOD LOG] No nutrition data provided, getting from Gemini")
+            logger.info(f"[FOOD LOG TRACE] ⚠️ No nutrition data provided, getting from Gemini")
             nutrition = await get_nutrition_from_gemini(request.foodName, request.servingSize)
-            logger.info(f"[FOOD LOG] Gemini nutrition response: {nutrition}")
+            logger.info(f"[FOOD LOG TRACE] Gemini nutrition response: {nutrition}")
             food = FoodItem(
                 name=request.foodName,
                 calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
@@ -615,6 +636,12 @@ async def log_food_item(request: FoodLogRequest):
                 fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
                 per_100g=True
             )
+            
+            logger.info(f"[FOOD LOG TRACE] ✅ Created FoodItem from Gemini:")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.calories: {food.calories}")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.protein: {food.protein}")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.fat: {food.fat}")
+            logger.info(f"[FOOD LOG TRACE] - FoodItem.per_100g: {food.per_100g}")
         log_entry = FoodLog(
             userId=user_id,
             food=food,
@@ -661,38 +688,98 @@ async def get_food_log_summary(user_id: str):
         history = {}
         all_logs = []
         
-        for doc in docs_stream:
+        logger.info(f"[SUMMARY TRACE] 🔍 Processing {len(list(docs_stream))} documents...")
+        docs_stream = query.stream()  # Re-create stream since we consumed it
+        
+        for doc_index, doc in enumerate(docs_stream):
             log = doc.to_dict()
             all_logs.append(log)
+            
+            logger.info(f"[SUMMARY TRACE] 📄 Document {doc_index + 1}:")
+            logger.info(f"[SUMMARY TRACE] - Raw log data: {log}")
+            
             if not log or not isinstance(log, dict):
+                logger.warning(f"[SUMMARY TRACE] ⚠️ Skipping invalid log data")
                 continue
+                
             ts = log.get("timestamp")
+            logger.info(f"[SUMMARY TRACE] - Timestamp: {ts} (type: {type(ts)})")
+            
             # Firestore may return a datetime or a string
             if isinstance(ts, str):
                 try:
                     log_date = datetime.fromisoformat(ts).strftime('%Y-%m-%d')
-                except Exception:
+                    logger.info(f"[SUMMARY TRACE] - Parsed date from string: {log_date}")
+                except Exception as e:
+                    logger.warning(f"[SUMMARY TRACE] ⚠️ Failed to parse date from string: {e}")
                     continue
             elif isinstance(ts, datetime):
                 log_date = ts.strftime('%Y-%m-%d')
+                logger.info(f"[SUMMARY TRACE] - Parsed date from datetime: {log_date}")
             else:
+                logger.warning(f"[SUMMARY TRACE] ⚠️ Unknown timestamp type: {type(ts)}")
                 continue
+                
             if log_date not in history:
                 history[log_date] = {"calories": 0, "protein": 0, "fat": 0}
+                logger.info(f"[SUMMARY TRACE] - Created new history entry for {log_date}")
+            
             food_item = log.get("food")
+            logger.info(f"[SUMMARY TRACE] - Food item data: {food_item}")
+            
             if food_item is None or not isinstance(food_item, dict):
+                logger.warning(f"[SUMMARY TRACE] ⚠️ Invalid food item data")
                 food_item = {}
+                
             serving_size = log.get("servingSize", "100")
+            logger.info(f"[SUMMARY TRACE] - Serving size: {serving_size} (type: {type(serving_size)})")
+            
             try:
                 serving_size_num = float(serving_size)
-            except Exception:
+                logger.info(f"[SUMMARY TRACE] - Parsed serving size: {serving_size_num}")
+            except Exception as e:
+                logger.warning(f"[SUMMARY TRACE] ⚠️ Failed to parse serving size, using 100: {e}")
                 serving_size_num = 100
+                
             calories = food_item.get("calories", 0)
             protein = food_item.get("protein", 0)
             fat = food_item.get("fat", 0)
-            history[log_date]["calories"] += (calories * serving_size_num) / 100
-            history[log_date]["protein"] += (protein * serving_size_num) / 100
-            history[log_date]["fat"] += (fat * serving_size_num) / 100
+            per_100g = food_item.get("per_100g", True)
+            
+            logger.info(f"[SUMMARY TRACE] - Raw nutrition from food_item:")
+            logger.info(f"[SUMMARY TRACE]   * calories: {calories} (type: {type(calories)})")
+            logger.info(f"[SUMMARY TRACE]   * protein: {protein} (type: {type(protein)})")
+            logger.info(f"[SUMMARY TRACE]   * fat: {fat} (type: {type(fat)})")
+            logger.info(f"[SUMMARY TRACE]   * per_100g: {per_100g}")
+            
+            # CRITICAL FIX: Handle both per-100g and total calories correctly
+            if per_100g:
+                # Old logic: calories are per 100g, multiply by serving size
+                calories_contribution = (calories * serving_size_num) / 100
+                protein_contribution = (protein * serving_size_num) / 100
+                fat_contribution = (fat * serving_size_num) / 100
+                logger.info(f"[SUMMARY TRACE] - Per-100g calculation: ({calories} * {serving_size_num}) / 100 = {calories_contribution}")
+            else:
+                # New logic: calories are total for the serving, use as-is
+                calories_contribution = calories
+                protein_contribution = protein
+                fat_contribution = fat
+                logger.info(f"[SUMMARY TRACE] - Total serving calculation: {calories} (used as-is) = {calories_contribution}")
+            
+            logger.info(f"[SUMMARY TRACE] - Final contributions:")
+            logger.info(f"[SUMMARY TRACE]   * Calories: {calories_contribution}")
+            logger.info(f"[SUMMARY TRACE]   * Protein: {protein_contribution}")
+            logger.info(f"[SUMMARY TRACE]   * Fat: {fat_contribution}")
+            
+            # Add to history
+            history[log_date]["calories"] += calories_contribution
+            history[log_date]["protein"] += protein_contribution
+            history[log_date]["fat"] += fat_contribution
+            
+            logger.info(f"[SUMMARY TRACE] - Updated totals for {log_date}:")
+            logger.info(f"[SUMMARY TRACE]   * Total calories: {history[log_date]['calories']}")
+            logger.info(f"[SUMMARY TRACE]   * Total protein: {history[log_date]['protein']}")
+            logger.info(f"[SUMMARY TRACE]   * Total fat: {history[log_date]['fat']}")
             
         logger.info(f"[SUMMARY DEBUG] All logs fetched for user {user_id}: {all_logs}")
         today_str = today.strftime('%Y-%m-%d')
