@@ -27,8 +27,8 @@ import {
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
-import { createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, searchFood, sendMessageNotification, FoodItem, LogSummaryResponse } from './services/api';
-import NutritionDataManager, { DayNutrition } from './services/nutritionDataManager';
+import { createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, searchFood, sendMessageNotification, FoodItem } from './services/api';
+import LocalNutritionManager, { DayNutrition } from './services/localNutritionManager';
 import GeminiNutritionService from './services/geminiNutritionService';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -1104,10 +1104,10 @@ const CircularProgress = ({
 
 // --- DashboardScreen ---
 const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
-  const [summary, setSummary] = useState<LogSummaryResponse | null>(null);
+  const [summary, setSummary] = useState<any>(null);
   const [nutritionData, setNutritionData] = useState<DayNutrition | null>(null);
   const [weeklyData, setWeeklyData] = useState<DayNutrition[]>([]);
-  const [nutritionManager] = useState(() => NutritionDataManager.getInstance());
+  const [nutritionManager] = useState(() => LocalNutritionManager.getInstance());
   const [geminiService] = useState(() => GeminiNutritionService.getInstance());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1534,7 +1534,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
 
   // Fetch nutrition data using unified local storage system
-  const fetchNutritionData = async () => {
+  const fetchSummary = async () => {
     if (!userId) {
       setError('User not authenticated');
       setLoading(false);
@@ -1562,6 +1562,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setWeeklyData(weeklyData);
       console.log('[NUTRITION DATA] Weekly data:', weeklyData);
       
+      // Get summary data for compatibility
+      const summaryData = await nutritionManager.getSummaryData();
+      setSummary(summaryData);
+      
       // Update burned calories from today's data
       setBurnedToday(todayData.burned);
       
@@ -1572,34 +1576,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     } finally {
       setLoading(false);
     }
-  };
-  
-  // Legacy function for compatibility
-  const fetchSummary = fetchNutritionData;
-  
-  // Placeholder functions for compatibility
-  const resetDailyData = async (userId: string) => {
-    console.log('[Legacy] resetDailyData called - handled by nutrition manager');
-  };
-  
-  const logFood = async (userId: string, name: string, quantity: string) => {
-    console.log('[Legacy] logFood called - handled by new system');
-    return { success: true };
-  };
-  
-  const logWorkout = async (workoutData: any) => {
-    console.log('[Legacy] logWorkout called - handled by new system');
-    return { success: true, calories: 0 };
-  };
-  
-  const getLogSummary = async (userId: string) => {
-    console.log('[Legacy] getLogSummary called - handled by new system');
-    return { history: [], daily_summary: { calories: 0, protein: 0, fat: 0 }, seven_day_history: [] };
-  };
-  
-  const getWorkoutLogSummary = async (userId: string) => {
-    console.log('[Legacy] getWorkoutLogSummary called - handled by new system');
-    return { history: [] };
   };
 
   // Refresh summary after logging food or workout - DELAYED to prevent conflict with login sequence
@@ -1672,6 +1648,31 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setShowFoodSuccess(true);
     fetchSummary();
   };
+  
+  // Legacy functions for compatibility
+  const resetDailyData = async (userId: string) => {
+    console.log('[Legacy] resetDailyData called - handled by nutrition manager');
+  };
+  
+  const logFood = async (userId: string, name: string, quantity: string) => {
+    console.log('[Legacy] logFood called - handled by new system');
+    return { success: true };
+  };
+  
+  const logWorkout = async (workoutData: any) => {
+    console.log('[Legacy] logWorkout called - handled by new system');
+    return { success: true, calories: 0 };
+  };
+  
+  const getLogSummary = async (userId: string) => {
+    console.log('[Legacy] getLogSummary called - handled by new system');
+    return { history: [], daily_summary: { calories: 0, protein: 0, fat: 0 }, seven_day_history: [] };
+  };
+  
+  const getWorkoutLogSummary = async (userId: string) => {
+    console.log('[Legacy] getWorkoutLogSummary called - handled by new system');
+    return { history: [] };
+  };
 
   const SummaryCard = ({ title, value, unit }: { title: string; value: string | number; unit: string }) => (
     <View style={styles.summaryCard}>
@@ -1685,7 +1686,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [foodLoading, setFoodLoading] = useState(false);
   const [workoutLoading, setWorkoutLoading] = useState(false);
   const [showNutritionConfirm, setShowNutritionConfirm] = useState(false);
-  // nutritionData is already declared above
   const [editableNutrition, setEditableNutrition] = useState<{calories: string, protein: string, fat: string}>({calories: '', protein: '', fat: ''});
   const [pendingFoodData, setPendingFoodData] = useState<{name: string, quantity: string, calories: number, protein: number, fat: number} | null>(null);
 
@@ -1707,6 +1707,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     if (userId) {
       try {
         setFoodLoading(true);
+        
         console.log('[Food Log] 🍎 Getting nutrition data from Gemini...');
         
         // Get nutrition data from Gemini service
@@ -1739,14 +1740,20 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           fat: nutrition.fat
         });
         
+        // Close the first modal and show the confirmation modal
         setShowFoodModal(false);
         setShowNutritionConfirm(true);
         setFoodLoading(false);
         
       } catch (error) {
-        console.error('[Food Log] Error getting nutrition data:', error);
+        console.error('[Food Log] Error fetching nutrition data from backend:', error);
         setShowFoodError(true);
         setFoodLoading(false);
+        
+        // Safety timeout to ensure loading state is reset
+        setTimeout(() => {
+          setFoodLoading(false);
+        }, 1000);
       }
     }
   };
@@ -1781,11 +1788,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         
         // Refresh data immediately
         console.log('[Food Log] 🔄 Refreshing nutrition data...');
-        await fetchNutritionData();
+        await fetchSummary();
         console.log('[Food Log] ✅ Data refreshed successfully');
-        
       } catch (error) {
-        console.error('[Food Log] Error logging food:', error);
+        console.error('[Food Log] Error logging confirmed food:', error);
         setShowFoodError(true);
       } finally {
         setFoodLoading(false);
@@ -1843,9 +1849,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setShowWorkoutSuccess(true);
       setWorkoutName('');
       setWorkoutQty('');
-      
-      // Refresh nutrition data
-      await fetchNutritionData();
       
       // Show success popup
       setTimeout(() => setShowWorkoutSuccess(false), 1500);
@@ -2860,6 +2863,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [confetti, setConfetti] = useState(false);
+  const [nutritionManager] = useState(() => LocalNutritionManager.getInstance());
   const [successFood, setSuccessFood] = useState<{
     name: string;
     calories: number;
@@ -2905,8 +2909,10 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
       const protein = Math.round((item.protein * multiplier) * 10) / 10;
       const fat = Math.round((item.fat * multiplier) * 10) / 10;
       
-      // Legacy logFood call - handled by new system
-      console.log('[Legacy] logFood called for:', item.name, servingSize);
+      // Add nutrition data to today's consumption
+      await nutritionManager.addFoodNutrition(calories, protein, fat);
+      
+      console.log('[Food Log] ✅ Food nutrition added to local storage');
       setSuccessFood({
         name: item.name,
         calories,
@@ -3099,6 +3105,8 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
   const [reps, setReps] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const userId = auth.currentUser?.uid;
+  const [nutritionManager] = useState(() => LocalNutritionManager.getInstance());
+  const [geminiService] = useState(() => GeminiNutritionService.getInstance());
   // For calorie update
   const onWorkoutLogged = route?.params?.onWorkoutLogged;
 
@@ -3163,9 +3171,17 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
         date: null
       };
       
-      // Legacy logWorkout call - handled by new system
-      console.log('[Legacy] logWorkout called for:', workoutData);
-      const caloriesBurned = 0; // Will be handled by new system
+      // Get workout calories from Gemini service
+      const workoutResult = await geminiService.getWorkoutCalories(workoutData.exerciseName, workoutData.duration);
+      
+      if (!workoutResult.success) {
+        throw new Error(workoutResult.error || 'Failed to get workout calories');
+      }
+      
+      const caloriesBurned = workoutResult.calories;
+      
+      // Add workout calories to today's data
+      await nutritionManager.addWorkoutCalories(caloriesBurned);
       
       // Call parent/dashboard to update calories
       if (onWorkoutLogged) onWorkoutLogged(caloriesBurned);
@@ -5781,7 +5797,41 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   // State for fresh data
   const [summary, setSummary] = useState(initialSummary);
   const [burnedToday, setBurnedToday] = useState(initialBurnedToday || 0);
+  const [weeklyData, setWeeklyData] = useState<DayNutrition[]>([]);
+  const [nutritionManager] = useState(() => LocalNutritionManager.getInstance());
+  const [geminiService] = useState(() => GeminiNutritionService.getInstance());
   const [loading, setLoading] = useState(false);
+  
+  // Fetch nutrition data using unified local storage system
+  const fetchSummary = async () => {
+    if (!userProfile?.uid) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    
+    try {
+      // Check for new day and reset if needed
+      const wasReset = await nutritionManager.checkAndResetIfNewDay();
+      if (wasReset) {
+        console.log('[TrackingDetails] New day detected, data reset');
+      }
+      
+      // Get summary data for compatibility
+      const summaryData = await nutritionManager.getSummaryData();
+      setSummary(summaryData);
+      
+      // Get weekly data for bar graph
+      const weeklyData = await nutritionManager.getBarGraphData();
+      setWeeklyData(weeklyData);
+      
+      console.log('[TrackingDetails] Nutrition data loaded successfully');
+    } catch (error) {
+      console.error('[TrackingDetails] Error loading nutrition data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // Get targets from userProfile if available
   const targetCalories = userProfile?.targetCalories || 2000;
@@ -5796,10 +5846,9 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     
     setLoading(true);
     try {
-      // Legacy getLogSummary call - handled by new system
-      console.log('[Legacy] getLogSummary called for:', userProfile.uid);
-      setSummary({ history: [], daily_summary: { calories: 0, protein: 0, fat: 0 }, seven_day_history: [] });
-      console.log('[TrackingDetails] Fresh summary data loaded');
+      // Refresh nutrition data
+      await fetchSummary();
+      console.log('[TrackingDetails] Fresh nutrition data loaded');
     } catch (error) {
       console.error('[TrackingDetails] Error fetching fresh summary:', error);
     } finally {
@@ -5812,19 +5861,18 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
     fetchFreshSummary();
   }, []);
 
-  // Use summary data for bar graph (legacy compatibility)
-  const last7Dates = summary?.history?.map((item: any) => item.day) || [];
-  console.log('[Bar Graph] Using summary data:', summary);
+  // Use weekly data for bar graph (chronological order)
+  const last7Dates = weeklyData.map((day: DayNutrition) => day.date);
+  console.log('[Bar Graph] Using weekly data:', weeklyData);
   
-  // Build data arrays from summary data
-  const caloriesData = (summary?.history || []).map((item: any) => {
-    console.log(`[Bar Graph] Calories for ${item.day}: ${item.calories}`);
-    return { value: item.calories || 0 };
+  // Build data arrays from weekly data
+  const caloriesData = weeklyData.map((day: DayNutrition) => {
+    console.log(`[Bar Graph] Calories for ${day.date}: ${day.calories}`);
+    return { value: day.calories || 0 };
   });
-  const proteinData = (summary?.history || []).map((item: any) => ({ value: item.protein || 0 }));
-  const fatData = (summary?.history || []).map((item: any) => ({ value: item.fat || 0 }));
-  const burnedData = (workoutSummary?.history || []).map((item: any) => ({ value: item.calories || 0 }));
-
+  const proteinData = weeklyData.map((day: DayNutrition) => ({ value: day.protein || 0 }));
+  const fatData = weeklyData.map((day: DayNutrition) => ({ value: day.fat || 0 }));
+  const burnedData = weeklyData.map((day: DayNutrition) => ({ value: day.burned || 0 }));
   // X-axis labels (DD/MM) - Parse date components separately to avoid timezone issues
   const xLabels = last7Dates.map((date: string) => {
     const [year, month, day] = date.split('-');
