@@ -1772,8 +1772,15 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         console.log('[Food Log] User ID:', userId);
         console.log('[Food Log] Current time:', new Date().toLocaleString());
         
-        // Log the food and track the response
-        const logResult = await logFood(userId, pendingFoodData.name, pendingFoodData.quantity);
+        // Log the food with confirmed nutrition data from popup
+        const confirmedNutrition = {
+          calories: parseFloat(editableNutrition.calories) || 0,
+          protein: parseFloat(editableNutrition.protein) || 0,
+          fat: parseFloat(editableNutrition.fat) || 0
+        };
+        console.log('[Food Log] 🍎 Using confirmed nutrition data:', confirmedNutrition);
+        
+        const logResult = await logFood(userId, pendingFoodData.name, pendingFoodData.quantity, confirmedNutrition);
         console.log('[Food Log] ✅ logFood API response:', logResult);
         
         setShowNutritionConfirm(false);

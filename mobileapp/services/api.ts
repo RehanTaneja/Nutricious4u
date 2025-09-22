@@ -539,10 +539,14 @@ export async function getNutritionData(foodName: string, quantity: string): Prom
   return response.data;
 }
 
-export const logFood = async (userId: string, foodName: string, servingSize: string = "100") => {
+export const logFood = async (userId: string, foodName: string, servingSize: string = "100", nutrition?: {calories: number, protein: number, fat: number}) => {
   try {
-    logger.log('[logFood] Request payload:', { userId, foodName, servingSize });
-    const response = await enhancedApi.post('/food/log', { userId, foodName, servingSize });
+    const payload = nutrition 
+      ? { userId, foodName, servingSize, calories: nutrition.calories, protein: nutrition.protein, fat: nutrition.fat }
+      : { userId, foodName, servingSize };
+    
+    logger.log('[logFood] Request payload:', payload);
+    const response = await enhancedApi.post('/food/log', payload);
     logger.log('[logFood] Response:', response.data);
     return response.data;
   } catch (error) {

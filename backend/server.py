@@ -95,6 +95,10 @@ class FoodLogRequest(BaseModel):
     userId: str
     foodName: str
     servingSize: str = "100"
+    # Optional pre-calculated nutrition data (if provided, skip Gemini call)
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
 
 class FoodLog(BaseModel):
     userId: str
@@ -567,6 +571,7 @@ async def log_food_item(request: FoodLogRequest):
     loop = asyncio.get_event_loop()
     try:
         logger.info(f"[FOOD LOG] Incoming request: {request}")
+        logger.info(f"[FOOD LOG] Request nutrition data - calories: {request.calories}, protein: {request.protein}, fat: {request.fat}")
         user_id = request.userId
         if not user_id:
             logger.error("[FOOD LOG] userId missing in request")
@@ -588,16 +593,28 @@ async def log_food_item(request: FoodLogRequest):
             logger.warning(f"[FOOD LOG] Error checking daily reset: {reset_error}")
             # Continue with food logging even if reset fails
         
-        # Use Gemini to get nutrition
-        nutrition = await get_nutrition_from_gemini(request.foodName, request.servingSize)
-        logger.info(f"[FOOD LOG] Gemini nutrition response: {nutrition}")
-        food = FoodItem(
-            name=request.foodName,
-            calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
-            protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
-            fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
-            per_100g=True
-        )
+        # Use provided nutrition data if available, otherwise get from Gemini
+        if request.calories is not None and request.protein is not None and request.fat is not None:
+            logger.info(f"[FOOD LOG] Using provided nutrition data: calories={request.calories}, protein={request.protein}, fat={request.fat}")
+            food = FoodItem(
+                name=request.foodName,
+                calories=request.calories,
+                protein=request.protein,
+                fat=request.fat,
+                per_100g=True  # Frontend provides per-100g values
+            )
+            nutrition = {"calories": request.calories, "protein": request.protein, "fat": request.fat, "raw": "provided"}
+        else:
+            logger.info(f"[FOOD LOG] No nutrition data provided, getting from Gemini")
+            nutrition = await get_nutrition_from_gemini(request.foodName, request.servingSize)
+            logger.info(f"[FOOD LOG] Gemini nutrition response: {nutrition}")
+            food = FoodItem(
+                name=request.foodName,
+                calories=float(nutrition["calories"]) if nutrition["calories"] != "Error" else 0,
+                protein=float(nutrition["protein"]) if nutrition["protein"] != "Error" else 0,
+                fat=float(nutrition["fat"]) if nutrition["fat"] != "Error" else 0,
+                per_100g=True
+            )
         log_entry = FoodLog(
             userId=user_id,
             food=food,
