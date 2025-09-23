@@ -4813,13 +4813,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
             }));
             
             setDietNotifications(updatedNotifications);
-            setSuccessMessage(`Successfully extracted and scheduled ${scheduledIds.length} diet notifications locally! 🎉 (Total extracted: ${response.notifications.length}, Cancelled: ${cancelledCount} previous notifications)
-
-📱 TESTING INSTRUCTIONS:
-A test notification will arrive in 2 minutes. PUT THE APP IN BACKGROUND now to test proper notification delivery when the app is closed. Tap the test notification to verify it opens your diet.`);
+            setSuccessMessage(`Successfully extracted and scheduled ${scheduledIds.length} diet notifications locally! 🎉 (Total extracted: ${response.notifications.length}, Cancelled: ${cancelledCount} previous notifications)`);
             setShowSuccessModal(true);
             console.log('[Diet Notifications] ✅ Extraction and local scheduling completed successfully');
-            console.log('[Diet Notifications] 🎯 USER INSTRUCTION: Put app in background to test notification delivery!');
           } else {
             // All notifications were invalid
             setErrorMessage('All extracted notifications were invalid or inactive. Please check your diet plan and try again.');
@@ -5032,26 +5028,8 @@ A test notification will arrive in 2 minutes. PUT THE APP IN BACKGROUND now to t
   // This prevents race conditions and popup state conflicts
   // Only message notifications are handled here if needed
 
-  // Enhanced notification delivery tracking and background handling
+  // Enhanced background notification handling
   useEffect(() => {
-    // Track notification delivery for debugging (proven approach)
-    const deliveryTracker = Notifications.addNotificationReceivedListener((notification) => {
-      const data = notification.request.content.data;
-      const deliveryTime = new Date().toLocaleString();
-      
-      console.log(`[DELIVERY TRACKER] 📨 Notification delivered at ${deliveryTime}`);
-      console.log(`[DELIVERY TRACKER] Type: ${data?.type || 'unknown'}`);
-      console.log(`[DELIVERY TRACKER] ID: ${notification.request.identifier}`);
-      
-      if (data?.isTest) {
-        console.log(`[DELIVERY TRACKER] ✅ TEST NOTIFICATION DELIVERED SUCCESSFULLY!`);
-        console.log(`[DELIVERY TRACKER] Expected: ${data.expectedDelivery}`);
-        console.log(`[DELIVERY TRACKER] Actual: ${deliveryTime}`);
-      } else if (data?.type === 'diet') {
-        console.log(`[DELIVERY TRACKER] ✅ DIET NOTIFICATION DELIVERED: ${notification.request.content.body?.substring(0, 50)}...`);
-      }
-    });
-
     const backgroundSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data;
       
@@ -5148,10 +5126,7 @@ A test notification will arrive in 2 minutes. PUT THE APP IN BACKGROUND now to t
       }
     });
 
-    return () => {
-      deliveryTracker.remove();
-      backgroundSubscription.remove();
-    };
+    return () => backgroundSubscription.remove();
   }, [dietNotifications, navigation]);
 
   const handleDeleteDietNotification = async (notificationId: string) => {
