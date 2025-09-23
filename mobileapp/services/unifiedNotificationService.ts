@@ -363,6 +363,11 @@ export class UnifiedNotificationService {
       console.log(`[DIET NOTIFICATION] 📋 Using SAME approach as working custom reminders`);
       console.log(`[DIET NOTIFICATION] Processing ${notifications.length} notifications...`);
       
+      // STEP 1: Cancel existing diet notifications (clean approach like custom reminders)
+      console.log('[DIET NOTIFICATION] 🧹 Cancelling existing diet notifications...');
+      const cancelledCount = await this.cancelExistingDietNotifications();
+      console.log(`[DIET NOTIFICATION] ✅ Cancelled ${cancelledCount} existing notifications`);
+      
       // Filter valid notifications
       const validNotifications = notifications.filter((notif: any) => {
         const hasValidDays = notif.selectedDays && notif.selectedDays.length > 0;
