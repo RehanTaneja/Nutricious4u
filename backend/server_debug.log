@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/rehantaneja/Documents/Nutricious4u-main copy/backend/server.py", line 1, in <module>
+    from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File, Form, Depends
+ModuleNotFoundError: No module named 'fastapi'

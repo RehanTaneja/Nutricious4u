@@ -4755,32 +4755,53 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setLoadingDietNotifications(true);
       console.log('[Diet Notifications] Starting extraction from backend API...');
       
-      // Call backend API for extraction
+      // Call backend API for extraction - this is the critical part that MUST succeed
       const response = await extractDietNotifications(userId);
       
-      console.log('[Diet Notifications] Backend response:', response);
+      console.log('[Diet Notifications] ✅ Backend extraction successful:', response);
+      console.log('[Diet Notifications] Extracted notifications:', response.notifications?.length || 0);
       
       if (response.notifications && response.notifications.length > 0) {
-        // Cancel existing diet notifications
-        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-        const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+        // CRITICAL FIX: Store the extracted notifications first (backend success is what matters)
+        setDietNotifications(response.notifications);
         
-        console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
+        // Now try local scheduling, but don't fail if it doesn't work
+        try {
+          console.log('[Diet Notifications] Attempting local notification scheduling...');
+          const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+          
+          // Cancel existing diet notifications
+          const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+          console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
+          
+          // Schedule new diet notifications locally (works in EAS builds)
+          const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
+          console.log('[Diet Notifications] ✅ Local scheduling successful:', scheduledIds?.length || 0, 'scheduled');
+          
+          // Update notifications with scheduled IDs
+          const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
+            ...notification,
+            scheduledId: scheduledIds[index] || null
+          }));
+          
+          setDietNotifications(updatedNotifications);
+          setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications! 🎉\n\n(Backend: ✅ Extracted, Local: ✅ Scheduled ${scheduledIds?.length || 0} notifications)`);
+          setShowSuccessModal(true);
+          
+        } catch (schedulingError: any) {
+          console.error('[Diet Notifications] Local scheduling failed, but extraction was successful:', schedulingError);
+          
+          // Even if local scheduling fails, the extraction was successful!
+          // Show success but with a note about local scheduling
+          setSuccessMessage(`Successfully extracted ${response.notifications.length} diet notifications! 🎉\n\n(Backend: ✅ Extracted, Local: ⚠️ Scheduling failed - notifications stored but may not alert locally)`);
+          setShowSuccessModal(true);
+          
+          // Log the scheduling error for debugging but don't throw it
+          console.warn('[Diet Notifications] Local scheduling failed but continuing with extracted data');
+        }
         
-        // Schedule new diet notifications locally (works in EAS builds)
-        const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
+        console.log('[Diet Notifications] ✅ Overall extraction process completed successfully');
         
-        // Update notifications with scheduled IDs
-        const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
-          ...notification,
-          scheduledId: scheduledIds[index] || null
-        }));
-        
-        setDietNotifications(updatedNotifications);
-        setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications locally! 🎉 (Cancelled ${cancelledCount} previous notifications)`);
-        setShowSuccessModal(true);
-        console.log('[Diet Notifications] ✅ Extraction and local scheduling successful:', response.notifications.length, 'notifications');
-        console.log('[Diet Notifications] Scheduled IDs:', scheduledIds);
       } else {
         // Check if user is dietician - don't show popup for dieticians
         const currentUser = auth.currentUser;
@@ -4799,7 +4820,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         }
       }
     } catch (error: any) {
-      console.error('[Diet Notifications] Error extracting:', error);
+      console.error('[Diet Notifications] ❌ Backend extraction failed:', error);
       
       let errorMsg = 'Failed to extract notifications from your diet plan. Please try again.';
       
