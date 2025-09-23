@@ -32,11 +32,24 @@ export class UnifiedNotificationService {
     return UnifiedNotificationService.instance;
   }
 
-  // CRITICAL FIX: Initialize permissions for EAS builds
+  // CRITICAL FIX: Initialize permissions and configure foreground/background behavior
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
     try {
+      // Configure notification behavior for ALL states (critical for delivery)
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,      // Show even when app is open
+          shouldPlaySound: true,      // Play sound in foreground
+          shouldSetBadge: false,      // Don't set badge
+          shouldShowBanner: true,     // Show banner notification
+          shouldShowList: true,       // Show in notification list
+        }),
+      });
+      
+      logger.log('[UnifiedNotificationService] Notification handler configured for foreground display');
+
       // Request permissions - CRITICAL for EAS builds
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
@@ -79,7 +92,7 @@ export class UnifiedNotificationService {
       }
 
       this.isInitialized = true;
-      logger.log('[UnifiedNotificationService] Initialized successfully with permissions');
+      logger.log('[UnifiedNotificationService] Initialized successfully with permissions and foreground display');
     } catch (error) {
       logger.error('[UnifiedNotificationService] Initialization failed:', error);
       this.isInitialized = false;
@@ -574,13 +587,14 @@ export class UnifiedNotificationService {
       const testNotification: UnifiedNotification = {
         id: testId,
         title: '🧪 Diet System Test',
-        body: 'This is a test notification to verify delivery is working. If you see this, notifications are working correctly!',
+        body: 'Diet notifications are working! Put app in background and this notification will prove background delivery works. Tap to open your diet.',
         type: 'test',
         data: {
           isTest: true,
           scheduledAt: new Date().toISOString(),
           expectedDelivery: scheduledFor.toISOString(),
-          message: 'Test notification for delivery verification'
+          message: 'Test notification for background delivery verification',
+          type: 'diet' // This will make it open diet when tapped
         },
         scheduledFor: scheduledFor,
         repeats: false
@@ -591,7 +605,8 @@ export class UnifiedNotificationService {
       console.log(`[TEST NOTIFICATION] ✅ Test notification scheduled:`);
       console.log(`  ID: ${scheduledId}`);
       console.log(`  Delivery: ${scheduledFor.toLocaleString()}`);
-      console.log(`  Purpose: Verify notification delivery system`);
+      console.log(`  Purpose: Verify background delivery and diet opening`);
+      console.log(`  🎯 PUT APP IN BACKGROUND to test proper notification delivery!`);
       
       // Set up delivery monitoring
       this.setupDeliveryMonitoring(scheduledId, scheduledFor);

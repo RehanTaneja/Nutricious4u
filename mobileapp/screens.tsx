@@ -4813,9 +4813,13 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
             }));
             
             setDietNotifications(updatedNotifications);
-            setSuccessMessage(`Successfully extracted and scheduled ${scheduledIds.length} diet notifications locally! 🎉 (Total extracted: ${response.notifications.length}, Cancelled: ${cancelledCount} previous notifications)`);
+            setSuccessMessage(`Successfully extracted and scheduled ${scheduledIds.length} diet notifications locally! 🎉 (Total extracted: ${response.notifications.length}, Cancelled: ${cancelledCount} previous notifications)
+
+📱 TESTING INSTRUCTIONS:
+A test notification will arrive in 2 minutes. PUT THE APP IN BACKGROUND now to test proper notification delivery when the app is closed. Tap the test notification to verify it opens your diet.`);
             setShowSuccessModal(true);
             console.log('[Diet Notifications] ✅ Extraction and local scheduling completed successfully');
+            console.log('[Diet Notifications] 🎯 USER INSTRUCTION: Put app in background to test notification delivery!');
           } else {
             // All notifications were invalid
             setErrorMessage('All extracted notifications were invalid or inactive. Please check your diet plan and try again.');
