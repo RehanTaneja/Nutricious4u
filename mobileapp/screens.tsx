@@ -4755,53 +4755,82 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       setLoadingDietNotifications(true);
       console.log('[Diet Notifications] Starting extraction from backend API...');
       
-      // Call backend API for extraction - this is the critical part that MUST succeed
+      // Call backend API for extraction
       const response = await extractDietNotifications(userId);
       
-      console.log('[Diet Notifications] ✅ Backend extraction successful:', response);
-      console.log('[Diet Notifications] Extracted notifications:', response.notifications?.length || 0);
+      console.log('[Diet Notifications] Backend response:', response);
       
       if (response.notifications && response.notifications.length > 0) {
-        // CRITICAL FIX: Store the extracted notifications first (backend success is what matters)
-        setDietNotifications(response.notifications);
-        
-        // Now try local scheduling, but don't fail if it doesn't work
         try {
-          console.log('[Diet Notifications] Attempting local notification scheduling...');
+          // ENHANCED: Initialize unified notification service first
           const unifiedNotificationService = require('./services/unifiedNotificationService').default;
           
+          // Initialize notification permissions before proceeding
+          console.log('[Diet Notifications] Initializing notification service...');
+          await unifiedNotificationService.initialize();
+          
           // Cancel existing diet notifications
+          console.log('[Diet Notifications] Cancelling existing notifications...');
           const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
           console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
           
-          // Schedule new diet notifications locally (works in EAS builds)
-          const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(response.notifications);
-          console.log('[Diet Notifications] ✅ Local scheduling successful:', scheduledIds?.length || 0, 'scheduled');
+          // ENHANCED: Filter and validate notifications before scheduling
+          const validNotifications = response.notifications.filter((notif: any) => {
+            const hasValidDays = notif.selectedDays && notif.selectedDays.length > 0;
+            const isActive = notif.isActive !== false;
+            const hasTime = notif.time && notif.message;
+            
+            if (!hasValidDays) {
+              console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
+              return false;
+            }
+            if (!isActive) {
+              console.log(`[Diet Notifications] ⚠️ Skipping inactive notification: ${notif.message?.substring(0, 30)}...`);
+              return false;
+            }
+            if (!hasTime) {
+              console.log(`[Diet Notifications] ⚠️ Skipping notification without time/message: ${JSON.stringify(notif)}`);
+              return false;
+            }
+            
+            return true;
+          });
           
-          // Update notifications with scheduled IDs
-          const updatedNotifications = response.notifications.map((notification: any, index: number) => ({
-            ...notification,
-            scheduledId: scheduledIds[index] || null
-          }));
+          console.log(`[Diet Notifications] Valid notifications to schedule: ${validNotifications.length}/${response.notifications.length}`);
           
-          setDietNotifications(updatedNotifications);
-          setSuccessMessage(`Successfully extracted and scheduled ${response.notifications.length} diet notifications! 🎉\n\n(Backend: ✅ Extracted, Local: ✅ Scheduled ${scheduledIds?.length || 0} notifications)`);
-          setShowSuccessModal(true);
+          if (validNotifications.length > 0) {
+            // Schedule new diet notifications locally (works in EAS builds)
+            console.log('[Diet Notifications] Starting local notification scheduling...');
+            const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(validNotifications);
+            
+            console.log(`[Diet Notifications] Successfully scheduled ${scheduledIds.length} notifications`);
+            console.log('[Diet Notifications] Scheduled IDs:', scheduledIds);
+            
+            // Update notifications with scheduled IDs
+            const updatedNotifications = validNotifications.map((notification: any, index: number) => ({
+              ...notification,
+              scheduledId: scheduledIds[index] || null
+            }));
+            
+            setDietNotifications(updatedNotifications);
+            setSuccessMessage(`Successfully extracted and scheduled ${scheduledIds.length} diet notifications locally! 🎉 (Total extracted: ${response.notifications.length}, Cancelled: ${cancelledCount} previous notifications)`);
+            setShowSuccessModal(true);
+            console.log('[Diet Notifications] ✅ Extraction and local scheduling completed successfully');
+          } else {
+            // All notifications were invalid
+            setErrorMessage('All extracted notifications were invalid or inactive. Please check your diet plan and try again.');
+            setShowErrorModal(true);
+            console.log('[Diet Notifications] ⚠️ All notifications were filtered out as invalid');
+          }
           
         } catch (schedulingError: any) {
-          console.error('[Diet Notifications] Local scheduling failed, but extraction was successful:', schedulingError);
+          console.error('[Diet Notifications] Error during local scheduling:', schedulingError);
           
-          // Even if local scheduling fails, the extraction was successful!
-          // Show success but with a note about local scheduling
-          setSuccessMessage(`Successfully extracted ${response.notifications.length} diet notifications! 🎉\n\n(Backend: ✅ Extracted, Local: ⚠️ Scheduling failed - notifications stored but may not alert locally)`);
-          setShowSuccessModal(true);
-          
-          // Log the scheduling error for debugging but don't throw it
-          console.warn('[Diet Notifications] Local scheduling failed but continuing with extracted data');
+          // Even if scheduling fails, show that extraction worked
+          setDietNotifications(response.notifications);
+          setErrorMessage(`Extracted ${response.notifications.length} notifications from your diet, but failed to schedule them locally. Error: ${schedulingError.message || 'Unknown error'}`);
+          setShowErrorModal(true);
         }
-        
-        console.log('[Diet Notifications] ✅ Overall extraction process completed successfully');
-        
       } else {
         // Check if user is dietician - don't show popup for dieticians
         const currentUser = auth.currentUser;
@@ -4820,7 +4849,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         }
       }
     } catch (error: any) {
-      console.error('[Diet Notifications] ❌ Backend extraction failed:', error);
+      console.error('[Diet Notifications] Error extracting:', error);
       
       let errorMsg = 'Failed to extract notifications from your diet plan. Please try again.';
       
@@ -4836,6 +4865,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         errorMsg = 'Network error. Please check your connection and try again.';
       } else if (error?.message?.includes('timeout')) {
         errorMsg = 'Request timed out. Please try again.';
+      } else if (error?.message?.includes('Notification permissions not granted')) {
+        errorMsg = 'Please enable notification permissions in your device settings and try again.';
       }
       
       setErrorMessage(errorMsg);

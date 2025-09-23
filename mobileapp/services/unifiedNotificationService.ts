@@ -41,19 +41,48 @@ export class UnifiedNotificationService {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       
+      logger.log('[UnifiedNotificationService] Current permission status:', existingStatus);
+      
       if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
+        logger.log('[UnifiedNotificationService] Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowDisplayInCarPlay: false,
+            allowCriticalAlerts: false,
+            provideAppNotificationSettings: false,
+            allowProvisional: false,
+            allowAnnouncements: false,
+          },
+        });
         finalStatus = status;
+        logger.log('[UnifiedNotificationService] Permission request result:', status);
       }
 
       if (finalStatus !== 'granted') {
-        throw new Error('Notification permissions not granted');
+        const errorMsg = `Notification permissions not granted. Status: ${finalStatus}. Please enable notifications in your device settings.`;
+        logger.error('[UnifiedNotificationService]', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      // iOS-specific: Set notification categories for better handling
+      if (Platform.OS === 'ios') {
+        try {
+          await Notifications.setNotificationCategoryAsync('general', []);
+          logger.log('[UnifiedNotificationService] iOS notification categories set');
+        } catch (categoryError) {
+          logger.warn('[UnifiedNotificationService] Failed to set iOS categories:', categoryError);
+          // Don't fail initialization for this
+        }
       }
 
       this.isInitialized = true;
       logger.log('[UnifiedNotificationService] Initialized successfully with permissions');
     } catch (error) {
       logger.error('[UnifiedNotificationService] Initialization failed:', error);
+      this.isInitialized = false;
       throw error;
     }
   }
