@@ -5028,8 +5028,26 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   // This prevents race conditions and popup state conflicts
   // Only message notifications are handled here if needed
 
-  // Enhanced background notification handling
+  // Enhanced notification delivery tracking and background handling
   useEffect(() => {
+    // Track notification delivery for debugging (proven approach)
+    const deliveryTracker = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data;
+      const deliveryTime = new Date().toLocaleString();
+      
+      console.log(`[DELIVERY TRACKER] 📨 Notification delivered at ${deliveryTime}`);
+      console.log(`[DELIVERY TRACKER] Type: ${data?.type || 'unknown'}`);
+      console.log(`[DELIVERY TRACKER] ID: ${notification.request.identifier}`);
+      
+      if (data?.isTest) {
+        console.log(`[DELIVERY TRACKER] ✅ TEST NOTIFICATION DELIVERED SUCCESSFULLY!`);
+        console.log(`[DELIVERY TRACKER] Expected: ${data.expectedDelivery}`);
+        console.log(`[DELIVERY TRACKER] Actual: ${deliveryTime}`);
+      } else if (data?.type === 'diet') {
+        console.log(`[DELIVERY TRACKER] ✅ DIET NOTIFICATION DELIVERED: ${notification.request.content.body?.substring(0, 50)}...`);
+      }
+    });
+
     const backgroundSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data;
       
@@ -5126,7 +5144,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       }
     });
 
-    return () => backgroundSubscription.remove();
+    return () => {
+      deliveryTracker.remove();
+      backgroundSubscription.remove();
+    };
   }, [dietNotifications, navigation]);
 
   const handleDeleteDietNotification = async (notificationId: string) => {

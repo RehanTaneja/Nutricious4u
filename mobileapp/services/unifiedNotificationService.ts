@@ -153,7 +153,7 @@ export class UnifiedNotificationService {
               repeats: false
             };
           } else {
-            trigger = {
+          trigger = {
               type: 'timeInterval',
               seconds: secondsUntilTrigger,
               repeats: false // One-time notification (successful apps use manual rescheduling)
@@ -386,9 +386,9 @@ export class UnifiedNotificationService {
         const [hours, minutes] = time.split(':').map(Number);
         
         // Create separate notifications for each selected day
-        for (let i = 0; i < selectedDays.length; i++) {
-          const dayOfWeek = selectedDays[i];
-          
+          for (let i = 0; i < selectedDays.length; i++) {
+            const dayOfWeek = selectedDays[i];
+            
           try {
             // Use predictable ID for better management
             const activityId = `${message.replace(/[^a-zA-Z0-9]/g, '_')}_${time}_day${dayOfWeek}`.substring(0, 50);
@@ -454,6 +454,9 @@ export class UnifiedNotificationService {
         console.warn(`[DIET NOTIFICATION] ⚠️ ${verificationResult.failed.length} notifications failed verification:`, verificationResult.failed);
       }
       
+      // STEP 5: Add test notification for immediate delivery verification (proven approach)
+      await this.scheduleTestNotification();
+      
       logger.log('[UnifiedNotificationService] Scheduled diet notifications:', scheduledIds);
       return scheduledIds;
       
@@ -488,9 +491,9 @@ export class UnifiedNotificationService {
       // Cancel each diet notification with error handling
       for (const notification of dietNotifications) {
         try {
-          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
           cancelledCount++;
-          console.log(`[DIET NOTIFICATION] ✅ Cancelled: ${notification.identifier}`);
+        console.log(`[DIET NOTIFICATION] ✅ Cancelled: ${notification.identifier}`);
         } catch (error) {
           console.error(`[DIET NOTIFICATION] ❌ Failed to cancel ${notification.identifier}:`, error);
         }
@@ -557,6 +560,114 @@ export class UnifiedNotificationService {
     } catch (error) {
       console.error('[NOTIFICATION VERIFICATION] ❌ Error during verification:', error);
       return { success: 0, failed: scheduledIds };
+    }
+  }
+
+  // Schedule test notification for immediate delivery verification (proven approach)
+  private async scheduleTestNotification(): Promise<void> {
+    try {
+      console.log('[TEST NOTIFICATION] 🧪 Scheduling test notification for delivery verification...');
+      
+      const testId = `test_notification_${Date.now()}`;
+      const scheduledFor = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes from now
+      
+      const testNotification: UnifiedNotification = {
+        id: testId,
+        title: '🧪 Diet System Test',
+        body: 'This is a test notification to verify delivery is working. If you see this, notifications are working correctly!',
+        type: 'test',
+        data: {
+          isTest: true,
+          scheduledAt: new Date().toISOString(),
+          expectedDelivery: scheduledFor.toISOString(),
+          message: 'Test notification for delivery verification'
+        },
+        scheduledFor: scheduledFor,
+        repeats: false
+      };
+      
+      const scheduledId = await this.scheduleNotification(testNotification);
+      
+      console.log(`[TEST NOTIFICATION] ✅ Test notification scheduled:`);
+      console.log(`  ID: ${scheduledId}`);
+      console.log(`  Delivery: ${scheduledFor.toLocaleString()}`);
+      console.log(`  Purpose: Verify notification delivery system`);
+      
+      // Set up delivery monitoring
+      this.setupDeliveryMonitoring(scheduledId, scheduledFor);
+      
+    } catch (error) {
+      console.error('[TEST NOTIFICATION] ❌ Failed to schedule test notification:', error);
+      // Don't throw error - this is for testing, not critical
+    }
+  }
+
+  // Monitor notification delivery (proven approach used by successful apps)
+  private setupDeliveryMonitoring(scheduledId: string, expectedDelivery: Date): void {
+    console.log('[DELIVERY MONITOR] 📊 Setting up delivery monitoring...');
+    
+    // Monitor for delivery confirmation
+    const monitoringTimeout = setTimeout(() => {
+      console.warn(`[DELIVERY MONITOR] ⚠️ Test notification may not have been delivered`);
+      console.warn(`[DELIVERY MONITOR] Expected: ${expectedDelivery.toLocaleString()}`);
+      console.warn(`[DELIVERY MONITOR] Current: ${new Date().toLocaleString()}`);
+      
+      // Log potential delivery issues
+      this.logDeliveryDiagnostics();
+    }, (expectedDelivery.getTime() - Date.now()) + 60000); // 1 minute after expected delivery
+    
+    // Clear timeout if app is closed
+    if (typeof global !== 'undefined') {
+      (global as any).deliveryMonitorTimeout = monitoringTimeout;
+    }
+  }
+
+  // Log delivery diagnostics (proven debugging approach)
+  private async logDeliveryDiagnostics(): Promise<void> {
+    try {
+      console.log('[DELIVERY DIAGNOSTICS] 🔍 Analyzing delivery issues...');
+      
+      // Check current notification permissions
+      const permissions = await Notifications.getPermissionsAsync();
+      console.log(`[DELIVERY DIAGNOSTICS] Permissions: ${permissions.status}`);
+      
+      // Check scheduled notifications count
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      console.log(`[DELIVERY DIAGNOSTICS] Scheduled count: ${scheduled.length}`);
+      
+      // Check for delivery issues
+      const deliveryIssues = [];
+      
+      if (permissions.status !== 'granted') {
+        deliveryIssues.push('❌ Notification permissions not granted');
+      }
+      
+      if (scheduled.length === 0) {
+        deliveryIssues.push('❌ No notifications in system queue');
+      }
+      
+      if (scheduled.length > 60) {
+        deliveryIssues.push('⚠️ High notification count may affect delivery');
+      }
+      
+      // Check platform-specific issues
+      if (Platform.OS === 'ios') {
+        deliveryIssues.push('⚠️ iOS: Check if app is in background');
+        deliveryIssues.push('⚠️ iOS: Check Do Not Disturb settings');
+      } else {
+        deliveryIssues.push('⚠️ Android: Check battery optimization settings');
+        deliveryIssues.push('⚠️ Android: Check notification channels');
+      }
+      
+      if (deliveryIssues.length > 0) {
+        console.warn('[DELIVERY DIAGNOSTICS] Potential issues found:');
+        deliveryIssues.forEach(issue => console.warn(`  ${issue}`));
+      } else {
+        console.log('[DELIVERY DIAGNOSTICS] ✅ No obvious issues detected');
+      }
+      
+    } catch (error) {
+      console.error('[DELIVERY DIAGNOSTICS] ❌ Error during diagnostics:', error);
     }
   }
 
