@@ -590,7 +590,7 @@ async def log_food_item(request: FoodLogRequest):
                     utc_time = datetime.utcnow()
                     user_local_time = utc_time - timedelta(minutes=request.timezoneOffset)
                     today = user_local_time.strftime('%Y-%m-%d')
-                    logger.info(f"[FOOD LOG] Using user's local date for daily reset: {today} (offset: {request.timezoneOffset}min)")
+                    logger.info(f"[FOOD LOG] Using user's local date for daily reset: UTC {utc_time} - {request.timezoneOffset}min = {user_local_time} -> {today}")
                 else:
                     today = datetime.now().strftime('%Y-%m-%d')
                     logger.info(f"[FOOD LOG] Using server date for daily reset: {today}")
@@ -658,13 +658,15 @@ async def log_food_item(request: FoodLogRequest):
             servingSize=request.servingSize
         )
         def log_food_in_db():
-            # CRITICAL FIX: Use user's local time by applying timezone offset
+            # CRITICAL FIX: Use user's local time by applying timezone offset correctly
             if request.timezoneOffset is not None:
-                # Frontend provides timezone offset in minutes (e.g., -480 for PST)
+                # JavaScript getTimezoneOffset() returns minutes to subtract from UTC to get local time
+                # For PST: getTimezoneOffset() = 480 (UTC - 480 minutes = PST)
+                # For EDT: getTimezoneOffset() = 240 (UTC - 240 minutes = EDT)
                 utc_time = datetime.utcnow()
                 local_time = utc_time - timedelta(minutes=request.timezoneOffset)
                 log_entry.timestamp = local_time
-                logger.info(f"[FOOD LOG] Using user's local time (offset {request.timezoneOffset}min): {log_entry.timestamp}")
+                logger.info(f"[FOOD LOG] Using user's local time: UTC {utc_time} - {request.timezoneOffset}min = {log_entry.timestamp}")
             else:
                 # Fallback to server time if no timezone provided
                 log_entry.timestamp = datetime.now()
