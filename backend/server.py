@@ -583,7 +583,7 @@ async def log_food_item(request: FoodLogRequest):
             if user_doc.exists:
                 user_data = user_doc.to_dict()
                 last_food_log_date = user_data.get("lastFoodLogDate")
-                today = datetime.utcnow().strftime('%Y-%m-%d')
+                today = datetime.now().strftime('%Y-%m-%d')
                 
                 if last_food_log_date != today:
                     logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
@@ -648,11 +648,13 @@ async def log_food_item(request: FoodLogRequest):
             servingSize=request.servingSize
         )
         def log_food_in_db():
-            log_entry.timestamp = datetime.utcnow()
+            # CRITICAL FIX: Use local time instead of UTC for user-friendly experience
+            log_entry.timestamp = datetime.now()
+            logger.info(f"[FOOD LOG] Using local timestamp: {log_entry.timestamp}")
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
-            # Delete food logs older than 7 days
-            seven_days_ago = datetime.utcnow() - timedelta(days=7)
+            # Delete food logs older than 7 days (using local time)
+            seven_days_ago = datetime.now() - timedelta(days=7)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
             old_logs = list(old_logs_query.stream())
             for doc in old_logs:
@@ -676,9 +678,10 @@ async def get_food_log_summary(user_id: str):
             logger.error("[SUMMARY] Firebase is not available, returning service unavailable")
             raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
         
-        # Simplified version without timeout handling
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # CRITICAL FIX: Use local time instead of UTC for consistent user experience
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
+        logger.info(f"[SUMMARY] Using local time - today: {today}, start_of_week: {start_of_week}")
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
         # Use datetime object for query, not isoformat string
@@ -799,8 +802,10 @@ async def get_food_log_summary(user_id: str):
 async def _get_food_log_summary_internal(user_id: str, loop):
     """Internal function to get food log summary with better error handling"""
     try:
+        # CRITICAL FIX: Use local time consistently
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
+        logger.info(f"[SUMMARY INTERNAL] Using local time - today: {today}, start_of_week: {start_of_week}")
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
         
         # Use datetime object for query, not isoformat string
@@ -1274,7 +1279,7 @@ async def log_workout_item(log: dict):
             "duration": original_duration,  # Store the original duration value
             "sets": sets,
             "reps": reps,
-            "date": date or datetime.utcnow().isoformat(),
+            "date": date or datetime.now().isoformat(),
             "calories": nutrition["calories"],
             "protein": 0, # No protein/fat burned in this simplified model
             "fat": 0 # No protein/fat burned in this simplified model
@@ -3597,7 +3602,7 @@ async def reset_daily_data(userId: str):
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get today's date in UTC
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
         # Clear today's food logs to reset daily nutritional values
