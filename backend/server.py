@@ -99,6 +99,8 @@ class FoodLogRequest(BaseModel):
     calories: Optional[float] = None
     protein: Optional[float] = None
     fat: Optional[float] = None
+    # Timezone offset from frontend (in minutes, e.g., -480 for PST)
+    timezoneOffset: Optional[int] = None
 
 class FoodLog(BaseModel):
     userId: str
@@ -583,7 +585,15 @@ async def log_food_item(request: FoodLogRequest):
             if user_doc.exists:
                 user_data = user_doc.to_dict()
                 last_food_log_date = user_data.get("lastFoodLogDate")
-                today = datetime.now().strftime('%Y-%m-%d')
+                # Use user's timezone for daily reset if available
+                if request.timezoneOffset is not None:
+                    utc_time = datetime.utcnow()
+                    user_local_time = utc_time - timedelta(minutes=request.timezoneOffset)
+                    today = user_local_time.strftime('%Y-%m-%d')
+                    logger.info(f"[FOOD LOG] Using user's local date for daily reset: {today} (offset: {request.timezoneOffset}min)")
+                else:
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    logger.info(f"[FOOD LOG] Using server date for daily reset: {today}")
                 
                 if last_food_log_date != today:
                     logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
@@ -648,13 +658,26 @@ async def log_food_item(request: FoodLogRequest):
             servingSize=request.servingSize
         )
         def log_food_in_db():
-            # CRITICAL FIX: Use local time instead of UTC for user-friendly experience
-            log_entry.timestamp = datetime.now()
-            logger.info(f"[FOOD LOG] Using local timestamp: {log_entry.timestamp}")
+            # CRITICAL FIX: Use user's local time by applying timezone offset
+            if request.timezoneOffset is not None:
+                # Frontend provides timezone offset in minutes (e.g., -480 for PST)
+                utc_time = datetime.utcnow()
+                local_time = utc_time - timedelta(minutes=request.timezoneOffset)
+                log_entry.timestamp = local_time
+                logger.info(f"[FOOD LOG] Using user's local time (offset {request.timezoneOffset}min): {log_entry.timestamp}")
+            else:
+                # Fallback to server time if no timezone provided
+                log_entry.timestamp = datetime.now()
+                logger.info(f"[FOOD LOG] Using server local time (no timezone provided): {log_entry.timestamp}")
+                
             firestore_db.collection(f"users/{user_id}/food_logs").add(log_entry.dict())
             logger.info(f"[FOOD LOG] Written to Firestore: {log_entry.dict()}")
-            # Delete food logs older than 7 days (using local time)
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            
+            # Delete food logs older than 7 days (using same time calculation)
+            if request.timezoneOffset is not None:
+                seven_days_ago = local_time - timedelta(days=7)
+            else:
+                seven_days_ago = datetime.now() - timedelta(days=7)
             old_logs_query = firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", "<", seven_days_ago)
             old_logs = list(old_logs_query.stream())
             for doc in old_logs:

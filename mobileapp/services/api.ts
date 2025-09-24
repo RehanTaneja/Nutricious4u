@@ -541,11 +541,15 @@ export async function getNutritionData(foodName: string, quantity: string): Prom
 
 export const logFood = async (userId: string, foodName: string, servingSize: string = "100", nutrition?: {calories: number, protein: number, fat: number}) => {
   try {
-    const payload = nutrition 
-      ? { userId, foodName, servingSize, calories: nutrition.calories, protein: nutrition.protein, fat: nutrition.fat }
-      : { userId, foodName, servingSize };
+    // CRITICAL FIX: Include user's timezone offset for consistent local time handling
+    const timezoneOffset = new Date().getTimezoneOffset(); // Returns offset in minutes
     
-    logger.log('[logFood] Request payload:', payload);
+    const payload = nutrition 
+      ? { userId, foodName, servingSize, calories: nutrition.calories, protein: nutrition.protein, fat: nutrition.fat, timezoneOffset }
+      : { userId, foodName, servingSize, timezoneOffset };
+    
+    logger.log('[logFood] Request payload with timezone:', payload);
+    logger.log(`[logFood] User timezone offset: ${timezoneOffset} minutes (${timezoneOffset / 60} hours)`);
     const response = await enhancedApi.post('/food/log', payload);
     logger.log('[logFood] Response:', response.data);
     return response.data;
