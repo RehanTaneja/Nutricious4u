@@ -49,6 +49,7 @@ import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
 import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
+import { DietService } from './services/dietService';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -1345,83 +1346,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
-    if (isFreeUser) {
-      console.log('[DashboardScreen] Showing upgrade modal for free user');
-      setShowUpgradeModal(true);
-      return;
-    }
     
-    try {
-      // Force refresh diet data before opening
-      console.log('[DashboardScreen] Refreshing diet data before opening PDF...');
-      if (!userId) {
-        Alert.alert('Error', 'User not authenticated. Please log in again.');
-        return;
-      }
-      
-      // Force refresh by adding cache busting parameter
-      const dietData = await getUserDiet(userId);
-      console.log('[DashboardScreen] Refreshed diet data:', dietData);
-      
-      // Always update local state with fresh data to ensure we have the latest
-      setDietPdfUrl(dietData.dietPdfUrl || null);
-      
-      if (dietData.dietPdfUrl) {
-        console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
-        
-        // Generate PDF URL with cache busting
-        const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
-        console.log('Final PDF URL for browser:', pdfUrl);
-        
-        if (pdfUrl) {
-          // Open PDF in browser instead of in-app viewer
-          const canOpen = await Linking.canOpenURL(pdfUrl);
-          if (canOpen) {
-            await Linking.openURL(pdfUrl);
-            console.log('PDF opened in browser successfully');
-          } else {
-            console.log('Cannot open URL:', pdfUrl);
-            Alert.alert('Error', 'Cannot open PDF. Please try again.');
-          }
-        } else {
-          Alert.alert('Error', 'No PDF URL available.');
-        }
-      } else {
-        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician.');
-      }
-    } catch (e) {
-      console.error('Failed to open diet PDF:', e);
-      Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
-    }
+    // Use the shared DietService for consistent behavior
+    await DietService.openDiet(isFreeUser, setShowUpgradeModal, setDietPdfUrl);
   };
 
-  // Helper function to get the correct PDF URL with cache busting
-  const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
-    if (!pdfUrl) return null;
-    
-    console.log('getPdfUrlWithCacheBusting called with pdfUrl:', pdfUrl);
-    
-    // If it's a Firebase Storage signed URL, use it directly
-    if (pdfUrl.startsWith('https://storage.googleapis.com/')) {
-      console.log('Using Firebase Storage URL directly:', pdfUrl);
-      return pdfUrl;
-    }
-    
-    // If it's a firestore:// URL, use the backend endpoint
-    if (pdfUrl.startsWith('firestore://')) {
-      const userId = firebase.auth().currentUser?.uid;
-      const url = `${API_URL}/users/${userId}/diet/pdf`;
-      console.log('Using backend endpoint for firestore URL:', url);
-      return url;
-    }
-    
-    // If it's just a filename or any other format, use the backend endpoint with cache busting
-    const userId = firebase.auth().currentUser?.uid;
-    const timestamp = Date.now(); // Add cache busting parameter
-    const url = `${API_URL}/users/${userId}/diet/pdf?t=${timestamp}`;
-    console.log('Using backend endpoint for filename with cache busting:', url);
-    return url;
-  };
 
   // Helper function to get the correct PDF URL (legacy function for backward compatibility)
   const getPdfUrl = () => {
@@ -3048,7 +2977,6 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
           )}
           style={{marginTop: 16}}
         />
-        {showConfetti && <ConfettiCannon count={80} origin={{x: 200, y: 0}} fadeOut explosionSpeed={350} fallSpeed={2500} />} 
       </View>
       {showSuccess && (
         <View style={{
@@ -3116,7 +3044,6 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
               }}
               onPress={() => {
                 setShowSuccess(false);
-                setConfetti(false);
                 setSuccessFood(null);
                 navigation.reset({
                   index: 0,
@@ -3128,15 +3055,6 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
               <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>Close</Text>
             </TouchableOpacity>
           </View>
-          {confetti && (
-            <ConfettiCannon
-              count={80}
-              origin={{ x: 200, y: 0 }}
-              fadeOut
-              explosionSpeed={400}
-              fallSpeed={2500}
-            />
-          )}
         </View>
       )}
     </SafeAreaView>
@@ -5040,72 +4958,8 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (data?.type === 'diet' || data?.type === 'new_diet' || data?.type === 'diet_reminder') {
         console.log('[DIET NOTIFICATION CLICK] 🍎 User clicked diet notification - opening diet...');
         
-        try {
-          const userId = auth.currentUser?.uid;
-          if (!userId) {
-            console.error('[DIET NOTIFICATION CLICK] No user ID available');
-            Alert.alert('Error', 'User not authenticated. Please log in again.');
-            return;
-          }
-          
-          // Use EXACT SAME logic as "My Diet" button for reliability
-          console.log('[DIET NOTIFICATION CLICK] Fetching user diet using robust approach...');
-          const dietData = await getUserDiet(userId);
-          
-          if (dietData && dietData.dietPdfUrl) {
-            console.log('[DIET NOTIFICATION CLICK] ✅ Found diet PDF:', dietData.dietPdfUrl);
-            
-            // Helper function to get the correct PDF URL with cache busting (same as Dashboard)
-            const getPdfUrlWithCacheBusting = (pdfUrl: string): string => {
-              if (!pdfUrl) return '';
-              
-              try {
-                const url = new URL(pdfUrl);
-                url.searchParams.set('t', Date.now().toString());
-                url.searchParams.set('cache', 'false');
-                return url.toString();
-              } catch (error) {
-                console.error('[DIET NOTIFICATION CLICK] Error processing PDF URL:', error);
-                // Fallback: add simple cache busting
-                const separator = pdfUrl.includes('?') ? '&' : '?';
-                return `${pdfUrl}${separator}t=${Date.now()}&cache=false`;
-              }
-            };
-            
-            // Generate PDF URL with cache busting (SAME AS MY DIET BUTTON)
-            const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
-            console.log('[DIET NOTIFICATION CLICK] Generated PDF URL with cache busting:', pdfUrl);
-            
-            if (pdfUrl) {
-              // Use SAME validation and opening logic as "My Diet" button
-              const canOpen = await Linking.canOpenURL(pdfUrl);
-              if (canOpen) {
-                await Linking.openURL(pdfUrl);
-                console.log('[DIET NOTIFICATION CLICK] ✅ Diet opened in browser successfully');
-              } else {
-                console.log('[DIET NOTIFICATION CLICK] Cannot open URL:', pdfUrl);
-                Alert.alert('Error', 'Cannot open PDF. Please try again or use the My Diet button.');
-              }
-            } else {
-              console.log('[DIET NOTIFICATION CLICK] No processed PDF URL available');
-              Alert.alert('Error', 'No PDF URL available. Please try again or use the My Diet button.');
-            }
-          } else {
-            console.warn('[DIET NOTIFICATION CLICK] No diet PDF found for user');
-            Alert.alert(
-              'No Diet Available',
-              'You don\'t have a diet plan yet. Please contact your dietician.',
-              [{ text: 'OK' }]
-            );
-          }
-        } catch (error) {
-          console.error('[DIET NOTIFICATION CLICK] Error opening diet:', error);
-          Alert.alert(
-            'Error',
-            'Failed to open diet plan. Please try again or use the My Diet button.',
-            [{ text: 'OK' }]
-          );
-        }
+        // Use the shared DietService for consistent behavior with My Diet button
+        await DietService.openDiet();
       }
       
       // Handle diet reminder interactions (legacy)
