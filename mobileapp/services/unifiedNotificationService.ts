@@ -143,7 +143,7 @@ export class UnifiedNotificationService {
             trigger = {
               type: 'timeInterval',
               seconds: 60, // Minimum 1 minute delay
-              repeats: false // Fallback mode - no repeats for immediate scheduling
+              repeats: false // One-time notification (we'll handle recurrence manually)
             };
           } else if (secondsUntilTrigger < 60) {
             // If less than 1 minute, add buffer
@@ -156,14 +156,14 @@ export class UnifiedNotificationService {
             trigger = {
               type: 'timeInterval',
               seconds: secondsUntilTrigger,
-              repeats: true // FIXED: Enable automatic weekly repeats (proven to work)
+              repeats: false // One-time notification (successful apps use manual rescheduling)
             };
           }
           
           console.log(`[NOTIFICATION TRIGGER] ✅ Using reliable timeInterval trigger:`);
           console.log(`  Scheduled for: ${scheduledFor.toLocaleString()}`);
           console.log(`  Seconds until: ${secondsUntilTrigger > 0 ? secondsUntilTrigger : 60}`);
-          console.log(`  Repeats: ${secondsUntilTrigger > 0 ? 'true (automatic weekly)' : 'false (fallback)'}`);
+          console.log(`  Repeats: false (manual rescheduling for reliability)`);
         } else {
           // For non-diet notifications, use timeInterval as before
           const secondsUntilTrigger = Math.floor((scheduledFor.getTime() - Date.now()) / 1000);
@@ -355,103 +355,74 @@ export class UnifiedNotificationService {
     return fallback;
   }
 
-  // Schedule diet notifications using EXACT same approach as working custom reminders
+  // Schedule diet notifications using PROVEN CUSTOM NOTIFICATION APPROACH (simplified and reliable)
   async scheduleDietNotifications(notifications: any[]): Promise<string[]> {
     try {
       const scheduledIds: string[] = [];
       
-      console.log(`[DIET NOTIFICATION] 📋 Using SAME approach as working custom reminders`);
-      console.log(`[DIET NOTIFICATION] Processing ${notifications.length} notifications...`);
-      
-      // STEP 1: Cancel existing diet notifications (clean approach like custom reminders)
-      console.log('[DIET NOTIFICATION] 🧹 Cancelling existing diet notifications...');
-      const cancelledCount = await this.cancelExistingDietNotifications();
+      // STEP 1: Cancel ALL existing diet notifications using simple approach
+      console.log('[DIET NOTIFICATION] 🧹 Cancelling all existing diet notifications...');
+      const cancelledCount = await this.cancelNotificationsByType('diet');
       console.log(`[DIET NOTIFICATION] ✅ Cancelled ${cancelledCount} existing notifications`);
       
-      // Filter valid notifications
+      // STEP 2: Filter valid notifications (same validation as custom notifications)
       const validNotifications = notifications.filter((notif: any) => {
         const hasValidDays = notif.selectedDays && notif.selectedDays.length > 0;
         const isActive = notif.isActive !== false;
         const hasTime = notif.time && notif.message;
         
         if (!hasValidDays || !isActive || !hasTime) {
-          console.log(`[DIET NOTIFICATION] ⏭️ Skipping invalid: ${notif.message?.substring(0, 30)}...`);
+          console.log(`[DIET NOTIFICATION] ⏭️ Skipping invalid: ${notif.message?.substring(0, 30)}... (Days: ${notif.selectedDays}, Active: ${isActive})`);
           return false;
         }
         return true;
       });
       
-      console.log(`[DIET NOTIFICATION] 📋 Scheduling ${validNotifications.length} valid notifications`);
+      console.log(`[DIET NOTIFICATION] 📋 Scheduling ${validNotifications.length}/${notifications.length} valid notifications using proven approach`);
       
-      // Schedule each notification using EXACT same logic as custom reminders
+      // STEP 3: Schedule each notification using PROVEN CUSTOM NOTIFICATION LOGIC
       for (const notification of validNotifications) {
         const { message, time, selectedDays } = notification;
-        const [hours, minutes] = time.split(':').map(Number);
         
         try {
-          // CRITICAL: Use SAME calculation as custom reminders
-          const nextOccurrence = this.calculateNextOccurrence(hours, minutes, selectedDays);
-          const secondsUntilTrigger = Math.max(1, Math.floor((nextOccurrence.getTime() - Date.now()) / 1000));
-
-          // CRITICAL: Use SAME content format as custom reminders
-          const notificationContent = {
-            title: 'Diet Reminder',
-            body: message,
-            sound: 'default',
-            priority: 'high',
-            autoDismiss: false,
-            sticky: false,
-            data: {
-              type: 'diet',
-              message,
-              time,
-              selectedDays,
-              userId: auth.currentUser?.uid,
-              scheduledFor: nextOccurrence.toISOString(),
-              platform: Platform.OS,
-              extractedFrom: notification.extractedFrom
-            }
-          };
-
-          // CRITICAL: Use SAME direct scheduling as custom reminders (no wrapper!)
-          const scheduledId = await Notifications.scheduleNotificationAsync({
-            content: notificationContent,
-            trigger: {
-              type: 'timeInterval',
-              seconds: secondsUntilTrigger,
-              repeats: false // SAME as custom reminders
-            }
+          // Use the EXACT SAME approach as custom notifications (proven working)
+          const scheduledId = await this.scheduleCustomNotification({
+            message: message,
+            time: time,
+            selectedDays: selectedDays,
+            type: 'diet' // Changed from 'custom' to 'diet' to maintain diet-specific behavior
           });
-
+          
           scheduledIds.push(scheduledId);
           
-          console.log('[DIET NOTIFICATION] ✅ Scheduled using custom reminder approach:');
+          console.log('[DIET NOTIFICATION] ✅ Scheduled using proven approach:');
           console.log('  Message:', message);
           console.log('  Time:', time);
-          console.log('  Selected Days:', selectedDays);
-          console.log('  Next Occurrence:', nextOccurrence.toLocaleString());
-          console.log('  Seconds Until:', secondsUntilTrigger);
+          console.log('  Days:', selectedDays);
           console.log('  Scheduled ID:', scheduledId);
+          console.log('  Platform:', Platform.OS);
           
         } catch (schedulingError) {
-          console.error(`[DIET NOTIFICATION] ❌ Failed to schedule: ${message}`, schedulingError);
-          // Continue with other notifications
+          console.error(`[DIET NOTIFICATION] ❌ Failed to schedule: ${message} at ${time}`, schedulingError);
+          // Continue with other notifications instead of failing completely
         }
       }
       
-      console.log(`[DIET NOTIFICATION] ✅ Successfully scheduled ${scheduledIds.length} notifications using custom reminder approach`);
+      console.log(`[DIET NOTIFICATION] ✅ Successfully scheduled ${scheduledIds.length} notifications using proven custom approach`);
+      logger.log('[UnifiedNotificationService] Scheduled diet notifications:', scheduledIds);
       return scheduledIds;
       
     } catch (error) {
       console.error('[DIET NOTIFICATION] ❌ Failed to schedule notifications:', error);
+      logger.error('[UnifiedNotificationService] Failed to schedule diet notifications:', error);
       throw error;
     }
   }
 
-  // Cancel existing diet notifications (selective cleanup for reliability)
-  private async cancelExistingDietNotifications(): Promise<number> {
+  // Cancel ALL diet notifications (comprehensive cleanup - proven approach)
+  private async cancelAllDietNotifications(): Promise<number> {
     try {
-      console.log('[DIET NOTIFICATION] 🧹 Starting selective diet notification cleanup...');
+      console.log('[DIET NOTIFICATION] 🧹 Starting comprehensive diet notification cleanup...');
       const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
       
       // Find all diet-related notifications using multiple criteria

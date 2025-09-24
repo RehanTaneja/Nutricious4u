@@ -5044,34 +5044,57 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           const userId = auth.currentUser?.uid;
           if (!userId) {
             console.error('[DIET NOTIFICATION CLICK] No user ID available');
+            Alert.alert('Error', 'User not authenticated. Please log in again.');
             return;
           }
           
-          // Get user's diet and open it directly (same as "My Diet" button)
-          console.log('[DIET NOTIFICATION CLICK] Fetching user diet...');
+          // Use EXACT SAME logic as "My Diet" button for reliability
+          console.log('[DIET NOTIFICATION CLICK] Fetching user diet using robust approach...');
           const dietData = await getUserDiet(userId);
           
           if (dietData && dietData.dietPdfUrl) {
-            console.log('[DIET NOTIFICATION CLICK] ✅ Opening diet PDF:', dietData.dietPdfUrl);
+            console.log('[DIET NOTIFICATION CLICK] ✅ Found diet PDF:', dietData.dietPdfUrl);
             
-            // Open the diet PDF directly (same logic as My Diet button)
-            if (Platform.OS === 'ios') {
-              // iOS: Use WebView for better compatibility
-              navigation.navigate('WebView', {
-                url: dietData.dietPdfUrl,
-                title: 'My Diet Plan'
-              });
+            // Helper function to get the correct PDF URL with cache busting (same as Dashboard)
+            const getPdfUrlWithCacheBusting = (pdfUrl: string): string => {
+              if (!pdfUrl) return '';
+              
+              try {
+                const url = new URL(pdfUrl);
+                url.searchParams.set('t', Date.now().toString());
+                url.searchParams.set('cache', 'false');
+                return url.toString();
+              } catch (error) {
+                console.error('[DIET NOTIFICATION CLICK] Error processing PDF URL:', error);
+                // Fallback: add simple cache busting
+                const separator = pdfUrl.includes('?') ? '&' : '?';
+                return `${pdfUrl}${separator}t=${Date.now()}&cache=false`;
+              }
+            };
+            
+            // Generate PDF URL with cache busting (SAME AS MY DIET BUTTON)
+            const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
+            console.log('[DIET NOTIFICATION CLICK] Generated PDF URL with cache busting:', pdfUrl);
+            
+            if (pdfUrl) {
+              // Use SAME validation and opening logic as "My Diet" button
+              const canOpen = await Linking.canOpenURL(pdfUrl);
+              if (canOpen) {
+                await Linking.openURL(pdfUrl);
+                console.log('[DIET NOTIFICATION CLICK] ✅ Diet opened in browser successfully');
+              } else {
+                console.log('[DIET NOTIFICATION CLICK] Cannot open URL:', pdfUrl);
+                Alert.alert('Error', 'Cannot open PDF. Please try again or use the My Diet button.');
+              }
             } else {
-              // Android: Use Linking
-              await Linking.openURL(dietData.dietPdfUrl);
+              console.log('[DIET NOTIFICATION CLICK] No processed PDF URL available');
+              Alert.alert('Error', 'No PDF URL available. Please try again or use the My Diet button.');
             }
-            
-            console.log('[DIET NOTIFICATION CLICK] ✅ Diet opened successfully');
           } else {
             console.warn('[DIET NOTIFICATION CLICK] No diet PDF found for user');
             Alert.alert(
               'No Diet Available',
-              'No diet plan found. Please contact your dietician to upload a diet plan.',
+              'You don\'t have a diet plan yet. Please contact your dietician.',
               [{ text: 'OK' }]
             );
           }
