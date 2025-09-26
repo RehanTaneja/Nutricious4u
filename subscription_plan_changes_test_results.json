@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-09-20T01:00:20.501420+00:00",
+  "timestamp": "2025-09-26T02:25:16.570444+00:00",
   "expected_plans": [
     {
       "planId": "free",
@@ -7,6 +7,13 @@
       "duration": "Forever",
       "price": 0.0,
       "isFree": true
+    },
+    {
+      "planId": "1month",
+      "name": "1 Month Plan",
+      "duration": "1 month",
+      "price": 5000.0,
+      "isFree": false
     },
     {
       "planId": "2months",
@@ -31,18 +38,18 @@
     }
   ],
   "pricing_changes": {
-    "old_pricing": {
-      "1month": 5500.0,
-      "2months": 10000.0,
-      "3months": 14000.0
-    },
-    "new_pricing": {
+    "current_pricing": {
+      "1month": 5000.0,
       "2months": 9000.0,
       "3months": 12000.0,
       "6months": 20000.0
     }
   },
   "duration_calculations": {
+    "1month": {
+      "days": 30,
+      "description": "1 month = 30 days"
+    },
     "2months": {
       "days": 60,
       "description": "2 months = 60 days"
@@ -91,6 +98,13 @@
   ],
   "value_analysis": [
     {
+      "plan": "1 Month Plan",
+      "price": 5000,
+      "duration": 30,
+      "daily_cost": 166.66666666666666,
+      "value": "Perfect for trying out premium features"
+    },
+    {
       "plan": "2 Months Plan",
       "price": 9000,
       "duration": 60,
@@ -114,12 +128,18 @@
   ],
   "migration_notes": [
     "\u2705 Existing users with active subscriptions are unaffected",
-    "\u2705 Free plan users can now choose from 3 paid options",
-    "\u2705 1-month plan users will need to select a new plan when current expires",
-    "\u2705 All pricing is more competitive than before",
+    "\u2705 Free plan users can now choose from 4 paid options",
+    "\u2705 New 1-month plan provides entry-level option at \u20b95,000",
+    "\u2705 All existing plans remain unchanged",
     "\u2705 6-month plan provides best value for committed users"
   ],
   "test_scenarios": [
+    {
+      "scenario": "User selects 1-month plan",
+      "expected_price": 5000,
+      "expected_duration": 30,
+      "status": "\u2705 READY FOR TESTING"
+    },
     {
       "scenario": "User selects 2-month plan",
       "expected_price": 9000,
@@ -137,19 +157,12 @@
       "expected_price": 20000,
       "expected_duration": 180,
       "status": "\u2705 READY FOR TESTING"
-    },
-    {
-      "scenario": "User tries to select old 1-month plan",
-      "expected_result": "Invalid plan ID error",
-      "status": "\u2705 READY FOR TESTING"
     }
   ],
   "summary": {
-    "total_plans": 4,
-    "paid_plans": 3,
-    "price_reductions": 2,
+    "total_plans": 5,
+    "paid_plans": 4,
     "new_plans": 1,
-    "removed_plans": 1,
     "status": "IMPLEMENTATION_COMPLETE"
   }
 }

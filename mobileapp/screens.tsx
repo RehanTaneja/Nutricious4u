@@ -6,6 +6,7 @@ import {
   TextInput, 
   Alert, 
   TouchableOpacity,
+  Pressable,
   SafeAreaView,
   KeyboardTypeOptions,
   FlatList,
@@ -49,7 +50,6 @@ import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
 import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
-import { DietService } from './services/dietService';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -62,7 +62,34 @@ const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = 
   { label: 'Extra Active', value: 'extra active', multiplier: 1.9 },
 ];
 
-function calculateTargets({ weight, height, age, gender, activityLevel }:{ weight?: number, height?: number, age?: number, gender?: string, activityLevel?: string }) {
+// Global helper function to get the correct PDF URL with cache busting
+const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
+  if (!pdfUrl) return null;
+  
+  console.log('getPdfUrlWithCacheBusting called with pdfUrl:', pdfUrl);
+  
+  // If it's a Firebase Storage signed URL, use it directly
+  if (pdfUrl.startsWith('https://storage.googleapis.com/')) {
+    console.log('Using Firebase Storage URL directly:', pdfUrl);
+    return pdfUrl;
+  }
+  
+  // If it's a firestore:// URL, use the backend endpoint
+  if (pdfUrl.startsWith('firestore://')) {
+    const fileName = pdfUrl.replace('firestore://', '');
+    const backendUrl = `${API_URL}/diet/pdf/${fileName}?t=${Date.now()}`;
+    console.log('Using backend URL with cache busting:', backendUrl);
+    return backendUrl;
+  }
+  
+  // For any other URL, add cache busting parameter
+  const separator = pdfUrl.includes('?') ? '&' : '?';
+  const urlWithCacheBusting = `${pdfUrl}${separator}t=${Date.now()}`;
+  console.log('Added cache busting to URL:', urlWithCacheBusting);
+  return urlWithCacheBusting;
+};
+
+function calculateTargets({ weight, height, age, gender, activityLevel, goalWeight }:{ weight?: number, height?: number, age?: number, gender?: string, activityLevel?: string, goalWeight?: number }) {
   if (!weight || !height || !age || !gender || !activityLevel) return { calories: 0, protein: 0, fat: 0 };
   const multiplier = ACTIVITY_LEVELS.find(l => l.value === activityLevel)?.multiplier || 1.2;
   let bmr = 0;
@@ -71,7 +98,20 @@ function calculateTargets({ weight, height, age, gender, activityLevel }:{ weigh
   } else {
     bmr = 10 * weight + 6.25 * height - 5 * age - 161;
   }
-  const calories = Math.round((bmr * multiplier) - 500); // Subtract 500 for calorie deficit
+  
+  // Calculate TDEE (Total Daily Energy Expenditure)
+  const tdee = bmr * multiplier;
+  
+  // Determine calorie goal based on weight goal
+  let calories;
+  if (goalWeight && goalWeight > weight) {
+    // Weight gain: Add 500 calories surplus for ~1 pound per week gain
+    calories = Math.round(tdee + 500);
+  } else {
+    // Weight loss: Subtract 350 calories deficit
+    calories = Math.round(tdee - 350);
+  }
+  
   const protein = Math.round(weight * 0.8); // 0.8g per kg
   const fat = Math.round((calories * 0.25) / 9); // 25% calories from fat
   return { calories, protein, fat };
@@ -1346,11 +1386,55 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
+    if (isFreeUser) {
+      console.log('[DashboardScreen] Showing upgrade modal for free user');
+      setShowUpgradeModal(true);
+      return;
+    }
     
-    // Use the shared DietService for consistent behavior
-    await DietService.openDiet(isFreeUser, setShowUpgradeModal, setDietPdfUrl);
+    try {
+      // Force refresh diet data before opening
+      console.log('[DashboardScreen] Refreshing diet data before opening PDF...');
+      if (!userId) {
+        Alert.alert('Error', 'User not authenticated. Please log in again.');
+        return;
+      }
+      
+      // Force refresh by adding cache busting parameter
+      const dietData = await getUserDiet(userId);
+      console.log('[DashboardScreen] Refreshed diet data:', dietData);
+      
+      // Always update local state with fresh data to ensure we have the latest
+      setDietPdfUrl(dietData.dietPdfUrl || null);
+      
+      if (dietData.dietPdfUrl) {
+        console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
+        
+        // Generate PDF URL with cache busting
+        const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
+        console.log('Final PDF URL for browser:', pdfUrl);
+        
+        if (pdfUrl) {
+          // Open PDF in browser instead of in-app viewer
+          const canOpen = await Linking.canOpenURL(pdfUrl);
+          if (canOpen) {
+            await Linking.openURL(pdfUrl);
+            console.log('PDF opened in browser successfully');
+          } else {
+            console.log('Cannot open URL:', pdfUrl);
+            Alert.alert('Error', 'Cannot open PDF. Please try again.');
+          }
+        } else {
+          Alert.alert('Error', 'No PDF URL available.');
+        }
+      } else {
+        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician.');
+      }
+    } catch (e) {
+      console.error('Failed to open diet PDF:', e);
+      Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
+    }
   };
-
 
   // Helper function to get the correct PDF URL (legacy function for backward compatibility)
   const getPdfUrl = () => {
@@ -2440,16 +2524,26 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         animationType="fade"
         transparent
         onRequestClose={() => setShowFoodSuccess(false)}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={false}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.successPopup}>
+        <View style={styles.modalOverlay} pointerEvents="box-none">
+          <View style={styles.successPopup} pointerEvents="box-none">
             <Text style={styles.successTitle}>🎉 Food successfully logged!</Text>
-            <TouchableOpacity
-              style={styles.bigCloseButton}
-              onPress={() => setShowFoodSuccess(false)}
+            <Pressable
+              style={({ pressed }) => [
+                styles.bigCloseButton,
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={() => {
+                console.log('Food success popup close button pressed!'); // Debug log
+                setShowFoodSuccess(false);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              pointerEvents="box-only"
             >
               <Text style={styles.bigCloseButtonText}>Close</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -2528,16 +2622,26 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         animationType="fade"
         transparent
         onRequestClose={() => setShowWorkoutSuccess(false)}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={false}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.successPopup}>
+        <View style={styles.modalOverlay} pointerEvents="box-none">
+          <View style={styles.successPopup} pointerEvents="box-none">
             <Text style={styles.successTitle}>🎉 Workout successfully logged!</Text>
-            <TouchableOpacity
-              style={styles.bigCloseButton}
-              onPress={() => setShowWorkoutSuccess(false)}
+            <Pressable
+              style={({ pressed }) => [
+                styles.bigCloseButton,
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={() => {
+                console.log('Workout success popup close button pressed!'); // Debug log
+                setShowWorkoutSuccess(false);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              pointerEvents="box-only"
             >
               <Text style={styles.bigCloseButtonText}>Close</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -3487,9 +3591,10 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         age: Number(age),
         gender,
         activityLevel,
+        goalWeight: Number(goalWeight),
       })
     );
-  }, [currentWeight, height, age, gender, activityLevel]);
+  }, [currentWeight, height, age, gender, activityLevel, goalWeight]);
 
   const handleSubmit = async () => {
     console.log('[handleSubmit] Starting submission...');
@@ -3679,10 +3784,11 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
         age: Number(editProfile.age),
         gender: editProfile.gender,
         activityLevel: editProfile.activityLevel,
+        goalWeight: Number(editProfile.goalWeight),
       })
     );
     setHasUnsavedChanges(true);
-  }, [editProfile?.currentWeight, editProfile?.height, editProfile?.age, editProfile?.gender, editProfile?.activityLevel, editProfile?.caloriesBurnedGoal]);
+  }, [editProfile?.currentWeight, editProfile?.height, editProfile?.age, editProfile?.gender, editProfile?.activityLevel, editProfile?.goalWeight, editProfile?.caloriesBurnedGoal]);
 
   const handleSave = async () => {
     if (!editProfile) return;
@@ -4958,8 +5064,45 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       if (data?.type === 'diet' || data?.type === 'new_diet' || data?.type === 'diet_reminder') {
         console.log('[DIET NOTIFICATION CLICK] 🍎 User clicked diet notification - opening diet...');
         
-        // Use the shared DietService for consistent behavior with My Diet button
-        await DietService.openDiet();
+        // Use direct browser opening (same as My Diet button)
+        try {
+          const userId = auth.currentUser?.uid;
+          if (!userId) {
+            Alert.alert('Error', 'User not authenticated. Please log in again.');
+            return;
+          }
+          
+          // Force refresh diet data before opening
+          const dietData = await getUserDiet(userId);
+          console.log('[DIET NOTIFICATION] Refreshed diet data:', dietData);
+          
+          if (dietData.dietPdfUrl) {
+            console.log('[DIET NOTIFICATION] Opening diet PDF with URL:', dietData.dietPdfUrl);
+            
+            // Generate PDF URL with cache busting
+            const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
+            console.log('[DIET NOTIFICATION] Final PDF URL for browser:', pdfUrl);
+            
+            if (pdfUrl) {
+              // Open PDF in browser
+              const canOpen = await Linking.canOpenURL(pdfUrl);
+              if (canOpen) {
+                await Linking.openURL(pdfUrl);
+                console.log('[DIET NOTIFICATION] PDF opened in browser successfully');
+              } else {
+                console.log('[DIET NOTIFICATION] Cannot open URL:', pdfUrl);
+                Alert.alert('Error', 'Cannot open PDF. Please try again.');
+              }
+            } else {
+              Alert.alert('Error', 'No PDF URL available.');
+            }
+          } else {
+            Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician.');
+          }
+        } catch (e) {
+          console.error('[DIET NOTIFICATION] Failed to open diet PDF:', e);
+          Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
+        }
       }
       
       // Handle diet reminder interactions (legacy)
@@ -6396,13 +6539,26 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
         animationType="fade"
         transparent
         onRequestClose={() => setShowSuccess(false)}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={false}
       >
-        <View style={styles.successPopupOverlay}>
-          <View style={styles.successPopup}>
+        <View style={styles.successPopupOverlay} pointerEvents="box-none">
+          <View style={styles.successPopup} pointerEvents="box-none">
             <Text style={styles.successTitle}>{successMessage}</Text>
-            <TouchableOpacity style={styles.bigCloseButton} onPress={() => setShowSuccess(false)}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.bigCloseButton,
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={() => {
+                console.log('Routine success popup close button pressed!'); // Debug log
+                setShowSuccess(false);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              pointerEvents="box-only"
+            >
               <Text style={styles.bigCloseButtonText}>Close</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -9997,6 +10153,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   const getPlanName = (planId: string) => {
     switch (planId) {
+      case '1month': return '1 Month Plan';
       case '2months': return '2 Months Plan';
       case '3months': return '3 Months Plan';
       case '6months': return '6 Months Plan';
@@ -10007,6 +10164,13 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const { isFreeUser } = useSubscription();
   
   const availablePlans = [
+    {
+      planId: '1month',
+      name: '1 Month Plan',
+      duration: '1 month',
+      price: 5000,
+      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect for trying out premium features'
+    },
     {
       planId: '2months',
       name: '2 Months Plan',

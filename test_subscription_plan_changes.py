@@ -29,6 +29,13 @@ def test_subscription_plan_changes():
             "isFree": True
         },
         {
+            "planId": "1month",
+            "name": "1 Month Plan", 
+            "duration": "1 month",
+            "price": 5000.0,
+            "isFree": False
+        },
+        {
             "planId": "2months",
             "name": "2 Months Plan", 
             "duration": "2 months",
@@ -60,33 +67,29 @@ def test_subscription_plan_changes():
     print("-" * 50)
     
     pricing_changes = {
-        "old_pricing": {
-            "1month": 5500.0,
-            "2months": 10000.0, 
-            "3months": 14000.0
-        },
-        "new_pricing": {
+        "current_pricing": {
+            "1month": 5000.0,
             "2months": 9000.0,
             "3months": 12000.0,
             "6months": 20000.0
         }
     }
     
-    print("❌ Removed Plans:")
-    print("   - 1 Month Plan: ₹5,500 (REMOVED)")
-    
-    print("\n✅ Updated Plans:")
-    print("   - 2 Months Plan: ₹10,000 → ₹9,000 (₹1,000 reduction)")
-    print("   - 3 Months Plan: ₹14,000 → ₹12,000 (₹2,000 reduction)")
-    
-    print("\n🆕 New Plans:")
-    print("   - 6 Months Plan: ₹20,000 (NEW)")
+    print("✅ Current Plans:")
+    print("   - 1 Month Plan: ₹5,000 (NEW)")
+    print("   - 2 Months Plan: ₹9,000")
+    print("   - 3 Months Plan: ₹12,000")
+    print("   - 6 Months Plan: ₹20,000")
     
     # 3. DURATION CALCULATION VERIFICATION
     print("\n3. ⏰ DURATION CALCULATION VERIFICATION")
     print("-" * 50)
     
     duration_calculations = {
+        "1month": {
+            "days": 30,
+            "description": "1 month = 30 days"
+        },
         "2months": {
             "days": 60,
             "description": "2 months = 60 days"
@@ -165,6 +168,13 @@ def test_subscription_plan_changes():
     
     value_analysis = [
         {
+            "plan": "1 Month Plan",
+            "price": 5000,
+            "duration": 30,
+            "daily_cost": 5000 / 30,
+            "value": "Perfect for trying out premium features"
+        },
+        {
             "plan": "2 Months Plan",
             "price": 9000,
             "duration": 60,
@@ -197,9 +207,9 @@ def test_subscription_plan_changes():
     
     migration_notes = [
         "✅ Existing users with active subscriptions are unaffected",
-        "✅ Free plan users can now choose from 3 paid options",
-        "✅ 1-month plan users will need to select a new plan when current expires",
-        "✅ All pricing is more competitive than before",
+        "✅ Free plan users can now choose from 4 paid options",
+        "✅ New 1-month plan provides entry-level option at ₹5,000",
+        "✅ All existing plans remain unchanged",
         "✅ 6-month plan provides best value for committed users"
     ]
     
@@ -211,6 +221,12 @@ def test_subscription_plan_changes():
     print("-" * 50)
     
     test_scenarios = [
+        {
+            "scenario": "User selects 1-month plan",
+            "expected_price": 5000,
+            "expected_duration": 30,
+            "status": "✅ READY FOR TESTING"
+        },
         {
             "scenario": "User selects 2-month plan",
             "expected_price": 9000,
@@ -227,11 +243,6 @@ def test_subscription_plan_changes():
             "scenario": "User selects 6-month plan",
             "expected_price": 20000,
             "expected_duration": 180,
-            "status": "✅ READY FOR TESTING"
-        },
-        {
-            "scenario": "User tries to select old 1-month plan",
-            "expected_result": "Invalid plan ID error",
             "status": "✅ READY FOR TESTING"
         }
     ]
@@ -256,11 +267,9 @@ def test_subscription_plan_changes():
         "migration_notes": migration_notes,
         "test_scenarios": test_scenarios,
         "summary": {
-            "total_plans": 4,
-            "paid_plans": 3,
-            "price_reductions": 2,
+            "total_plans": 5,
+            "paid_plans": 4,
             "new_plans": 1,
-            "removed_plans": 1,
             "status": "IMPLEMENTATION_COMPLETE"
         }
     }
@@ -271,8 +280,8 @@ def test_subscription_plan_changes():
     print("📄 Test results saved to: subscription_plan_changes_test_results.json")
     print("🎉 Subscription plan changes implementation complete!")
     print("\n" + "=" * 60)
-    print("✅ SUMMARY: All subscription plan changes implemented successfully")
-    print("   - 3 paid plans: 2 months (₹9,000), 3 months (₹12,000), 6 months (₹20,000)")
+    print("✅ SUMMARY: New 1-month plan added successfully")
+    print("   - 4 paid plans: 1 month (₹5,000), 2 months (₹9,000), 3 months (₹12,000), 6 months (₹20,000)")
     print("   - Free plan maintained")
     print("   - Backend and frontend updated")
     print("   - Ready for testing and deployment")

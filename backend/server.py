@@ -144,7 +144,7 @@ class UserProfile(BaseModel):
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
     # Subscription fields
-    subscriptionPlan: Optional[str] = None  # '2months', '3months', '6months'
+    subscriptionPlan: Optional[str] = None  # '1month', '2months', '3months', '6months'
     subscriptionStartDate: Optional[str] = None
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = 0.0
@@ -3100,6 +3100,7 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         
         # Get plan details
         plan_prices = {
+            "1month": 5000.0,
             "2months": 9000.0,
             "3months": 12000.0,
             "6months": 20000.0
@@ -3394,6 +3395,23 @@ async def get_subscription_plans():
                     "Priority customer support"
                 ],
                 "isFree": False
+            },
+            {
+                "planId": "1month", 
+                "name": "1 Month Plan",
+                "duration": "1 month",
+                "price": 5000.0,
+                "description": "Access to premium features for 1 month",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning",
+                    "Progress reports"
+                ],
+                "isFree": False
             }
         ]
         return {"plans": plans}
@@ -3409,6 +3427,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         # Get plan details
         plan_prices = {
+            "1month": 5000.0,
             "2months": 9000.0,
             "3months": 12000.0,
             "6months": 20000.0
@@ -3434,7 +3453,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         from datetime import datetime, timedelta
         
         start_date = datetime.now()
-        if request.planId == "2months":
+        if request.planId == "1month":
+            end_date = start_date + timedelta(days=30)
+        elif request.planId == "2months":
             end_date = start_date + timedelta(days=60)
         elif request.planId == "3months":
             end_date = start_date + timedelta(days=90)
@@ -3664,6 +3685,7 @@ async def add_subscription_amount(userId: str, planId: str):
         
         # Get plan details
         plan_prices = {
+            "1month": 5000.0,
             "2months": 9000.0,
             "3months": 12000.0,
             "6months": 20000.0
