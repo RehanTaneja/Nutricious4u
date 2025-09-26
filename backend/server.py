@@ -3570,10 +3570,32 @@ async def cancel_subscription(userId: str):
         # Cancel diet notifications when subscription is cancelled
         cancelled_notifications_count = 0
         try:
-            logger.info(f"[CANCEL SUBSCRIPTION] Cancelling diet notifications for user {userId}")
-            scheduler = get_notification_scheduler(firestore_db)
-            cancelled_notifications_count = await scheduler.cancel_user_notifications(userId)
-            logger.info(f"[CANCEL SUBSCRIPTION] Cancelled {cancelled_notifications_count} diet notifications for user {userId}")
+            logger.info(f"[CANCEL SUBSCRIPTION] Marking diet notifications as cancelled for user {userId}")
+            
+            # Since backend scheduler is disabled, mark notifications as cancelled in Firestore
+            user_notifications_ref = firestore_db.collection("user_notifications").document(userId)
+            user_notifications_doc = user_notifications_ref.get()
+            
+            if user_notifications_doc.exists:
+                notifications_data = user_notifications_doc.to_dict()
+                diet_notifications = notifications_data.get("diet_notifications", [])
+                
+                # Mark all notifications as cancelled
+                for notification in diet_notifications:
+                    notification["status"] = "cancelled"
+                    notification["cancelled_at"] = datetime.now().isoformat()
+                
+                # Update the document
+                user_notifications_ref.update({
+                    "diet_notifications": diet_notifications,
+                    "cancelled_at": datetime.now().isoformat()
+                })
+                
+                cancelled_notifications_count = len(diet_notifications)
+                logger.info(f"[CANCEL SUBSCRIPTION] Marked {cancelled_notifications_count} diet notifications as cancelled in Firestore for user {userId}")
+            else:
+                logger.info(f"[CANCEL SUBSCRIPTION] No diet notifications found for user {userId}")
+                
         except Exception as e:
             logger.error(f"[CANCEL SUBSCRIPTION] Error cancelling diet notifications for user {userId}: {e}")
             # Don't fail the subscription cancellation if notification cancellation fails

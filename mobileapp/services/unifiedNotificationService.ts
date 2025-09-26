@@ -360,12 +360,8 @@ export class UnifiedNotificationService {
     try {
       const scheduledIds: string[] = [];
       
-      // STEP 1: Cancel ALL existing diet notifications using simple approach
-      console.log('[DIET NOTIFICATION] 🧹 Cancelling all existing diet notifications...');
-      const cancelledCount = await this.cancelNotificationsByType('diet');
-      console.log(`[DIET NOTIFICATION] ✅ Cancelled ${cancelledCount} existing notifications`);
-      
-      // STEP 2: Filter valid notifications (same validation as custom notifications)
+      // STEP 1: Filter valid notifications (same validation as custom notifications)
+      // Note: Cancellation is now handled by the caller to avoid double cancellation
       const validNotifications = notifications.filter((notif: any) => {
         const hasValidDays = notif.selectedDays && notif.selectedDays.length > 0;
         const isActive = notif.isActive !== false;
@@ -380,7 +376,7 @@ export class UnifiedNotificationService {
       
       console.log(`[DIET NOTIFICATION] 📋 Scheduling ${validNotifications.length}/${notifications.length} valid notifications using proven approach`);
       
-      // STEP 3: Schedule each notification using PROVEN CUSTOM NOTIFICATION LOGIC
+      // STEP 2: Schedule each notification using PROVEN CUSTOM NOTIFICATION LOGIC
       for (const notification of validNotifications) {
         const { message, time, selectedDays } = notification;
         
@@ -420,7 +416,7 @@ export class UnifiedNotificationService {
   }
 
   // Cancel ALL diet notifications (comprehensive cleanup - proven approach)
-  private async cancelAllDietNotifications(): Promise<number> {
+  async cancelAllDietNotifications(): Promise<number> {
     try {
       console.log('[DIET NOTIFICATION] 🧹 Starting comprehensive diet notification cleanup...');
       const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();

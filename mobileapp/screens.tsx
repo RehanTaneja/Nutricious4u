@@ -2027,9 +2027,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       if (response.notifications && response.notifications.length > 0) {
         try {
-          // Cancel existing diet notifications
+          // Cancel existing diet notifications using comprehensive method
           const unifiedNotificationService = (await import('./services/unifiedNotificationService')).default;
-          const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+          const cancelledCount = await unifiedNotificationService.cancelAllDietNotifications();
           
           console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
           
@@ -4822,9 +4822,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           console.log('[Diet Notifications] Initializing notification service...');
           await unifiedNotificationService.initialize();
           
-          // Cancel existing diet notifications
+          // Cancel existing diet notifications using comprehensive method
           console.log('[Diet Notifications] Cancelling existing notifications...');
-          const cancelledCount = await unifiedNotificationService.cancelNotificationsByType('diet');
+          const cancelledCount = await unifiedNotificationService.cancelAllDietNotifications();
           console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
           
           // ENHANCED: Filter and validate notifications before scheduling
@@ -10174,13 +10174,20 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
+      // Cancel diet notifications locally first using comprehensive method
+      console.log('[Subscription Cancellation] Cancelling local diet notifications...');
+      const unifiedNotificationService = require('./services/unifiedNotificationService').default;
+      const localCancelledCount = await unifiedNotificationService.cancelAllDietNotifications();
+      console.log(`[Subscription Cancellation] Cancelled ${localCancelledCount} local diet notifications`);
+
       const result = await cancelSubscription(userId);
       if (result.success) {
         setShowCancelSubscriptionModal(false);
-        // Show custom green success popup with notification count
+        // Show custom green success popup with total notification count
         let successMessage = result.message;
-        if (result.cancelled_notifications && result.cancelled_notifications > 0) {
-          successMessage += `\n\n${result.cancelled_notifications} diet notifications have been cancelled.`;
+        const totalCancelled = localCancelledCount + (result.cancelled_notifications || 0);
+        if (totalCancelled > 0) {
+          successMessage += `\n\n${totalCancelled} diet notifications have been cancelled.`;
         }
         setCancelSuccessMessage(successMessage);
         setShowCancelSuccessModal(true);
