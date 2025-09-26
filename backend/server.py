@@ -3114,7 +3114,9 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         from datetime import datetime, timedelta
         
         start_date = datetime.now()
-        if current_plan == "2months":
+        if current_plan == "1month":
+            end_date = start_date + timedelta(days=30)
+        elif current_plan == "2months":
             end_date = start_date + timedelta(days=60)
         elif current_plan == "3months":
             end_date = start_date + timedelta(days=90)
