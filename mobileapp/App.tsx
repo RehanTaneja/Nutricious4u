@@ -179,7 +179,7 @@ function AppContent() {
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
-  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser } = useSubscription();
+  const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser, refreshSubscriptionStatus } = useSubscription();
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state
@@ -293,6 +293,8 @@ function AppContent() {
         setShowSubscriptionPopup(false);
         setSelectedPlan(null);
         setHasActiveSubscription(true);
+        // Refresh the subscription context to update UI immediately
+        refreshSubscriptionStatus();
         // App state updated successfully
         console.log('[Subscription] App state updated successfully');
       }

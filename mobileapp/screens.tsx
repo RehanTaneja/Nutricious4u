@@ -9879,7 +9879,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   const [error, setError] = useState<string | null>(null);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const { isFreeUser } = useSubscription();
+  const { isFreeUser, refreshSubscriptionStatus } = useSubscription();
 
   // Only allow free users to access this screen
   useEffect(() => {
@@ -9932,6 +9932,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         // Show custom green success popup
         setShowSuccessPopup(true);
         setSuccessMessage(response.message);
+        // Refresh the subscription context to update UI immediately
+        refreshSubscriptionStatus();
       } else {
         setError(response.message || 'Failed to subscribe');
       }
@@ -10125,6 +10127,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         setSelectedPlan(null);
         // Refresh subscription status
         fetchSubscriptionStatus();
+        // Refresh the subscription context to update UI immediately
+        refreshSubscriptionStatus();
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to select plan');
