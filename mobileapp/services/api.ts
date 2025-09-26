@@ -1139,12 +1139,19 @@ export const resetDailyData = async (userId: string) => {
   return response.data;
 };
 
-export const sendMessageNotification = async (recipientUserId: string, message: string, senderName: string) => {
+export const sendMessageNotification = async (
+  recipientUserId: string, 
+  message: string, 
+  senderName: string,
+  senderUserId: string,
+  senderIsDietician: boolean
+) => {
   const response = await enhancedApi.post('/notifications/send-message', {
     recipientUserId,
     message,
     senderName,
-    senderUserId: recipientUserId // Simplified for now
+    senderUserId,
+    senderIsDietician
   });
   return response.data;
 };

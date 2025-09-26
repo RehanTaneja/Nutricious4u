@@ -10,6 +10,7 @@ import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionCo
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView } from 'react-native';
 import { getUserProfile, createUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { 
   API_KEY, 
   AUTH_DOMAIN, 
@@ -1424,8 +1425,10 @@ const styles = StyleSheet.create({
 
 export default function App() {
   return (
-    <SubscriptionProvider>
-      <AppContent />
-    </SubscriptionProvider>
+    <SafeAreaProvider>
+      <SubscriptionProvider>
+        <AppContent />
+      </SubscriptionProvider>
+    </SafeAreaProvider>
   );
 }

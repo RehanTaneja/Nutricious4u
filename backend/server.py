@@ -2561,6 +2561,7 @@ async def send_message_notification(request: dict):
         message = request.get("message", "")
         sender_name = request.get("senderName", "")
         sender_user_id = request.get("senderUserId")
+        sender_is_dietician = request.get("senderIsDietician", False)
         
         if not recipient_user_id:
             raise HTTPException(status_code=400, detail="recipientUserId is required")
@@ -2568,37 +2569,14 @@ async def send_message_notification(request: dict):
         if not message:
             raise HTTPException(status_code=400, detail="message is required")
         
-        # Get recipient's notification token
-        user_token = get_user_notification_token(recipient_user_id)
-        if not user_token:
-            logger.warning(f"No notification token found for user {recipient_user_id}")
-            return {"message": "Notification prepared but not sent (no notification token found)"}
-        
-        # Determine notification title based on recipient type
-        if recipient_user_id == "dietician":
-            # User is sending to dietician - get dietician's token
-            dietician_token = get_dietician_notification_token()
-            if dietician_token:
-                title = f"New message from {sender_name or 'User'}"
-                success = send_push_notification(
-                    token=dietician_token,
-                    title=title,
-                    body=message,
-                    data={
-                        "type": "message_notification",
-                        "fromUser": sender_user_id,
-                        "message": message,
-                        "senderName": sender_name
-                    }
-                )
-                if success:
-                    return {"message": "Message notification sent to dietician successfully"}
-                else:
-                    return {"message": "Failed to send message notification to dietician"}
-            else:
-                return {"message": "Dietician notification token not found"}
-        else:
-            # Dietician is sending to specific user
+        # Determine notification routing based on sender role
+        if sender_is_dietician:
+            # Dietician is sending to user - send to user
+            user_token = get_user_notification_token(recipient_user_id)
+            if not user_token:
+                logger.warning(f"No notification token found for user {recipient_user_id}")
+                return {"message": "Notification prepared but not sent (no notification token found)"}
+            
             title = "New message from dietician"
             success = send_push_notification(
                 token=user_token,
@@ -2607,14 +2585,38 @@ async def send_message_notification(request: dict):
                 data={
                     "type": "message_notification",
                     "fromDietician": True,
+                    "senderId": sender_user_id,
                     "message": message,
                     "senderName": sender_name
                 }
             )
             if success:
-                return {"message": "Message notification sent successfully"}
+                return {"message": "Message notification sent to user successfully"}
             else:
-                return {"message": "Failed to send message notification"}
+                return {"message": "Failed to send message notification to user"}
+        else:
+            # User is sending to dietician - send to dietician
+            dietician_token = get_dietician_notification_token()
+            if not dietician_token:
+                logger.warning("No dietician notification token found")
+                return {"message": "Dietician notification token not found"}
+            
+            title = f"New message from {sender_name or 'User'}"
+            success = send_push_notification(
+                token=dietician_token,
+                title=title,
+                body=message,
+                data={
+                    "type": "message_notification",
+                    "fromUser": sender_user_id,
+                    "message": message,
+                    "senderName": sender_name
+                }
+            )
+            if success:
+                return {"message": "Message notification sent to dietician successfully"}
+            else:
+                return {"message": "Failed to send message notification to dietician"}
                 
     except HTTPException:
         raise

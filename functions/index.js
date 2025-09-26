@@ -83,44 +83,45 @@ exports.onNewMessage = functions.firestore
       }
     });
 
-// 2. On appointment scheduled/canceled
-exports.onAppointmentChange = functions.firestore
-    .document("appointments/{appointmentId}")
-    .onWrite(async (change, context) => {
-    // Only notify on create or delete
-      const appointment = change.after.exists ?
-      change.after.data() :
-      change.before.data();
-      const isCreated = change.after.exists && !change.before.exists;
-      const isDeleted = !change.after.exists && change.before.exists;
+// 2. On appointment scheduled/canceled - DISABLED to prevent duplicate notifications
+// The frontend already handles appointment notifications via local scheduling
+// exports.onAppointmentChange = functions.firestore
+//     .document("appointments/{appointmentId}")
+//     .onWrite(async (change, context) => {
+//     // Only notify on create or delete
+//       const appointment = change.after.exists ?
+//       change.after.data() :
+//       change.before.data();
+//       const isCreated = change.after.exists && !change.before.exists;
+//       const isDeleted = !change.after.exists && change.before.exists;
 
-      // Get dietician's push token
-      const dieticianDoc = await admin
-          .firestore()
-          .collection("user_profiles")
-          .doc(DIETICIAN_USER_ID)
-          .get();
-      const expoPushToken = dieticianDoc.get("expoPushToken");
+//       // Get dietician's push token
+//       const dieticianDoc = await admin
+//           .firestore()
+//           .collection("user_profiles")
+//           .doc(DIETICIAN_USER_ID)
+//           .get();
+//       const expoPushToken = dieticianDoc.get("expoPushToken");
 
-      if (expoPushToken) {
-        let title;
-        let body;
-        if (isCreated) {
-          title = "New Appointment Scheduled";
-          body =
-          `${appointment.userName} scheduled an appointment for ` +
-          `${appointment.date} at ${appointment.timeSlot}`;
-        } else if (isDeleted) {
-          title = "Appointment Cancelled";
-          body =
-          `${appointment.userName} cancelled their appointment for ` +
-          `${appointment.date} at ${appointment.timeSlot}`;
-        }
-        if (title && body) {
-          await sendPushNotification(expoPushToken, title, body);
-        }
-      }
-    });
+//       if (expoPushToken) {
+//         let title;
+//         let body;
+//         if (isCreated) {
+//           title = "New Appointment Scheduled";
+//           body =
+//           `${appointment.userName} scheduled an appointment for ` +
+//           `${appointment.date} at ${appointment.timeSlot}`;
+//         } else if (isDeleted) {
+//           title = "Appointment Cancelled";
+//           body =
+//           `${appointment.userName} cancelled their appointment for ` +
+//           `${appointment.date} at ${appointment.timeSlot}`;
+//         }
+//         if (title && body) {
+//           await sendPushNotification(expoPushToken, title, body);
+//         }
+//       }
+//     });
 
 // 3. On break added: cancel overlapping appointments and notify users
 exports.onBreakAdded = functions.firestore

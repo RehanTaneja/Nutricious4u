@@ -7,7 +7,6 @@ import {
   Alert, 
   TouchableOpacity,
   Pressable,
-  SafeAreaView,
   KeyboardTypeOptions,
   FlatList,
   ActivityIndicator,
@@ -38,6 +37,7 @@ import { useSubscription } from './contexts/SubscriptionContext';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { EmailAuthProvider } from 'firebase/auth';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import firebase from './services/firebase';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
@@ -6782,6 +6782,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   const [loading, setLoading] = React.useState(false);
   const flatListRef = React.useRef<FlatList<any>>(null);
   const [inputHeight, setInputHeight] = React.useState(40);
+  const insets = useSafeAreaInsets();
   const [userId, setUserId] = React.useState<string | null>(null);
   const [isDietician, setIsDietician] = React.useState(false);
   const [chatUserProfile, setChatUserProfile] = React.useState<any>(null);
@@ -7100,8 +7101,14 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
   // Send push notification via backend (for cross-device messaging)
   const sendPushNotification = async (recipientUserId: string, message: string, senderName: string = '') => {
     try {
+      const currentUserId = auth.currentUser?.uid;
+      if (!currentUserId) {
+        console.error('[Message Notifications] No current user ID available');
+        return;
+      }
+      
       // Use enhanced API wrapper instead of direct fetch
-      await sendMessageNotification(recipientUserId, message, senderName || 'User');
+      await sendMessageNotification(recipientUserId, message, senderName || 'User', currentUserId, isDietician);
       
       console.log('[Message Notifications] Push notification sent successfully');
     } catch (error) {
@@ -7254,7 +7261,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
         <View style={dieticianMessageStyles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={dieticianMessageStyles.backButton}>
@@ -7269,7 +7276,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
           keyExtractor={item => item.id || item.heading}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 10, flexGrow: 1 }}
         />
-        <View style={dieticianMessageStyles.inputContainer}>
+        <View style={[dieticianMessageStyles.inputContainer, { paddingBottom: insets.bottom + 10 }]}>
           <TextInput
             style={[dieticianMessageStyles.chatInput, { height: Math.max(40, Math.min(inputHeight, 120)) }]}
             value={inputText}
@@ -7320,7 +7327,8 @@ const dieticianMessageStyles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 10,
+    paddingTop: 10,
+    paddingHorizontal: 10,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
     backgroundColor: '#FFFFFF',

@@ -5,7 +5,6 @@ import {
   StyleSheet, 
   TextInput, 
   TouchableOpacity,
-  SafeAreaView,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
 import { Send } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
 import { sendChatbotMessage } from './services/api';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getUserProfileSafe, UserProfile } from './services/api';
 import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
@@ -38,6 +38,7 @@ export const ChatbotScreen = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [inputHeight, setInputHeight] = useState(40);
+  const insets = useSafeAreaInsets();
 
 
   useEffect(() => {
@@ -186,7 +187,7 @@ export const ChatbotScreen = () => {
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
         <FlatList
           ref={flatListRef}
@@ -195,7 +196,7 @@ export const ChatbotScreen = () => {
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 10 }}
         />
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 10 }]}>
           <TextInput
             style={[styles.chatInput, { height: Math.max(40, Math.min(inputHeight, 120)) }]}
             value={inputText}
@@ -224,7 +225,8 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 10,
+    paddingTop: 10,
+    paddingHorizontal: 10,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
     backgroundColor: '#FFFFFF',
