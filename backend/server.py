@@ -3565,6 +3565,17 @@ async def cancel_subscription(userId: str):
         if not user_data.get("isSubscriptionActive", False):
             raise HTTPException(status_code=400, detail="No active subscription to cancel")
         
+        # Cancel diet notifications when subscription is cancelled
+        cancelled_notifications_count = 0
+        try:
+            logger.info(f"[CANCEL SUBSCRIPTION] Cancelling diet notifications for user {userId}")
+            scheduler = get_notification_scheduler(firestore_db)
+            cancelled_notifications_count = await scheduler.cancel_user_notifications(userId)
+            logger.info(f"[CANCEL SUBSCRIPTION] Cancelled {cancelled_notifications_count} diet notifications for user {userId}")
+        except Exception as e:
+            logger.error(f"[CANCEL SUBSCRIPTION] Error cancelling diet notifications for user {userId}: {e}")
+            # Don't fail the subscription cancellation if notification cancellation fails
+        
         # Cancel subscription by setting it to inactive and clearing plan
         cancel_data = {
             "isSubscriptionActive": False,
@@ -3576,7 +3587,16 @@ async def cancel_subscription(userId: str):
         
         firestore_db.collection("user_profiles").document(userId).update(cancel_data)
         
-        return {"success": True, "message": "Subscription cancelled successfully. You are now on the free plan."}
+        # Include notification count in success message
+        message = f"Subscription cancelled successfully. You are now on the free plan."
+        if cancelled_notifications_count > 0:
+            message += f" {cancelled_notifications_count} diet notifications have been cancelled."
+        
+        return {
+            "success": True, 
+            "message": message,
+            "cancelled_notifications": cancelled_notifications_count
+        }
         
     except HTTPException as he:
         raise he

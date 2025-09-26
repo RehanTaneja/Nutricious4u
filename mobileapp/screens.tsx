@@ -44,6 +44,7 @@ import * as Notifications from 'expo-notifications';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
+import { dashboardCache } from './services/cache';
 
 
 import Markdown from 'react-native-markdown-display';
@@ -1485,25 +1486,30 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
 
 
-  // Fetch user profile for targets whenever focused - FIXED: removed problematic refresh dependency
+  // Fetch user profile for targets whenever focused - OPTIMIZED with caching while maintaining iOS safety
   useEffect(() => {
     if (!userId || !isFocused) return;
     
-    // Add debounce delay for iOS stability
+    // Add debounce delay for iOS stability (maintain existing safety)
     const delay = Platform.OS === 'ios' ? 300 : 0;
     
     const delayedFetch = setTimeout(async () => {
       try {
-        const profile = await getUserProfileSafe(userId);
+        // Use cached data with fallback to maintain iOS safety
+        const profile = await dashboardCache.getCachedData(
+          'userProfile',
+          userId,
+          () => getUserProfileSafe(userId)
+        );
         setUserProfile(profile);
         // Also set diet PDF URL to consolidate profile fetching
         if (profile) {
-          console.log('[Dashboard Debug] Profile fetched - dietPdfUrl:', profile.dietPdfUrl);
+          console.log('[Dashboard Debug] Profile fetched (cached) - dietPdfUrl:', profile.dietPdfUrl);
           setDietPdfUrl(profile.dietPdfUrl || null);
         }
       } catch (error) {
         console.error('[Dashboard Debug] Error fetching profile:', error);
-        // For iOS, don't crash on profile fetch errors
+        // For iOS, don't crash on profile fetch errors (maintain existing safety)
         if (Platform.OS === 'ios') {
           console.warn('[iOS Safety] Profile fetch failed, continuing with cached data');
         }
@@ -1541,7 +1547,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
 
 
-  // Fetch summary (nutrition) and workout calories for today - DELAYED to prevent conflict with login sequence
+  // Fetch summary (nutrition) and workout calories for today - OPTIMIZED with caching while maintaining iOS safety
   const fetchSummary = async () => {
     if (!userId) {
       setError('User not authenticated');
@@ -1551,19 +1557,23 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     setLoading(true);
     setError('');
     
-    console.log('[FETCH SUMMARY] 🔄 Starting summary fetch for user:', userId);
+    console.log('[FETCH SUMMARY] 🔄 Starting optimized summary fetch for user:', userId);
     console.log('[FETCH SUMMARY] Current time:', new Date().toLocaleString());
     
     try {
-      // SEQUENTIAL API calls to prevent 499 errors - don't use Promise.all
-      console.log('[FETCH SUMMARY] 📊 Calling getLogSummary API...');
-      const foodData = await getLogSummary(userId);
+      // Use cached data with fallback to maintain iOS safety
+      console.log('[FETCH SUMMARY] 📊 Calling getLogSummary API (with cache)...');
+      const foodData = await dashboardCache.getCachedData(
+        'logSummary',
+        userId,
+        () => getLogSummary(userId)
+      );
       
-      console.log('[FETCH SUMMARY] ✅ Food log summary received');
+      console.log('[FETCH SUMMARY] ✅ Food log summary received (cached)');
       console.log('[FETCH SUMMARY] Summary data:', {
         historyLength: foodData?.history?.length || 0,
         dailySummary: foodData?.daily_summary,
-        historyDates: foodData?.history?.map(item => item.day) || []
+        historyDates: foodData?.history?.map((item: any) => item.day) || []
       });
       
       // Log today's specific data
@@ -1577,12 +1587,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setSummary(foodData);
       console.log('[FETCH SUMMARY] ✅ Summary state updated');
       
-      // Add delay between API calls to prevent connection conflicts
+      // Add delay between API calls to prevent connection conflicts (maintain iOS safety)
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      console.log('[Dashboard] Fetching workout log summary...');
-      const workoutData = await getWorkoutLogSummary(userId);
-      console.log('[Dashboard] Workout log summary received:', workoutData);
+      console.log('[Dashboard] Fetching workout log summary (with cache)...');
+      const workoutData = await dashboardCache.getCachedData(
+        'workoutSummary',
+        userId,
+        () => getWorkoutLogSummary(userId)
+      );
+      console.log('[Dashboard] Workout log summary received (cached):', workoutData);
       setWorkoutSummary(workoutData);
       
       // Set burnedToday from workout summary for today
@@ -1593,11 +1607,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const workoutTodayDay = String(workoutTodayDate.getDate()).padStart(2, '0');
       const workoutToday = `${workoutTodayYear}-${workoutTodayMonth}-${workoutTodayDay}`;
       
-      const todayWorkout = workoutData.history.find((d) => d.day === workoutToday);
+      const todayWorkout = workoutData.history.find((d: any) => d.day === workoutToday);
       setBurnedToday(todayWorkout ? todayWorkout.calories : 0);
     } catch (e) {
       console.error('[Dashboard] Error fetching summary data:', e);
-      // Don't show error to user, just log it and continue
+      // Don't show error to user, just log it and continue (maintain existing behavior)
       setError('');
       // Set default values to prevent crashes
       setSummary({ 
@@ -1612,11 +1626,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }
   };
 
-  // Refresh summary after logging food or workout - DELAYED to prevent conflict with login sequence
+  // Refresh summary after logging food or workout - OPTIMIZED with cache cleanup
   useEffect(() => {
     if (isFocused && userId) {
-      // Only add delay on first load, not when returning to dashboard
+      // Clean up expired cache on first load
       const isFirstLoad = !summary;
+      if (isFirstLoad) {
+        dashboardCache.cleanupExpiredCache();
+        console.log('[Dashboard] ✅ Cleaned up expired cache');
+      }
+      
+      // Only add delay on first load, not when returning to dashboard
       const delay = isFirstLoad ? 1000 : 0; // Reduced delay, immediate on return
       
       const delayedFetch = setTimeout(() => {
@@ -1797,6 +1817,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         const logResult = await logFood(userId, pendingFoodData.name, pendingFoodData.quantity, confirmedNutrition);
         console.log('[Food Log] ✅ logFood API response:', logResult);
         
+        // Invalidate cache to ensure fresh data after logging food
+        await dashboardCache.invalidateCache('logSummary', userId);
+        console.log('[Food Log] ✅ Cache invalidated for logSummary');
+        
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
@@ -1868,6 +1892,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       const result = await logWorkout(workoutData);
       const caloriesBurned = result.calories || 0;
+      
+      // Invalidate cache to ensure fresh data after logging workout
+      await dashboardCache.invalidateCache('workoutSummary', userId);
+      console.log('[Workout Log] ✅ Cache invalidated for workoutSummary');
       
       // Update the calories burned tracker
       setBurnedToday(prev => {
@@ -10149,8 +10177,12 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       const result = await cancelSubscription(userId);
       if (result.success) {
         setShowCancelSubscriptionModal(false);
-        // Show custom green success popup
-        setCancelSuccessMessage(result.message);
+        // Show custom green success popup with notification count
+        let successMessage = result.message;
+        if (result.cancelled_notifications && result.cancelled_notifications > 0) {
+          successMessage += `\n\n${result.cancelled_notifications} diet notifications have been cancelled.`;
+        }
+        setCancelSuccessMessage(successMessage);
         setShowCancelSuccessModal(true);
         // Refresh subscription status
         fetchSubscriptionStatus();

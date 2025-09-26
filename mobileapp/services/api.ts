@@ -994,7 +994,7 @@ export const getSubscriptionStatus = async (userId: string): Promise<Subscriptio
   return response.data;
 };
 
-export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
+export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string; cancelled_notifications?: number }> => {
   const response = await enhancedApi.post(`/subscription/cancel/${userId}`);
   return response.data;
 };
