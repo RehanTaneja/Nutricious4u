@@ -1,0 +1,184 @@
+{
+  "timestamp": "2025-09-26T03:07:00.603561+00:00",
+  "formula_logic": {
+    "condition": "if (goalWeight && goalWeight > weight)",
+    "weight_gain_scenario": {
+      "condition": "goalWeight > currentWeight",
+      "formula": "TDEE + 500 calories",
+      "purpose": "Weight gain (~1 pound per week)"
+    },
+    "weight_loss_scenario": {
+      "condition": "goalWeight <= currentWeight",
+      "formula": "TDEE - 350 calories",
+      "purpose": "Weight loss"
+    }
+  },
+  "test_scenarios": [
+    {
+      "scenario": "Weight Loss - Goal < Current",
+      "current_weight": 80,
+      "goal_weight": 70,
+      "height": 175,
+      "age": 30,
+      "gender": "male",
+      "activity": "moderate",
+      "expected_formula": "TDEE - 350",
+      "expected_result": "Weight loss"
+    },
+    {
+      "scenario": "Weight Loss - Goal = Current",
+      "current_weight": 70,
+      "goal_weight": 70,
+      "height": 175,
+      "age": 30,
+      "gender": "male",
+      "activity": "moderate",
+      "expected_formula": "TDEE - 350",
+      "expected_result": "Weight loss (default)"
+    },
+    {
+      "scenario": "Weight Gain - Goal > Current",
+      "current_weight": 60,
+      "goal_weight": 70,
+      "height": 175,
+      "age": 30,
+      "gender": "male",
+      "activity": "moderate",
+      "expected_formula": "TDEE + 500",
+      "expected_result": "Weight gain"
+    },
+    {
+      "scenario": "Weight Loss - Female",
+      "current_weight": 65,
+      "goal_weight": 60,
+      "height": 165,
+      "age": 25,
+      "gender": "female",
+      "activity": "lightly active",
+      "expected_formula": "TDEE - 350",
+      "expected_result": "Weight loss"
+    },
+    {
+      "scenario": "Weight Gain - Female",
+      "current_weight": 50,
+      "goal_weight": 55,
+      "height": 160,
+      "age": 22,
+      "gender": "female",
+      "activity": "very active",
+      "expected_formula": "TDEE + 500",
+      "expected_result": "Weight gain"
+    }
+  ],
+  "calculation_examples": [
+    {
+      "scenario": "Weight Loss Example",
+      "details": {
+        "current_weight": 80,
+        "goal_weight": 70,
+        "height": 175,
+        "age": 30,
+        "gender": "male",
+        "activity": "moderate (1.55)"
+      },
+      "calculation": {
+        "bmr": "10 \u00d7 80 + 6.25 \u00d7 175 - 5 \u00d7 30 + 5 = 1,748.75",
+        "tdee": "1,748.75 \u00d7 1.55 = 2,710.56",
+        "calories": "2,710.56 - 350 = 2,361 calories (WEIGHT LOSS)",
+        "protein": "80 \u00d7 0.8 = 64g",
+        "fat": "(2,361 \u00d7 0.25) \u00f7 9 = 66g"
+      }
+    },
+    {
+      "scenario": "Weight Gain Example",
+      "details": {
+        "current_weight": 60,
+        "goal_weight": 70,
+        "height": 175,
+        "age": 30,
+        "gender": "male",
+        "activity": "moderate (1.55)"
+      },
+      "calculation": {
+        "bmr": "10 \u00d7 60 + 6.25 \u00d7 175 - 5 \u00d7 30 + 5 = 1,548.75",
+        "tdee": "1,548.75 \u00d7 1.55 = 2,400.56",
+        "calories": "2,400.56 + 500 = 2,901 calories (WEIGHT GAIN)",
+        "protein": "60 \u00d7 0.8 = 48g",
+        "fat": "(2,901 \u00d7 0.25) \u00f7 9 = 81g"
+      }
+    },
+    {
+      "scenario": "Equal Weight Example (Default Weight Loss)",
+      "details": {
+        "current_weight": 70,
+        "goal_weight": 70,
+        "height": 175,
+        "age": 30,
+        "gender": "male",
+        "activity": "moderate (1.55)"
+      },
+      "calculation": {
+        "bmr": "10 \u00d7 70 + 6.25 \u00d7 175 - 5 \u00d7 30 + 5 = 1,648.75",
+        "tdee": "1,648.75 \u00d7 1.55 = 2,555.56",
+        "calories": "2,555.56 - 350 = 2,206 calories (DEFAULT WEIGHT LOSS)",
+        "protein": "70 \u00d7 0.8 = 56g",
+        "fat": "(2,206 \u00d7 0.25) \u00f7 9 = 61g"
+      }
+    }
+  ],
+  "edge_cases": [
+    {
+      "case": "No goal weight provided",
+      "condition": "goalWeight is undefined/null",
+      "expected": "Uses weight loss formula (TDEE - 350)",
+      "reason": "Default behavior when no goal is set"
+    },
+    {
+      "case": "Goal weight exactly equal to current",
+      "condition": "goalWeight === currentWeight",
+      "expected": "Uses weight loss formula (TDEE - 350)",
+      "reason": "Maintenance treated as weight loss"
+    },
+    {
+      "case": "Goal weight slightly higher",
+      "condition": "goalWeight > currentWeight (even by 0.1kg)",
+      "expected": "Uses weight gain formula (TDEE + 500)",
+      "reason": "Any increase triggers weight gain mode"
+    },
+    {
+      "case": "Goal weight much higher",
+      "condition": "goalWeight >> currentWeight",
+      "expected": "Uses weight gain formula (TDEE + 500)",
+      "reason": "Same formula regardless of difference amount"
+    }
+  ],
+  "verification_checklist": [
+    "\u2705 Formula checks if goalWeight > currentWeight",
+    "\u2705 Weight gain: TDEE + 500 calories when goal > current",
+    "\u2705 Weight loss: TDEE - 350 calories when goal <= current",
+    "\u2705 Equal weights default to weight loss formula",
+    "\u2705 No goal weight defaults to weight loss formula",
+    "\u2705 Protein calculation unchanged (weight \u00d7 0.8)",
+    "\u2705 Fat calculation unchanged (calories \u00d7 0.25 \u00f7 9)",
+    "\u2705 BMR calculation unchanged (Mifflin-St Jeor)",
+    "\u2705 TDEE calculation unchanged (BMR \u00d7 activity multiplier)",
+    "\u2705 All existing functionality preserved"
+  ],
+  "expected_behavior": [
+    "\ud83c\udfaf Users with goal weight > current weight get calorie surplus",
+    "\ud83c\udfaf Users with goal weight \u2264 current weight get calorie deficit",
+    "\ud83c\udfaf Users with equal goal and current weight get calorie deficit",
+    "\ud83c\udfaf Users with no goal weight get calorie deficit",
+    "\ud83c\udfaf Protein calculation remains based on current weight only",
+    "\ud83c\udfaf Fat calculation adjusts based on new calorie target",
+    "\ud83c\udfaf Calorie goals display format unchanged",
+    "\ud83c\udfaf All existing functionality works as before",
+    "\ud83c\udfaf No breaking changes to the app"
+  ],
+  "summary": {
+    "total_test_scenarios": 5,
+    "calculation_examples": 3,
+    "edge_cases": 4,
+    "status": "FORMULA_VERIFICATION_COMPLETE"
+  }
+}

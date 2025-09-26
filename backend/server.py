@@ -3342,6 +3342,23 @@ async def get_subscription_plans():
                 "isFree": True
             },
             {
+                "planId": "1month", 
+                "name": "1 Month Plan",
+                "duration": "1 month",
+                "price": 5000.0,
+                "description": "Access to premium features for 1 month",
+                "features": [
+                    "Personalized diet plans",
+                    "AI Chatbot support",
+                    "Advanced notifications",
+                    "Priority support",
+                    "Detailed analytics",
+                    "Custom meal planning",
+                    "Progress reports"
+                ],
+                "isFree": False
+            },
+            {
                 "planId": "2months", 
                 "name": "2 Months Plan",
                 "duration": "2 months",
@@ -3393,23 +3410,6 @@ async def get_subscription_plans():
                     "Nutritional counseling",
                     "Monthly check-ins",
                     "Priority customer support"
-                ],
-                "isFree": False
-            },
-            {
-                "planId": "1month", 
-                "name": "1 Month Plan",
-                "duration": "1 month",
-                "price": 5000.0,
-                "description": "Access to premium features for 1 month",
-                "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning",
-                    "Progress reports"
                 ],
                 "isFree": False
             }
