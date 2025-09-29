@@ -270,9 +270,23 @@ def get_user_notification_token(user_id: str) -> str:
         if not doc.exists:
             print(f"[NOTIFICATION DEBUG] User {user_id} document does not exist")
             return None
-        # Check for both expoPushToken and notificationToken
+        
         data = doc.to_dict()
+        
+        # CRITICAL FIX: Ensure we're getting a USER token, not dietician token
+        is_dietician = data.get("isDietician", False)
+        if is_dietician:
+            print(f"[NOTIFICATION DEBUG] WARNING: User {user_id} is marked as dietician, skipping user token retrieval")
+            return None
+        
+        # Check for both expoPushToken and notificationToken
         token = data.get("expoPushToken") or data.get("notificationToken")
+        
+        # Validate token format
+        if token and not token.startswith("ExponentPushToken"):
+            print(f"[NOTIFICATION DEBUG] WARNING: Invalid token format for user {user_id}: {token[:20]}...")
+            return None
+            
         print(f"[NOTIFICATION DEBUG] User {user_id} token: {token[:20] if token else 'None'}...")
         return token
     except Exception as e:
@@ -286,6 +300,11 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
     """
     if not token:
         print("[NOTIFICATION DEBUG] No notification token provided")
+        return False
+    
+    # Validate token format
+    if not token.startswith("ExponentPushToken"):
+        print(f"[NOTIFICATION DEBUG] Invalid token format: {token[:20]}...")
         return False
     
     try:
@@ -312,22 +331,29 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
                 "Accept-encoding": "gzip, deflate",
                 "Content-Type": "application/json",
             },
-            data=json.dumps(message)
+            data=json.dumps(message),
+            timeout=10  # Add timeout
         )
         
         if response.status_code == 200:
             result = response.json()
             if result.get("data", {}).get("status") == "error":
-                print(f"Expo push error: {result}")
+                print(f"[NOTIFICATION DEBUG] Expo push error: {result}")
                 return False
             print(f"[NOTIFICATION DEBUG] Push notification sent successfully: {title} - {body}")
             return True
         else:
-            print(f"Failed to send push notification: {response.status_code} - {response.text}")
+            print(f"[NOTIFICATION DEBUG] Failed to send push notification: {response.status_code} - {response.text}")
             return False
             
+    except requests.exceptions.Timeout:
+        print(f"[NOTIFICATION DEBUG] Timeout sending push notification")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"[NOTIFICATION DEBUG] Request error sending push notification: {e}")
+        return False
     except Exception as e:
-        print(f"Error sending push notification: {e}")
+        print(f"[NOTIFICATION DEBUG] Error sending push notification: {e}")
         return False
 
 # --- Get Dietician Notification Token ---
@@ -346,7 +372,20 @@ def get_dietician_notification_token() -> str:
         
         for user in dietician_query:
             data = user.to_dict()
+            
+            # CRITICAL FIX: Ensure we're getting a DIETICIAN token
+            is_dietician = data.get("isDietician", False)
+            if not is_dietician:
+                print(f"[NOTIFICATION DEBUG] WARNING: User {user.id} is not marked as dietician, skipping")
+                continue
+            
             token = data.get("expoPushToken") or data.get("notificationToken")
+            
+            # Validate token format
+            if token and not token.startswith("ExponentPushToken"):
+                print(f"[NOTIFICATION DEBUG] WARNING: Invalid token format for dietician {user.id}: {token[:20]}...")
+                continue
+                
             print(f"[NOTIFICATION DEBUG] Dietician token: {token[:20] if token else 'None'}...")
             return token
         
@@ -416,6 +455,7 @@ def check_users_with_one_day_remaining():
         
         # Send notification to dietician if any users have 1 day remaining
         if one_day_users:
+            print(f"[COUNTDOWN NOTIFICATION DEBUG] Found {len(one_day_users)} users with 1 day remaining")
             dietician_token = get_dietician_notification_token()
             if dietician_token:
                 # Create proper message with user names
@@ -426,15 +466,23 @@ def check_users_with_one_day_remaining():
                     user_names = [user["name"] for user in one_day_users]
                     message = f"{', '.join(user_names)} have 1 day left in their diets"
                 
-                send_push_notification(
+                print(f"[COUNTDOWN NOTIFICATION DEBUG] Sending to dietician: {message}")
+                
+                success = send_push_notification(
                     dietician_token,
                     "Diet Reminder",
                     message,
                     {"type": "dietician_diet_reminder", "users": one_day_users}
                 )
-                print(f"Sent diet reminder notification to dietician: {message}")
+                
+                if success:
+                    print(f"[COUNTDOWN NOTIFICATION DEBUG] ✅ Sent diet reminder notification to dietician: {message}")
+                else:
+                    print(f"[COUNTDOWN NOTIFICATION DEBUG] ❌ Failed to send diet reminder notification to dietician")
             else:
-                print("No dietician notification token found")
+                print("[COUNTDOWN NOTIFICATION DEBUG] ❌ No dietician notification token found")
+        else:
+            print("[COUNTDOWN NOTIFICATION DEBUG] No users with 1 day remaining")
         
         return one_day_users
         

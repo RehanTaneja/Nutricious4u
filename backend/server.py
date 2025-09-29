@@ -2563,6 +2563,13 @@ async def send_message_notification(request: dict):
         sender_user_id = request.get("senderUserId")
         sender_is_dietician = request.get("senderIsDietician", False)
         
+        print(f"[MESSAGE NOTIFICATION DEBUG] Received request:")
+        print(f"  - recipientUserId: {recipient_user_id}")
+        print(f"  - message: {message}")
+        print(f"  - senderName: {sender_name}")
+        print(f"  - senderUserId: {sender_user_id}")
+        print(f"  - senderIsDietician: {sender_is_dietician}")
+        
         if not recipient_user_id:
             raise HTTPException(status_code=400, detail="recipientUserId is required")
         
@@ -2572,6 +2579,7 @@ async def send_message_notification(request: dict):
         # Determine notification routing based on sender role
         if sender_is_dietician:
             # Dietician is sending to user - send to user
+            print(f"[MESSAGE NOTIFICATION DEBUG] Dietician sending to user {recipient_user_id}")
             user_token = get_user_notification_token(recipient_user_id)
             if not user_token:
                 logger.warning(f"No notification token found for user {recipient_user_id}")
@@ -2591,11 +2599,14 @@ async def send_message_notification(request: dict):
                 }
             )
             if success:
+                print(f"[MESSAGE NOTIFICATION DEBUG] ✅ Message notification sent to user successfully")
                 return {"message": "Message notification sent to user successfully"}
             else:
+                print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Failed to send message notification to user")
                 return {"message": "Failed to send message notification to user"}
         else:
             # User is sending to dietician - send to dietician
+            print(f"[MESSAGE NOTIFICATION DEBUG] User sending to dietician")
             dietician_token = get_dietician_notification_token()
             if not dietician_token:
                 logger.warning("No dietician notification token found")
@@ -2614,15 +2625,83 @@ async def send_message_notification(request: dict):
                 }
             )
             if success:
+                print(f"[MESSAGE NOTIFICATION DEBUG] ✅ Message notification sent to dietician successfully")
                 return {"message": "Message notification sent to dietician successfully"}
             else:
+                print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Failed to send message notification to dietician")
                 return {"message": "Failed to send message notification to dietician"}
                 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error sending message notification: {e}")
+        print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Exception: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send message notification: {e}")
+
+@api_router.post("/notifications/send-appointment")
+async def send_appointment_notification(request: dict):
+    """
+    Send a push notification for appointment scheduling/cancelling.
+    """
+    try:
+        appointment_type = request.get("type")  # "scheduled" or "cancelled"
+        user_name = request.get("userName", "")
+        appointment_date = request.get("appointmentDate", "")
+        time_slot = request.get("timeSlot", "")
+        user_email = request.get("userEmail", "")
+        
+        print(f"[APPOINTMENT NOTIFICATION DEBUG] Received request:")
+        print(f"  - type: {appointment_type}")
+        print(f"  - userName: {user_name}")
+        print(f"  - appointmentDate: {appointment_date}")
+        print(f"  - timeSlot: {time_slot}")
+        print(f"  - userEmail: {user_email}")
+        
+        if not appointment_type:
+            raise HTTPException(status_code=400, detail="type is required")
+        
+        # Send notification to dietician about appointment changes
+        dietician_token = get_dietician_notification_token()
+        if not dietician_token:
+            logger.warning("No dietician notification token found")
+            return {"message": "Dietician notification token not found"}
+        
+        if appointment_type == "scheduled":
+            title = "New Appointment Booked"
+            body = f"{user_name} has booked an appointment for {appointment_date} at {time_slot}"
+        elif appointment_type == "cancelled":
+            title = "Appointment Cancelled"
+            body = f"{user_name} has cancelled their appointment for {appointment_date} at {time_slot}"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid appointment type")
+        
+        success = send_push_notification(
+            token=dietician_token,
+            title=title,
+            body=body,
+            data={
+                "type": "appointment_notification",
+                "appointmentType": appointment_type,
+                "userName": user_name,
+                "appointmentDate": appointment_date,
+                "timeSlot": time_slot,
+                "userEmail": user_email
+            }
+        )
+        
+        if success:
+            print(f"[APPOINTMENT NOTIFICATION DEBUG] ✅ Appointment notification sent to dietician successfully")
+            return {"message": f"Appointment {appointment_type} notification sent to dietician successfully"}
+        else:
+            print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Failed to send appointment notification to dietician")
+            return {"message": f"Failed to send appointment {appointment_type} notification to dietician"}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending appointment notification: {e}")
+        print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Exception: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send appointment notification: {e}")
 
 @api_router.post("/users/{user_id}/diet/notifications/schedule")
 async def schedule_diet_notifications(user_id: str):

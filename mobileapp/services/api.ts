@@ -1139,6 +1139,23 @@ export const resetDailyData = async (userId: string) => {
   return response.data;
 };
 
+export const sendAppointmentNotification = async (
+  type: 'scheduled' | 'cancelled',
+  userName: string,
+  appointmentDate: string,
+  timeSlot: string,
+  userEmail: string
+) => {
+  const response = await enhancedApi.post('/notifications/send-appointment', {
+    type,
+    userName,
+    appointmentDate,
+    timeSlot,
+    userEmail
+  });
+  return response.data;
+};
+
 export const sendMessageNotification = async (
   recipientUserId: string, 
   message: string, 

@@ -114,7 +114,7 @@ function calculateTargets({ weight, height, age, gender, activityLevel, goalWeig
     calories = Math.round(tdee - 350);
   }
   
-  const protein = Math.round(weight * 0.8); // 0.8g per kg
+  const protein = Math.round(weight * 1.0); // 1g per kg
   const fat = Math.round((calories * 0.25) / 9); // 25% calories from fat
   return { calories, protein, fat };
 }
@@ -7107,15 +7107,25 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         return;
       }
       
-      // Use enhanced API wrapper instead of direct fetch
-      await sendMessageNotification(recipientUserId, message, senderName || 'User', currentUserId, isDietician);
+      console.log('[Message Notifications] Sending push notification:', {
+        recipientUserId,
+        message,
+        senderName,
+        currentUserId,
+        isDietician
+      });
       
+      // Use enhanced API wrapper instead of direct fetch
+      const response = await sendMessageNotification(recipientUserId, message, senderName || 'User', currentUserId, isDietician);
+      
+      console.log('[Message Notifications] Push notification response:', response);
       console.log('[Message Notifications] Push notification sent successfully');
     } catch (error) {
       console.error('[Message Notifications] Error sending push notification:', error);
       
       // Fallback: Schedule message notification locally if backend fails
       try {
+        console.log('[Message Notifications] Attempting fallback to local notification...');
         const unifiedNotificationService = require('./services/unifiedNotificationService').default;
         const isFromDietician = senderName === 'Dietician';
         await unifiedNotificationService.scheduleMessageNotification(recipientUserId, senderName, message, isFromDietician);
@@ -11093,8 +11103,10 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         try {
           console.log('[Appointment Notification] Sending notification to dietician...');
           
-          const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-          await unifiedNotificationService.scheduleAppointmentNotification(
+          // Use backend API instead of local service
+          const { sendAppointmentNotification } = require('./services/api');
+          await sendAppointmentNotification(
+            'scheduled',
             userName,
             formatDate(selectedDate),
             selectedTimeSlot,
