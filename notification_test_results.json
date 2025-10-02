@@ -1,123 +1,115 @@
 {
-  "backend_endpoints": {
-    "status": "passed",
-    "details": [
-      {
-        "message": "Get diet notifications: 200",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:54.554516"
-      },
-      {
-        "message": "Extract diet notifications: Error 500",
-        "success": false,
-        "timestamp": "2025-08-22T23:05:56.258377"
-      },
-      {
-        "message": "Schedule notifications: 200",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:57.627080"
-      },
-      {
-        "message": "Cancel notifications: 200",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.569239"
-      }
-    ]
+  "token_functions": {
+    "get_user_notification_token": {
+      "status": "passed",
+      "details": [
+        "\u2705 Function exists",
+        "\u2705 Checks isDietician flag",
+        "\u2705 Returns None for dietician accounts",
+        "\u2705 Retrieves token from Firestore",
+        "\u2705 Validates token format"
+      ]
+    },
+    "get_dietician_notification_token": {
+      "status": "passed",
+      "details": [
+        "\u2705 Function exists",
+        "\u2705 Queries for dietician account",
+        "\u2705 Validates dietician flag"
+      ]
+    }
   },
-  "timing_logic": {
-    "status": "passed",
-    "details": [
-      {
-        "message": "Morning 08:00 IST -> 02:30 UTC",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630686"
-      },
-      {
-        "message": "Lunch 12:00 IST -> 06:30 UTC",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630710"
-      },
-      {
-        "message": "Afternoon 16:30 IST -> 11:00 UTC",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630723"
-      },
-      {
-        "message": "Dinner 19:00 IST -> 13:30 UTC",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630732"
-      },
-      {
-        "message": "Night 22:00 IST -> 16:30 UTC",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630741"
-      },
-      {
-        "message": "Monday is 3 days ahead",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630750"
-      },
-      {
-        "message": "Tuesday is 4 days ahead",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630755"
-      },
-      {
-        "message": "Wednesday is 5 days ahead",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630759"
-      },
-      {
-        "message": "Thursday is 6 days ahead",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630763"
-      },
-      {
-        "message": "Friday is Today",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630767"
-      },
-      {
-        "message": "Saturday is Tomorrow",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630771"
-      },
-      {
-        "message": "Sunday is 2 days ahead",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:58.630775"
-      }
-    ]
+  "message_notifications": {
+    "user_dashboard": {
+      "status": "passed",
+      "details": [
+        "\u2705 User handler exists for messages from dietician",
+        "\u2705 Shows alert for new messages",
+        "\u2705 Provides navigation to messages"
+      ]
+    },
+    "dietician_dashboard": {
+      "status": "passed",
+      "details": [
+        "\u2705 Dietician handler exists for messages from users"
+      ]
+    },
+    "backend": {
+      "status": "passed",
+      "details": [
+        "\u2705 Backend endpoint exists",
+        "\u2705 Routes based on sender role",
+        "\u2705 Sets fromDietician flag correctly",
+        "\u2705 Sets fromUser flag correctly"
+      ]
+    }
   },
-  "api_compatibility": {
-    "status": "passed",
-    "details": [
-      {
-        "message": "Backend API is accessible",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:59.470949"
-      },
-      {
-        "message": "API supports CORS for mobile app requests",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:59.471005"
-      },
-      {
-        "message": "API uses JSON request/response format",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:59.471023"
-      },
-      {
-        "message": "API returns proper HTTP status codes",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:59.471283"
-      },
-      {
-        "message": "API handles timeouts gracefully",
-        "success": true,
-        "timestamp": "2025-08-22T23:05:59.471328"
-      }
-    ]
+  "appointment_notifications": {
+    "user_dashboard": {
+      "status": "passed",
+      "details": [
+        "\u2705 User appointment handler exists",
+        "\u2705 Handles confirmed appointments",
+        "\u2705 Handles cancelled appointments"
+      ]
+    },
+    "dietician_dashboard": {
+      "status": "passed",
+      "details": [
+        "\u2705 Dietician appointment handler exists",
+        "\u2705 Handles both scheduled and cancelled"
+      ]
+    },
+    "backend_user_notification": {
+      "status": "passed",
+      "details": [
+        "\u2705 Checks for scheduled appointments",
+        "\u2705 Finds user by email",
+        "\u2705 Gets user notification token",
+        "\u2705 Sends confirmed appointment notification to user"
+      ]
+    },
+    "backend_dietician_notification": {
+      "status": "passed",
+      "details": [
+        "\u2705 Gets dietician token",
+        "\u2705 Sends appointment notification to dietician"
+      ]
+    }
   },
-  "overall_score": 100.0
+  "diet_notifications_unchanged": {
+    "new_diet_handler": {
+      "status": "passed",
+      "details": [
+        "\u2705 new_diet handler exists",
+        "\u2705 Shows auto extraction popup",
+        "\u2705 Refreshes diet data"
+      ]
+    },
+    "diet_reminder_handler": {
+      "status": "passed",
+      "details": [
+        "\u2705 diet_reminder handler exists"
+      ]
+    },
+    "backend_diet_upload": {
+      "status": "passed",
+      "details": [
+        "\u2705 Diet upload endpoint exists",
+        "\u2705 Gets user token for new diet notification",
+        "\u2705 Sends new_diet notification to user",
+        "\u2705 Gets dietician token",
+        "\u2705 Sends diet_upload_success to dietician"
+      ]
+    }
+  },
+  "notification_isolation": {
+    "status": "warning",
+    "details": [
+      "\u2705 Exactly 1 new_diet handler in User Dashboard",
+      "\u2705 Message handler exists in User Dashboard",
+      "\u2705 Appointment handler exists in User Dashboard",
+      "\u26a0\ufe0f  Only 0 if blocks found for notifications"
+    ]
+  }
 }

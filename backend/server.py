@@ -2691,10 +2691,45 @@ async def send_appointment_notification(request: dict):
         
         if success:
             print(f"[APPOINTMENT NOTIFICATION DEBUG] ✅ Appointment notification sent to dietician successfully")
-            return {"message": f"Appointment {appointment_type} notification sent to dietician successfully"}
         else:
             print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Failed to send appointment notification to dietician")
-            return {"message": f"Failed to send appointment {appointment_type} notification to dietician"}
+        
+        # Also send confirmation notification to user
+        if appointment_type == "scheduled":
+            try:
+                # Find user by email to get their notification token
+                user_docs = firestore_db.collection("user_profiles").where("email", "==", user_email).limit(1).stream()
+                
+                user_notified = False
+                for user_doc in user_docs:
+                    user_token = get_user_notification_token(user_doc.id)
+                    if user_token:
+                        user_success = send_push_notification(
+                            token=user_token,
+                            title="Appointment Confirmed",
+                            body=f"Your appointment has been confirmed for {appointment_date} at {time_slot}",
+                            data={
+                                "type": "appointment_notification",
+                                "appointmentType": "confirmed",
+                                "appointmentDate": appointment_date,
+                                "timeSlot": time_slot
+                            }
+                        )
+                        if user_success:
+                            print(f"[APPOINTMENT NOTIFICATION DEBUG] ✅ Sent appointment confirmation to user {user_doc.id}")
+                            user_notified = True
+                        else:
+                            print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Failed to send appointment confirmation to user {user_doc.id}")
+                    else:
+                        print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ No notification token found for user {user_doc.id}")
+                
+                if not user_notified:
+                    print(f"[APPOINTMENT NOTIFICATION DEBUG] ⚠️ User notification not sent (user not found or no token)")
+            except Exception as user_notif_error:
+                print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Error sending appointment notification to user: {user_notif_error}")
+                # Don't fail the whole request if user notification fails
+        
+        return {"message": f"Appointment {appointment_type} notification sent successfully"}
                 
     except HTTPException:
         raise

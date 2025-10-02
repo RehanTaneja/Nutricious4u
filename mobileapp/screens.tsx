@@ -1381,6 +1381,39 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             setDietLoading(false);
           }
         }
+        
+        // Handle message notifications from dietician
+        if (data?.type === 'message_notification' && data?.fromDietician) {
+          console.log('[Dashboard] Received message notification from dietician:', data.senderName);
+          // Show notification to user about new message
+          Alert.alert(
+            'New Message',
+            `You have a new message from your dietician`,
+            [
+              { text: 'View Message', onPress: () => navigation.navigate('DieticianMessage') },
+              { text: 'OK', style: 'default' }
+            ]
+          );
+        }
+        
+        // Handle appointment notifications
+        if (data?.type === 'appointment_notification') {
+          console.log('[Dashboard] Received appointment notification:', data.appointmentType);
+          
+          if (data.appointmentType === 'confirmed') {
+            Alert.alert(
+              'Appointment Confirmed',
+              `Your appointment has been confirmed for ${data.appointmentDate} at ${data.timeSlot}`,
+              [{ text: 'OK', style: 'default' }]
+            );
+          } else if (data.appointmentType === 'cancelled') {
+            Alert.alert(
+              'Appointment Cancelled',
+              `Your appointment for ${data.appointmentDate} at ${data.timeSlot} has been cancelled`,
+              [{ text: 'OK', style: 'default' }]
+            );
+          }
+        }
       });
 
       return () => subscription.remove();
@@ -11567,6 +11600,18 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
             { text: 'View All Users', onPress: () => navigation.navigate('Upload Diet') },
             { text: 'OK', style: 'default' }
           ]
+        );
+      }
+      
+      // Handle appointment notifications
+      if (data?.type === 'appointment_notification') {
+        console.log('[DieticianDashboard] Received appointment notification:', data.appointmentType);
+        
+        const typeText = data.appointmentType === 'scheduled' ? 'booked' : 'cancelled';
+        Alert.alert(
+          `Appointment ${typeText}`,
+          `${data.userName || 'A user'} has ${typeText} an appointment for ${data.appointmentDate} at ${data.timeSlot}`,
+          [{ text: 'OK', style: 'default' }]
         );
       }
     });
