@@ -388,20 +388,6 @@ function AppContent() {
     const initializeServices = async () => {
       try {
         
-        // Register for push notifications with platform-specific handling
-        try {
-          console.log('[NOTIFICATIONS] Registering for push notifications on platform:', Platform.OS);
-          const token = await registerForPushNotificationsAsync();
-          if (token) {
-            console.log('[NOTIFICATIONS] ✅ Push notification token obtained successfully');
-            console.log('[NOTIFICATIONS] Token length:', token.length);
-          } else {
-            console.warn('[NOTIFICATIONS] ⚠️ No push notification token obtained');
-          }
-        } catch (error) {
-          console.warn('[NOTIFICATIONS] Push notification registration failed:', error);
-        }
-        
         // Set up diet notification listener with platform-specific handling
         try {
           console.log('[NOTIFICATIONS] Setting up diet notification listener on platform:', Platform.OS);
@@ -422,6 +408,22 @@ function AppContent() {
               setCheckingProfile(true);
               isLoginInProgress = true; // Set login flag
               (global as any).isLoginInProgress = true; // Set global flag
+              
+              // ✅ FIX: Register for push notifications AFTER user login
+              try {
+                console.log('[NOTIFICATIONS] User logged in, registering for push notifications');
+                console.log('[NOTIFICATIONS] User ID:', firebaseUser.uid);
+                console.log('[NOTIFICATIONS] Platform:', Platform.OS);
+                const token = await registerForPushNotificationsAsync();
+                if (token) {
+                  console.log('[NOTIFICATIONS] ✅ Push notification token obtained and saved');
+                  console.log('[NOTIFICATIONS] Token preview:', token.substring(0, 30) + '...');
+                } else {
+                  console.warn('[NOTIFICATIONS] ⚠️ No push notification token obtained');
+                }
+              } catch (error) {
+                console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
+              }
               
               try {
                 // Check if user is dietician by trying to get their profile from backend
