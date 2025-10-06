@@ -261,36 +261,65 @@ def list_non_dietician_users():
 
 # --- Get User Notification Token ---
 def get_user_notification_token(user_id: str) -> str:
+    print(f"[TOKEN DEBUG] ===== GETTING USER NOTIFICATION TOKEN =====")
+    print(f"[TOKEN DEBUG] User ID: {user_id}")
+    
     if db is None:
-        print("Firebase not initialized, cannot get notification token")
+        print("[TOKEN DEBUG] ❌ Firebase not initialized, cannot get notification token")
         return None
     
     try:
+        print(f"[TOKEN DEBUG] Step 1: Looking up document in user_profiles collection")
         doc = db.collection("user_profiles").document(user_id).get()
+        
         if not doc.exists:
-            print(f"[NOTIFICATION DEBUG] User {user_id} document does not exist")
+            print(f"[TOKEN DEBUG] ❌ User {user_id} document does not exist")
             return None
         
+        print(f"[TOKEN DEBUG] ✅ User {user_id} document exists")
         data = doc.to_dict()
+        
+        print(f"[TOKEN DEBUG] Step 2: Checking document fields")
+        print(f"[TOKEN DEBUG] Document fields: {list(data.keys())}")
         
         # CRITICAL FIX: Ensure we're getting a USER token, not dietician token
         is_dietician = data.get("isDietician", False)
+        print(f"[TOKEN DEBUG] isDietician field: {is_dietician}")
+        
         if is_dietician:
-            print(f"[NOTIFICATION DEBUG] WARNING: User {user_id} is marked as dietician, skipping user token retrieval")
+            print(f"[TOKEN DEBUG] ❌ User {user_id} is marked as dietician, skipping user token retrieval")
             return None
         
+        print(f"[TOKEN DEBUG] ✅ User {user_id} is not dietician")
+        
         # Check for both expoPushToken and notificationToken
-        token = data.get("expoPushToken") or data.get("notificationToken")
+        expo_token = data.get("expoPushToken")
+        notif_token = data.get("notificationToken")
+        token = expo_token or notif_token
+        
+        print(f"[TOKEN DEBUG] Step 3: Checking token fields")
+        print(f"[TOKEN DEBUG] expoPushToken exists: {expo_token is not None}")
+        print(f"[TOKEN DEBUG] notificationToken exists: {notif_token is not None}")
+        print(f"[TOKEN DEBUG] Selected token: {token[:20] if token else 'None'}...")
         
         # Validate token format
         if token and not token.startswith("ExponentPushToken"):
-            print(f"[NOTIFICATION DEBUG] WARNING: Invalid token format for user {user_id}: {token[:20]}...")
+            print(f"[TOKEN DEBUG] ❌ Invalid token format for user {user_id}: {token[:20]}...")
             return None
+        
+        if token:
+            print(f"[TOKEN DEBUG] ✅ Valid token found for user {user_id}")
+            print(f"[TOKEN DEBUG] Token preview: {token[:30]}...")
+        else:
+            print(f"[TOKEN DEBUG] ❌ No valid token found for user {user_id}")
             
-        print(f"[NOTIFICATION DEBUG] User {user_id} token: {token[:20] if token else 'None'}...")
+        print(f"[TOKEN DEBUG] ===== TOKEN RETRIEVAL COMPLETE =====")
         return token
+        
     except Exception as e:
-        print(f"Failed to get notification token: {e}")
+        print(f"[TOKEN DEBUG] ❌ Exception getting notification token for user {user_id}: {e}")
+        import traceback
+        print(f"[TOKEN DEBUG] Traceback: {traceback.format_exc()}")
         return None
 
 # --- Send Push Notification via Expo ---
@@ -298,14 +327,22 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
     """
     Send push notification using Expo's push service
     """
+    print(f"[PUSH DEBUG] ===== SENDING PUSH NOTIFICATION =====")
+    print(f"[PUSH DEBUG] Token: {token[:20] if token else 'None'}...")
+    print(f"[PUSH DEBUG] Title: {title}")
+    print(f"[PUSH DEBUG] Body: {body}")
+    print(f"[PUSH DEBUG] Data: {data}")
+    
     if not token:
-        print("[NOTIFICATION DEBUG] No notification token provided")
+        print("[PUSH DEBUG] ❌ No notification token provided")
         return False
     
     # Validate token format
     if not token.startswith("ExponentPushToken"):
-        print(f"[NOTIFICATION DEBUG] Invalid token format: {token[:20]}...")
+        print(f"[PUSH DEBUG] ❌ Invalid token format: {token[:20]}...")
         return False
+    
+    print(f"[PUSH DEBUG] ✅ Token format is valid")
     
     try:
         # Expo push notification payload
@@ -317,11 +354,11 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
             "data": data or {}
         }
         
-        print(f"[NOTIFICATION DEBUG] Sending notification:")
-        print(f"  - Token: {token[:20]}...")
-        print(f"  - Title: {title}")
-        print(f"  - Body: {body}")
-        print(f"  - Data: {data}")
+        print(f"[PUSH DEBUG] Step 1: Preparing Expo payload")
+        print(f"[PUSH DEBUG] Payload: {json.dumps(message, indent=2)}")
+        
+        print(f"[PUSH DEBUG] Step 2: Sending to Expo Push Service")
+        print(f"[PUSH DEBUG] URL: https://exp.host/--/api/v2/push/send")
         
         # Send to Expo's push service
         response = requests.post(
@@ -335,25 +372,43 @@ def send_push_notification(token: str, title: str, body: str, data: dict = None)
             timeout=10  # Add timeout
         )
         
+        print(f"[PUSH DEBUG] Step 3: Received Expo response")
+        print(f"[PUSH DEBUG] Status Code: {response.status_code}")
+        print(f"[PUSH DEBUG] Response Headers: {dict(response.headers)}")
+        print(f"[PUSH DEBUG] Response Body: {response.text}")
+        
         if response.status_code == 200:
             result = response.json()
+            print(f"[PUSH DEBUG] Step 4: Parsing Expo response")
+            print(f"[PUSH DEBUG] Parsed Result: {json.dumps(result, indent=2)}")
+            
             if result.get("data", {}).get("status") == "error":
-                print(f"[NOTIFICATION DEBUG] Expo push error: {result}")
+                print(f"[PUSH DEBUG] ❌ Expo push error: {result}")
                 return False
-            print(f"[NOTIFICATION DEBUG] Push notification sent successfully: {title} - {body}")
+            
+            print(f"[PUSH DEBUG] ✅ Push notification sent successfully")
+            print(f"[PUSH DEBUG] ===== NOTIFICATION SEND COMPLETE =====")
             return True
         else:
-            print(f"[NOTIFICATION DEBUG] Failed to send push notification: {response.status_code} - {response.text}")
+            print(f"[PUSH DEBUG] ❌ Failed to send push notification")
+            print(f"[PUSH DEBUG] Status: {response.status_code}")
+            print(f"[PUSH DEBUG] Error: {response.text}")
+            print(f"[PUSH DEBUG] ===== NOTIFICATION SEND FAILED =====")
             return False
             
     except requests.exceptions.Timeout:
-        print(f"[NOTIFICATION DEBUG] Timeout sending push notification")
+        print(f"[PUSH DEBUG] ❌ Timeout sending push notification")
+        print(f"[PUSH DEBUG] ===== NOTIFICATION SEND TIMEOUT =====")
         return False
     except requests.exceptions.RequestException as e:
-        print(f"[NOTIFICATION DEBUG] Request error sending push notification: {e}")
+        print(f"[PUSH DEBUG] ❌ Request error sending push notification: {e}")
+        print(f"[PUSH DEBUG] ===== NOTIFICATION SEND REQUEST ERROR =====")
         return False
     except Exception as e:
-        print(f"[NOTIFICATION DEBUG] Error sending push notification: {e}")
+        print(f"[PUSH DEBUG] ❌ Error sending push notification: {e}")
+        import traceback
+        print(f"[PUSH DEBUG] Traceback: {traceback.format_exc()}")
+        print(f"[PUSH DEBUG] ===== NOTIFICATION SEND EXCEPTION =====")
         return False
 
 # --- Get Dietician Notification Token ---

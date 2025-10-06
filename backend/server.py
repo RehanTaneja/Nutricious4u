@@ -1836,7 +1836,12 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             traceback.print_exc()
         
         # Send push notification to user with enhanced data
+        print(f"[DIET UPLOAD DEBUG] ===== SENDING NOTIFICATION TO USER =====")
+        print(f"[DIET UPLOAD DEBUG] User ID: {user_id}")
+        
         user_token = get_user_notification_token(user_id)
+        print(f"[DIET UPLOAD DEBUG] Token retrieval result: {user_token[:20] if user_token else 'None'}...")
+        
         if user_token:
             notification_payload = {
                 "type": "new_diet", 
@@ -1846,10 +1851,11 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            print(f"🚀 SENDING NOTIFICATION TO USER {user_id}")
-            print(f"📱 Notification payload: {json.dumps(notification_payload, indent=2)}")
-            print(f"🔑 User token: {user_token[:20]}...")
+            print(f"[DIET UPLOAD DEBUG] ✅ Token found, preparing notification")
+            print(f"[DIET UPLOAD DEBUG] Notification payload: {json.dumps(notification_payload, indent=2)}")
+            print(f"[DIET UPLOAD DEBUG] User token: {user_token[:20]}...")
             
+            print(f"[DIET UPLOAD DEBUG] Calling send_push_notification...")
             success = send_push_notification(
                 user_token,
                 "New Diet Has Arrived!",
@@ -1858,12 +1864,15 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             )
             
             if success:
-                print(f"✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
-                print(f"🎯 User should see popup on next dashboard load")
+                print(f"[DIET UPLOAD DEBUG] ✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
+                print(f"[DIET UPLOAD DEBUG] 🎯 User should see notification")
             else:
-                print(f"❌ NOTIFICATION FAILED to send to user {user_id}")
+                print(f"[DIET UPLOAD DEBUG] ❌ NOTIFICATION FAILED to send to user {user_id}")
         else:
-            print(f"❌ NO NOTIFICATION TOKEN found for user {user_id}")
+            print(f"[DIET UPLOAD DEBUG] ❌ NO NOTIFICATION TOKEN found for user {user_id}")
+            print(f"[DIET UPLOAD DEBUG] This means get_user_notification_token() returned None")
+        
+        print(f"[DIET UPLOAD DEBUG] ===== USER NOTIFICATION COMPLETE =====")
         
         # Send notification to dietician about successful upload
         dietician_token = get_dietician_notification_token()
@@ -2031,6 +2040,202 @@ async def get_new_diet_popup_trigger(user_id: str):
     except Exception as e:
         logger.error(f"Error checking new diet popup trigger: {e}")
         return {"showPopup": False, "reason": f"Error: {e}"}
+
+@api_router.get("/debug/user-token/{user_id}")
+async def debug_user_token(user_id: str):
+    """Debug endpoint to check user's notification token status"""
+    print(f"[DEBUG ENDPOINT] ===== DEBUGGING USER TOKEN =====")
+    print(f"[DEBUG ENDPOINT] User ID: {user_id}")
+    
+    try:
+        check_firebase_availability()
+        
+        # Get user document
+        print(f"[DEBUG ENDPOINT] Step 1: Getting user document from Firestore")
+        doc = firestore_db.collection("user_profiles").document(user_id).get()
+        
+        if not doc.exists:
+            print(f"[DEBUG ENDPOINT] ❌ User document does not exist")
+            return {
+                "user_id": user_id,
+                "status": "error",
+                "message": "User document does not exist",
+                "document_exists": False
+            }
+        
+        print(f"[DEBUG ENDPOINT] ✅ User document exists")
+        data = doc.to_dict()
+        
+        # Check all token-related fields
+        print(f"[DEBUG ENDPOINT] Step 2: Analyzing document fields")
+        has_expo_push_token = "expoPushToken" in data
+        has_notification_token = "notificationToken" in data
+        has_fcm_token = "fcmToken" in data
+        
+        print(f"[DEBUG ENDPOINT] Token fields:")
+        print(f"  - expoPushToken exists: {has_expo_push_token}")
+        print(f"  - notificationToken exists: {has_notification_token}")
+        print(f"  - fcmToken exists: {has_fcm_token}")
+        
+        # Get token previews
+        expo_token_preview = None
+        if has_expo_push_token:
+            expo_token = data.get("expoPushToken")
+            expo_token_preview = expo_token[:30] + "..." if expo_token else None
+            print(f"  - expoPushToken preview: {expo_token_preview}")
+        
+        notification_token_preview = None
+        if has_notification_token:
+            notif_token = data.get("notificationToken")
+            notification_token_preview = notif_token[:30] + "..." if notif_token else None
+            print(f"  - notificationToken preview: {notification_token_preview}")
+        
+        # Check token validity
+        expo_token_valid = False
+        if expo_token_preview:
+            expo_token_valid = expo_token_preview.startswith("ExponentPushToken")
+            print(f"  - expoPushToken valid format: {expo_token_valid}")
+        
+        notification_token_valid = False
+        if notification_token_preview:
+            notification_token_valid = notification_token_preview.startswith("ExponentPushToken")
+            print(f"  - notificationToken valid format: {notification_token_valid}")
+        
+        # Check other relevant fields
+        print(f"[DEBUG ENDPOINT] Step 3: Checking other fields")
+        is_dietician = data.get("isDietician", False)
+        platform = data.get("platform")
+        last_token_update = data.get("lastTokenUpdate")
+        new_diet_received = data.get("new_diet_received", False)
+        
+        print(f"[DEBUG ENDPOINT] Other fields:")
+        print(f"  - isDietician: {is_dietician}")
+        print(f"  - platform: {platform}")
+        print(f"  - lastTokenUpdate: {last_token_update}")
+        print(f"  - new_diet_received: {new_diet_received}")
+        
+        # Test backend token retrieval functions
+        print(f"[DEBUG ENDPOINT] Step 4: Testing backend token retrieval")
+        user_token_result = get_user_notification_token(user_id)
+        print(f"[DEBUG ENDPOINT] get_user_notification_token() result: {user_token_result[:20] if user_token_result else 'None'}...")
+        
+        dietician_token_result = None
+        if is_dietician:
+            dietician_token_result = get_dietician_notification_token()
+            print(f"[DEBUG ENDPOINT] get_dietician_notification_token() result: {dietician_token_result[:20] if dietician_token_result else 'None'}...")
+        
+        print(f"[DEBUG ENDPOINT] ===== DEBUG COMPLETE =====")
+        
+        return {
+            "user_id": user_id,
+            "status": "success",
+            "document_exists": True,
+            "tokens": {
+                "expo_push_token": {
+                    "exists": has_expo_push_token,
+                    "preview": expo_token_preview,
+                    "valid": expo_token_valid
+                },
+                "notification_token": {
+                    "exists": has_notification_token,
+                    "preview": notification_token_preview,
+                    "valid": notification_token_valid
+                },
+                "fcm_token": {
+                    "exists": has_fcm_token
+                }
+            },
+            "user_info": {
+                "is_dietician": is_dietician,
+                "platform": platform,
+                "last_token_update": last_token_update,
+                "new_diet_received": new_diet_received
+            },
+            "backend_token_test": {
+                "get_user_notification_token_result": user_token_result[:20] + "..." if user_token_result else None,
+                "get_dietician_notification_token_result": dietician_token_result[:20] + "..." if dietician_token_result else "N/A (not dietician)"
+            }
+        }
+        
+    except Exception as e:
+        print(f"[DEBUG ENDPOINT] ❌ Error checking token status: {e}")
+        import traceback
+        print(f"[DEBUG ENDPOINT] Traceback: {traceback.format_exc()}")
+        return {
+            "user_id": user_id,
+            "status": "error",
+            "message": str(e),
+            "document_exists": False
+        }
+
+@api_router.get("/debug/test-notification/{user_id}")
+async def debug_test_notification(user_id: str):
+    """Debug endpoint to test sending a notification to a user"""
+    print(f"[TEST NOTIFICATION] ===== TESTING NOTIFICATION SEND =====")
+    print(f"[TEST NOTIFICATION] User ID: {user_id}")
+    
+    try:
+        # Get user token
+        print(f"[TEST NOTIFICATION] Step 1: Getting user token")
+        user_token = get_user_notification_token(user_id)
+        
+        if not user_token:
+            print(f"[TEST NOTIFICATION] ❌ No token found for user")
+            return {
+                "user_id": user_id,
+                "status": "error",
+                "message": "No notification token found for user",
+                "token_found": False
+            }
+        
+        print(f"[TEST NOTIFICATION] ✅ Token found: {user_token[:20]}...")
+        
+        # Send test notification
+        print(f"[TEST NOTIFICATION] Step 2: Sending test notification")
+        test_payload = {
+            "type": "test_notification",
+            "userId": user_id,
+            "timestamp": datetime.now().isoformat(),
+            "test": True
+        }
+        
+        success = send_push_notification(
+            user_token,
+            "Test Notification",
+            "This is a test notification to verify push notifications are working.",
+            test_payload
+        )
+        
+        if success:
+            print(f"[TEST NOTIFICATION] ✅ Test notification sent successfully")
+            return {
+                "user_id": user_id,
+                "status": "success",
+                "message": "Test notification sent successfully",
+                "token_found": True,
+                "notification_sent": True
+            }
+        else:
+            print(f"[TEST NOTIFICATION] ❌ Test notification failed to send")
+            return {
+                "user_id": user_id,
+                "status": "error",
+                "message": "Test notification failed to send",
+                "token_found": True,
+                "notification_sent": False
+            }
+        
+    except Exception as e:
+        print(f"[TEST NOTIFICATION] ❌ Error testing notification: {e}")
+        import traceback
+        print(f"[TEST NOTIFICATION] Traceback: {traceback.format_exc()}")
+        return {
+            "user_id": user_id,
+            "status": "error",
+            "message": str(e),
+            "token_found": False,
+            "notification_sent": False
+        }
 
 # --- Appointment Management Endpoints ---
 @api_router.post("/appointments", response_model=AppointmentResponse)
