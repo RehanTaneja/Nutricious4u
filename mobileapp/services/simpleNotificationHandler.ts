@@ -5,7 +5,13 @@
 
 import { Notifications } from 'expo';
 import { Platform, Alert } from 'react-native';
-import { logger } from './logger';
+
+// Simple logger for notifications
+const logger = {
+  log: (message: string, ...args: any[]) => console.log(`[SimpleNotificationHandler] ${message}`, ...args),
+  error: (message: string, ...args: any[]) => console.error(`[SimpleNotificationHandler] ${message}`, ...args),
+  warn: (message: string, ...args: any[]) => console.warn(`[SimpleNotificationHandler] ${message}`, ...args)
+};
 
 export class SimpleNotificationHandler {
   private static instance: SimpleNotificationHandler;
