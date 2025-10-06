@@ -95,7 +95,7 @@ export const firestore = firebase.firestore();
 
 export default firebase;
 
-export async function registerForPushNotificationsAsync() {
+export async function registerForPushNotificationsAsync(userId?: string) {
   let token;
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -128,7 +128,8 @@ export async function registerForPushNotificationsAsync() {
     
     // Save token to Firestore with error handling
     try {
-      const user = auth.currentUser;
+      // Use provided userId or get from auth
+      const user = userId ? { uid: userId } : auth.currentUser;
       if (user && token) {
         await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
           expoPushToken: token,
@@ -136,6 +137,9 @@ export async function registerForPushNotificationsAsync() {
           lastTokenUpdate: new Date().toISOString()
         }, { merge: true });
         logger.log('Saved expoPushToken to Firestore with platform info');
+        logger.log(`Token saved for user: ${user.uid}`);
+      } else {
+        logger.log('No user or token available for saving');
       }
     } catch (error) {
       logger.log('Failed to save push token to Firestore:', error);

@@ -17,7 +17,9 @@ from services.health_platform import HealthPlatformFactory
 # Import Firebase with error handling
 try:
     from services.firebase_client import db as firestore_db, bucket
-    from services.firebase_client import upload_diet_pdf, list_non_dietician_users, get_user_notification_token, send_push_notification, check_users_with_one_day_remaining, get_dietician_notification_token
+    from services.firebase_client import upload_diet_pdf, list_non_dietician_users
+    # --- Simple Notification System ---
+    from services.simple_notification_service import get_notification_service
     FIREBASE_AVAILABLE = True
     print("✅ Firebase client imported successfully")
     
@@ -1835,60 +1837,37 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             import traceback
             traceback.print_exc()
         
-        # Send push notification to user with enhanced data
-        print(f"[DIET UPLOAD DEBUG] ===== SENDING NOTIFICATION TO USER =====")
-        print(f"[DIET UPLOAD DEBUG] User ID: {user_id}")
+        # Send notification using new simple system
+        print(f"[DIET UPLOAD] ===== SENDING NOTIFICATION =====")
+        print(f"[DIET UPLOAD] User ID: {user_id}")
         
-        user_token = get_user_notification_token(user_id)
-        print(f"[DIET UPLOAD DEBUG] Token retrieval result: {user_token[:20] if user_token else 'None'}...")
-        
-        if user_token:
-            notification_payload = {
-                "type": "new_diet", 
-                "userId": user_id,
-                "dietPdfUrl": file.filename,
-                "cacheVersion": diet_info["dietCacheVersion"],
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+        try:
+            notification_service = get_notification_service(firestore_db)
             
-            print(f"[DIET UPLOAD DEBUG] ✅ Token found, preparing notification")
-            print(f"[DIET UPLOAD DEBUG] Notification payload: {json.dumps(notification_payload, indent=2)}")
-            print(f"[DIET UPLOAD DEBUG] User token: {user_token[:20]}...")
+            # Get dietician name for personalization
+            dietician_doc = firestore_db.collection("user_profiles").document(dietician_id).get()
+            dietician_name = "Your dietician"
+            if dietician_doc.exists:
+                dietician_data = dietician_doc.to_dict()
+                first_name = dietician_data.get("firstName", "")
+                last_name = dietician_data.get("lastName", "")
+                if first_name and last_name:
+                    dietician_name = f"{first_name} {last_name}"
+                elif first_name:
+                    dietician_name = first_name
             
-            print(f"[DIET UPLOAD DEBUG] Calling send_push_notification...")
-            success = send_push_notification(
-                user_token,
-                "New Diet Has Arrived!",
-                "Your dietician has uploaded a new diet plan for you.",
-                notification_payload
-            )
+            success = notification_service.send_new_diet_notification(user_id, dietician_name)
             
             if success:
-                print(f"[DIET UPLOAD DEBUG] ✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
-                print(f"[DIET UPLOAD DEBUG] 🎯 User should see notification")
+                print(f"[DIET UPLOAD] ✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
+                print(f"[DIET UPLOAD] 🎯 User should see notification")
             else:
-                print(f"[DIET UPLOAD DEBUG] ❌ NOTIFICATION FAILED to send to user {user_id}")
-        else:
-            print(f"[DIET UPLOAD DEBUG] ❌ NO NOTIFICATION TOKEN found for user {user_id}")
-            print(f"[DIET UPLOAD DEBUG] This means get_user_notification_token() returned None")
+                print(f"[DIET UPLOAD] ❌ NOTIFICATION FAILED to send to user {user_id}")
+                
+        except Exception as notif_error:
+            print(f"[DIET UPLOAD] ❌ Error sending notification: {notif_error}")
         
-        print(f"[DIET UPLOAD DEBUG] ===== USER NOTIFICATION COMPLETE =====")
-        
-        # Send notification to dietician about successful upload
-        dietician_token = get_dietician_notification_token()
-        if dietician_token:
-            send_push_notification(
-                dietician_token,
-                "Diet Upload Successful",
-                f"Successfully uploaded new diet for user {user_id}",
-                {
-                    "type": "diet_upload_success",
-                    "userId": user_id,
-                    "dietPdfUrl": file.filename,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
-            )
-            print(f"Sent diet upload success notification to dietician")
+        print(f"[DIET UPLOAD] ===== UPLOAD COMPLETE =====")
         
         return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
         
@@ -2116,13 +2095,16 @@ async def debug_user_token(user_id: str):
         
         # Test backend token retrieval functions
         print(f"[DEBUG ENDPOINT] Step 4: Testing backend token retrieval")
-        user_token_result = get_user_notification_token(user_id)
-        print(f"[DEBUG ENDPOINT] get_user_notification_token() result: {user_token_result[:20] if user_token_result else 'None'}...")
+        notification_service = get_notification_service(firestore_db)
+        user_token_result = notification_service.get_user_token(user_id)
+        print(f"[DEBUG ENDPOINT] get_user_token() result: {user_token_result[:20] if user_token_result else 'None'}...")
         
         dietician_token_result = None
         if is_dietician:
-            dietician_token_result = get_dietician_notification_token()
-            print(f"[DEBUG ENDPOINT] get_dietician_notification_token() result: {dietician_token_result[:20] if dietician_token_result else 'None'}...")
+            # Use new simple notification service
+            notification_service = get_notification_service(firestore_db)
+            dietician_token_result = notification_service.get_user_token(user_id)
+            print(f"[DEBUG ENDPOINT] get_user_token() result for dietician: {dietician_token_result[:20] if dietician_token_result else 'None'}...")
         
         print(f"[DEBUG ENDPOINT] ===== DEBUG COMPLETE =====")
         
@@ -2152,8 +2134,8 @@ async def debug_user_token(user_id: str):
                 "new_diet_received": new_diet_received
             },
             "backend_token_test": {
-                "get_user_notification_token_result": user_token_result[:20] + "..." if user_token_result else None,
-                "get_dietician_notification_token_result": dietician_token_result[:20] + "..." if dietician_token_result else "N/A (not dietician)"
+                "get_user_token_result": user_token_result[:20] + "..." if user_token_result else None,
+                "get_user_token_result_for_dietician": dietician_token_result[:20] + "..." if dietician_token_result else "N/A (not dietician)"
             }
         }
         
@@ -2755,193 +2737,101 @@ async def test_diet_notification(user_id: str):
         logger.error(f"Error sending test notification for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send test notification: {e}")
 
-# --- Message Notification Endpoints ---
-@api_router.post("/notifications/send-message")
-async def send_message_notification(request: dict):
+# --- Simple Notification System Endpoints ---
+@api_router.post("/notifications/send")
+async def send_notification(request: dict):
     """
-    Send a push notification for a new message.
+    Unified notification endpoint - handles all notification types.
+    Simple, reliable, based on how popular apps handle notifications.
     """
     try:
-        recipient_user_id = request.get("recipientUserId")
-        message = request.get("message", "")
-        sender_name = request.get("senderName", "")
-        sender_user_id = request.get("senderUserId")
-        sender_is_dietician = request.get("senderIsDietician", False)
+        logger.info(f"[SIMPLE NOTIFICATION] ===== NOTIFICATION REQUEST =====")
+        logger.info(f"[SIMPLE NOTIFICATION] Request: {json.dumps(request, indent=2)}")
         
-        print(f"[MESSAGE NOTIFICATION DEBUG] Received request:")
-        print(f"  - recipientUserId: {recipient_user_id}")
-        print(f"  - message: {message}")
-        print(f"  - senderName: {sender_name}")
-        print(f"  - senderUserId: {sender_user_id}")
-        print(f"  - senderIsDietician: {sender_is_dietician}")
+        # Validate required fields
+        recipient_id = request.get("recipientId")
+        notification_type = request.get("type")
         
-        if not recipient_user_id:
-            raise HTTPException(status_code=400, detail="recipientUserId is required")
+        if not recipient_id:
+            raise HTTPException(status_code=400, detail="recipientId is required")
         
-        if not message:
-            raise HTTPException(status_code=400, detail="message is required")
+        if not notification_type:
+            raise HTTPException(status_code=400, detail="type is required")
         
-        # Determine notification routing based on sender role
-        if sender_is_dietician:
-            # Dietician is sending to user - send to user
-            print(f"[MESSAGE NOTIFICATION DEBUG] Dietician sending to user {recipient_user_id}")
-            user_token = get_user_notification_token(recipient_user_id)
-            if not user_token:
-                logger.warning(f"No notification token found for user {recipient_user_id}")
-                return {"message": "Notification prepared but not sent (no notification token found)"}
+        # Get notification service
+        notification_service = get_notification_service(firestore_db)
+        
+        # Handle different notification types
+        success = False
+        
+        if notification_type == "new_diet":
+            dietician_name = request.get("dieticianName", "Your dietician")
+            success = notification_service.send_new_diet_notification(recipient_id, dietician_name)
             
-            title = "New message from dietician"
-            success = send_push_notification(
-                token=user_token,
-                title=title,
-                body=message,
-                data={
-                    "type": "message_notification",
-                    "fromDietician": True,
-                    "senderId": sender_user_id,
-                    "message": message,
-                    "senderName": sender_name
-                }
-            )
-            if success:
-                print(f"[MESSAGE NOTIFICATION DEBUG] ✅ Message notification sent to user successfully")
-                return {"message": "Message notification sent to user successfully"}
-            else:
-                print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Failed to send message notification to user")
-                return {"message": "Failed to send message notification to user"}
+        elif notification_type == "message":
+            sender_name = request.get("senderName", "Someone")
+            message = request.get("message", "")
+            is_dietician = request.get("isDietician", False)
+            success = notification_service.send_message_notification(recipient_id, sender_name, message, is_dietician)
+            
+        elif notification_type == "appointment":
+            appointment_type = request.get("appointmentType", "scheduled")
+            appointment_date = request.get("appointmentDate", "")
+            time_slot = request.get("timeSlot", "")
+            success = notification_service.send_appointment_notification(recipient_id, appointment_type, appointment_date, time_slot)
+            
+        elif notification_type == "diet_reminder":
+            user_name = request.get("userName", "User")
+            success = notification_service.send_diet_reminder_notification(recipient_id, user_name)
+            
         else:
-            # User is sending to dietician - send to dietician
-            print(f"[MESSAGE NOTIFICATION DEBUG] User sending to dietician")
-            dietician_token = get_dietician_notification_token()
-            if not dietician_token:
-                logger.warning("No dietician notification token found")
-                return {"message": "Dietician notification token not found"}
+            # Generic notification
+            title = request.get("title", "Notification")
+            body = request.get("body", "")
+            data = request.get("data", {})
+            success = notification_service.send_notification(recipient_id, title, body, data)
+        
+        if success:
+            logger.info(f"[SIMPLE NOTIFICATION] ✅ Notification sent successfully to {recipient_id}")
+            return {"success": True, "message": "Notification sent successfully"}
+        else:
+            logger.error(f"[SIMPLE NOTIFICATION] ❌ Failed to send notification to {recipient_id}")
+            return {"success": False, "message": "Failed to send notification"}
             
-            title = f"New message from {sender_name or 'User'}"
-            success = send_push_notification(
-                token=dietician_token,
-                title=title,
-                body=message,
-                data={
-                    "type": "message_notification",
-                    "fromUser": sender_user_id,
-                    "message": message,
-                    "senderName": sender_name
-                }
-            )
-            if success:
-                print(f"[MESSAGE NOTIFICATION DEBUG] ✅ Message notification sent to dietician successfully")
-                return {"message": "Message notification sent to dietician successfully"}
-            else:
-                print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Failed to send message notification to dietician")
-                return {"message": "Failed to send message notification to dietician"}
-                
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error sending message notification: {e}")
-        print(f"[MESSAGE NOTIFICATION DEBUG] ❌ Exception: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send message notification: {e}")
+        logger.error(f"[SIMPLE NOTIFICATION] Error sending notification: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send notification: {e}")
 
-@api_router.post("/notifications/send-appointment")
-async def send_appointment_notification(request: dict):
+@api_router.get("/notifications/test/{user_id}")
+async def test_notification(user_id: str):
     """
-    Send a push notification for appointment scheduling/cancelling.
+    Test endpoint to verify notification system is working.
     """
     try:
-        appointment_type = request.get("type")  # "scheduled" or "cancelled"
-        user_name = request.get("userName", "")
-        appointment_date = request.get("appointmentDate", "")
-        time_slot = request.get("timeSlot", "")
-        user_email = request.get("userEmail", "")
+        logger.info(f"[SIMPLE NOTIFICATION] Testing notification for user {user_id}")
         
-        print(f"[APPOINTMENT NOTIFICATION DEBUG] Received request:")
-        print(f"  - type: {appointment_type}")
-        print(f"  - userName: {user_name}")
-        print(f"  - appointmentDate: {appointment_date}")
-        print(f"  - timeSlot: {time_slot}")
-        print(f"  - userEmail: {user_email}")
+        notification_service = get_notification_service(firestore_db)
         
-        if not appointment_type:
-            raise HTTPException(status_code=400, detail="type is required")
-        
-        # Send notification to dietician about appointment changes
-        dietician_token = get_dietician_notification_token()
-        if not dietician_token:
-            logger.warning("No dietician notification token found")
-            return {"message": "Dietician notification token not found"}
-        
-        if appointment_type == "scheduled":
-            title = "New Appointment Booked"
-            body = f"{user_name} has booked an appointment for {appointment_date} at {time_slot}"
-        elif appointment_type == "cancelled":
-            title = "Appointment Cancelled"
-            body = f"{user_name} has cancelled their appointment for {appointment_date} at {time_slot}"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid appointment type")
-        
-        success = send_push_notification(
-            token=dietician_token,
-            title=title,
-            body=body,
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title="Test Notification 🧪",
+            body="This is a test notification to verify the system is working.",
             data={
-                "type": "appointment_notification",
-                "appointmentType": appointment_type,
-                "userName": user_name,
-                "appointmentDate": appointment_date,
-                "timeSlot": time_slot,
-                "userEmail": user_email
+                "type": "test",
+                "timestamp": datetime.now().isoformat()
             }
         )
         
         if success:
-            print(f"[APPOINTMENT NOTIFICATION DEBUG] ✅ Appointment notification sent to dietician successfully")
+            return {"success": True, "message": "Test notification sent successfully"}
         else:
-            print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Failed to send appointment notification to dietician")
-        
-        # Also send confirmation notification to user
-        if appointment_type == "scheduled":
-            try:
-                # Find user by email to get their notification token
-                user_docs = firestore_db.collection("user_profiles").where("email", "==", user_email).limit(1).stream()
-                
-                user_notified = False
-                for user_doc in user_docs:
-                    user_token = get_user_notification_token(user_doc.id)
-                    if user_token:
-                        user_success = send_push_notification(
-                            token=user_token,
-                            title="Appointment Confirmed",
-                            body=f"Your appointment has been confirmed for {appointment_date} at {time_slot}",
-                            data={
-                                "type": "appointment_notification",
-                                "appointmentType": "confirmed",
-                                "appointmentDate": appointment_date,
-                                "timeSlot": time_slot
-                            }
-                        )
-                        if user_success:
-                            print(f"[APPOINTMENT NOTIFICATION DEBUG] ✅ Sent appointment confirmation to user {user_doc.id}")
-                            user_notified = True
-                        else:
-                            print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Failed to send appointment confirmation to user {user_doc.id}")
-                    else:
-                        print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ No notification token found for user {user_doc.id}")
-                
-                if not user_notified:
-                    print(f"[APPOINTMENT NOTIFICATION DEBUG] ⚠️ User notification not sent (user not found or no token)")
-            except Exception as user_notif_error:
-                print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Error sending appointment notification to user: {user_notif_error}")
-                # Don't fail the whole request if user notification fails
-        
-        return {"message": f"Appointment {appointment_type} notification sent successfully"}
-                
-    except HTTPException:
-        raise
+            return {"success": False, "message": "Failed to send test notification"}
+            
     except Exception as e:
-        logger.error(f"Error sending appointment notification: {e}")
-        print(f"[APPOINTMENT NOTIFICATION DEBUG] ❌ Exception: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send appointment notification: {e}")
+        logger.error(f"[SIMPLE NOTIFICATION] Error testing notification: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to test notification: {e}")
 
 @api_router.post("/users/{user_id}/diet/notifications/schedule")
 async def schedule_diet_notifications(user_id: str):

@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
 import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
+import { simpleNotificationHandler } from './services/simpleNotificationHandler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
@@ -388,6 +389,15 @@ function AppContent() {
     const initializeServices = async () => {
       try {
         
+        // Set up simple notification handler
+        try {
+          console.log('[NOTIFICATIONS] Setting up simple notification handler');
+          simpleNotificationHandler.initialize();
+          console.log('[NOTIFICATIONS] ✅ Simple notification handler setup successful');
+        } catch (error) {
+          console.warn('[NOTIFICATIONS] Simple notification handler setup failed:', error);
+        }
+        
         // Set up diet notification listener with platform-specific handling
         try {
           console.log('[NOTIFICATIONS] Setting up diet notification listener on platform:', Platform.OS);
@@ -409,12 +419,14 @@ function AppContent() {
               isLoginInProgress = true; // Set login flag
               (global as any).isLoginInProgress = true; // Set global flag
               
-              // ✅ FIX: Register for push notifications AFTER user login
+              // ✅ FIX: Register for push notifications AFTER user login with stable user ID
               try {
                 console.log('[NOTIFICATIONS] User logged in, registering for push notifications');
                 console.log('[NOTIFICATIONS] User ID:', firebaseUser.uid);
                 console.log('[NOTIFICATIONS] Platform:', Platform.OS);
-                const token = await registerForPushNotificationsAsync();
+                
+                // Pass the user ID directly to prevent auth state confusion
+                const token = await registerForPushNotificationsAsync(firebaseUser.uid);
                 if (token) {
                   console.log('[NOTIFICATIONS] ✅ Push notification token obtained and saved');
                   console.log('[NOTIFICATIONS] Token preview:', token.substring(0, 30) + '...');

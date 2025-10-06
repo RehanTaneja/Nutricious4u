@@ -450,97 +450,10 @@ def get_dietician_notification_token() -> str:
         print(f"Failed to get dietician notification token: {e}")
         return None
 
-# --- Check Users with 1 Day Remaining ---
+# --- Check Users with 1 Day Remaining - DISABLED ---
 def check_users_with_one_day_remaining():
     """
-    Check all users and notify dietician if any user has 1 day remaining
+    DISABLED: 1-day left notifications removed for simplicity
     """
-    if db is None:
-        print("Firebase not initialized, cannot check users with one day remaining")
-        return []
-    
-    try:
-        users_ref = db.collection("user_profiles")
-        users = users_ref.where("isDietician", "!=", True).stream()
-        
-        one_day_users = []
-        for user in users:
-            data = user.to_dict()
-            last_upload = data.get("lastDietUpload")
-            
-            if last_upload:
-                # Convert to datetime if it's a string
-                if isinstance(last_upload, str):
-                    last_upload = datetime.fromisoformat(last_upload.replace('Z', '+00:00'))
-                
-                # Calculate days remaining using same logic as main API
-                from datetime import timezone
-                now = datetime.now(timezone.utc)
-                
-                # Ensure last_upload is timezone-aware for comparison
-                if last_upload.tzinfo is None:
-                    last_upload = last_upload.replace(tzinfo=timezone.utc)
-                
-                time_diff = now - last_upload
-                total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
-                days_remaining = total_hours_remaining // 24
-                
-                if days_remaining == 1:
-                    # Get proper user name (first name + last name)
-                    first_name = data.get('firstName', '').strip()
-                    last_name = data.get('lastName', '').strip()
-                    
-                    # Create proper name format
-                    if first_name and last_name:
-                        full_name = f"{first_name} {last_name}"
-                    elif first_name:
-                        full_name = first_name
-                    elif last_name:
-                        full_name = last_name
-                    else:
-                        full_name = "User"  # Fallback
-                    
-                    one_day_users.append({
-                        "userId": user.id,
-                        "name": full_name,
-                        "firstName": first_name,
-                        "lastName": last_name,
-                        "email": data.get('email', '')
-                    })
-        
-        # Send notification to dietician if any users have 1 day remaining
-        if one_day_users:
-            print(f"[COUNTDOWN NOTIFICATION DEBUG] Found {len(one_day_users)} users with 1 day remaining")
-            dietician_token = get_dietician_notification_token()
-            if dietician_token:
-                # Create proper message with user names
-                if len(one_day_users) == 1:
-                    user_name = one_day_users[0]["name"]
-                    message = f"{user_name} has 1 day left in their diet"
-                else:
-                    user_names = [user["name"] for user in one_day_users]
-                    message = f"{', '.join(user_names)} have 1 day left in their diets"
-                
-                print(f"[COUNTDOWN NOTIFICATION DEBUG] Sending to dietician: {message}")
-                
-                success = send_push_notification(
-                    dietician_token,
-                    "Diet Reminder",
-                    message,
-                    {"type": "dietician_diet_reminder", "users": one_day_users}
-                )
-                
-                if success:
-                    print(f"[COUNTDOWN NOTIFICATION DEBUG] ✅ Sent diet reminder notification to dietician: {message}")
-                else:
-                    print(f"[COUNTDOWN NOTIFICATION DEBUG] ❌ Failed to send diet reminder notification to dietician")
-            else:
-                print("[COUNTDOWN NOTIFICATION DEBUG] ❌ No dietician notification token found")
-        else:
-            print("[COUNTDOWN NOTIFICATION DEBUG] No users with 1 day remaining")
-        
-        return one_day_users
-        
-    except Exception as e:
-        print(f"Error checking users with one day remaining: {e}")
-        return []
+    print("[COUNTDOWN NOTIFICATION DEBUG] 1-day left notifications disabled")
+    return []
