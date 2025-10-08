@@ -1146,11 +1146,13 @@ export const sendAppointmentNotification = async (
   timeSlot: string,
   userEmail: string
 ) => {
-  const response = await enhancedApi.post('/notifications/send-appointment', {
-    type,
-    userName,
+  const response = await enhancedApi.post('/notifications/send', {
+    recipientId: 'dietician', // Send to dietician
+    type: 'appointment',
+    appointmentType: type,
     appointmentDate,
     timeSlot,
+    userName,
     userEmail
   });
   return response.data;
@@ -1163,12 +1165,12 @@ export const sendMessageNotification = async (
   senderUserId: string,
   senderIsDietician: boolean
 ) => {
-  const response = await enhancedApi.post('/notifications/send-message', {
-    recipientUserId,
+  const response = await enhancedApi.post('/notifications/send', {
+    recipientId: recipientUserId,
+    type: 'message',
     message,
     senderName,
-    senderUserId,
-    senderIsDietician
+    isDietician: senderIsDietician
   });
   return response.data;
 };
