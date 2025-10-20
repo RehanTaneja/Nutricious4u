@@ -172,7 +172,7 @@ class SimpleNotificationService:
             title=title,
             body=body,
             data={
-                "type": "message",
+                "type": "message_notification",
                 "senderName": sender_name,
                 "message": message,
                 "timestamp": datetime.now().isoformat()
@@ -225,6 +225,99 @@ class SimpleNotificationService:
                 "timestamp": datetime.now().isoformat()
             }
         )
+    
+    def send_dietician_diet_reminder_notification(self, user_id: str, user_name: str) -> bool:
+        """
+        Send notification to dietician when user needs new diet (1 day left).
+        """
+        logger.info(f"[SimpleNotification] Sending diet reminder notification to dietician for user {user_id}")
+        
+        # Get dietician token
+        from services.firebase_client import get_dietician_notification_token
+        dietician_token = get_dietician_notification_token()
+        if not dietician_token:
+            logger.error("[SimpleNotification] No dietician token found")
+            return False
+        
+        # Send to dietician using direct token
+        return self.send_notification_to_token(
+            token=dietician_token,
+            title="Diet Reminder ⏰",
+            body=f"{user_name} has 1 day left in their diet",
+            data={
+                "type": "dietician_diet_reminder",
+                "userId": user_id,
+                "userName": user_name,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
+    def send_notification_to_token(self, token: str, title: str, body: str, data: Dict[str, Any] = None) -> bool:
+        """
+        Send a notification directly to a specific token.
+        
+        Args:
+            token: Expo push token to send notification to
+            title: Notification title
+            body: Notification body
+            data: Additional data payload
+            
+        Returns:
+            bool: True if notification sent successfully, False otherwise
+        """
+        try:
+            logger.info(f"[SimpleNotification] ===== SENDING NOTIFICATION TO TOKEN =====")
+            logger.info(f"[SimpleNotification] Token: {token[:20]}...")
+            logger.info(f"[SimpleNotification] Title: {title}")
+            logger.info(f"[SimpleNotification] Body: {body}")
+            logger.info(f"[SimpleNotification] Data: {data}")
+            
+            if not token:
+                logger.error(f"[SimpleNotification] ❌ No token provided")
+                return False
+            
+            # Prepare notification payload
+            notification_data = {
+                "to": token,
+                "sound": "default",
+                "title": title,
+                "body": body,
+                "data": data or {}
+            }
+            
+            logger.info(f"[SimpleNotification] Payload: {json.dumps(notification_data, indent=2)}")
+            
+            # Send to Expo Push Service
+            logger.info(f"[SimpleNotification] Sending to Expo Push Service...")
+            response = requests.post(
+                "https://exp.host/--/api/v2/push/send",
+                headers={
+                    "Accept": "application/json",
+                    "Accept-encoding": "gzip, deflate",
+                    "Content-Type": "application/json",
+                },
+                data=json.dumps(notification_data),
+                timeout=10
+            )
+            
+            logger.info(f"[SimpleNotification] Response status: {response.status_code}")
+            logger.info(f"[SimpleNotification] Response body: {response.text}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("data", {}).get("status") == "error":
+                    logger.error(f"[SimpleNotification] ❌ Expo push error: {result}")
+                    return False
+                
+                logger.info(f"[SimpleNotification] ✅ Notification sent successfully")
+                return True
+            else:
+                logger.error(f"[SimpleNotification] ❌ Failed to send notification: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"[SimpleNotification] ❌ Error sending notification to token: {e}")
+            return False
 
 
 # Global instance

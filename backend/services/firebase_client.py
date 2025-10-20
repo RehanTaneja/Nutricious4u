@@ -450,10 +450,74 @@ def get_dietician_notification_token() -> str:
         print(f"Failed to get dietician notification token: {e}")
         return None
 
-# --- Check Users with 1 Day Remaining - DISABLED ---
+# --- Check Users with 1 Day Remaining ---
 def check_users_with_one_day_remaining():
     """
-    DISABLED: 1-day left notifications removed for simplicity
+    Check for users with 1 day remaining in their diet and notify dietician
     """
-    print("[COUNTDOWN NOTIFICATION DEBUG] 1-day left notifications disabled")
-    return []
+    print("[COUNTDOWN NOTIFICATION DEBUG] ===== CHECKING USERS WITH 1 DAY REMAINING =====")
+    
+    if db is None:
+        print("[COUNTDOWN NOTIFICATION DEBUG] ❌ Firebase not initialized")
+        return []
+    
+    try:
+        # Get current date
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        one_day_from_now = today + timedelta(days=1)
+        
+        print(f"[COUNTDOWN NOTIFICATION DEBUG] Today: {today}")
+        print(f"[COUNTDOWN NOTIFICATION DEBUG] Checking for users with diet expiring on: {one_day_from_now}")
+        
+        # Query users whose diet expires tomorrow
+        users_ref = db.collection("users")
+        query = users_ref.where("dietExpiryDate", "==", one_day_from_now.isoformat())
+        docs = query.stream()
+        
+        users_with_one_day = []
+        for doc in docs:
+            user_data = doc.to_dict()
+            user_info = {
+                'id': doc.id,
+                'name': user_data.get('name', 'User'),
+                'email': user_data.get('email', ''),
+                'dietExpiryDate': user_data.get('dietExpiryDate')
+            }
+            users_with_one_day.append(user_info)
+            print(f"[COUNTDOWN NOTIFICATION DEBUG] Found user with 1 day left: {user_info['name']} ({user_info['email']})")
+        
+        # Send notification to dietician for each user
+        if users_with_one_day:
+            print(f"[COUNTDOWN NOTIFICATION DEBUG] Sending notifications to dietician for {len(users_with_one_day)} users")
+            dietician_token = get_dietician_notification_token()
+            if dietician_token:
+                for user in users_with_one_day:
+                    success = send_push_notification(
+                        token=dietician_token,
+                        title="Diet Reminder",
+                        body=f"{user['name']} has 1 day left in their diet",
+                        data={
+                            'type': 'dietician_diet_reminder',
+                            'userId': user['id'],
+                            'userName': user['name'],
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    )
+                    if success:
+                        print(f"[COUNTDOWN NOTIFICATION DEBUG] ✅ Sent notification to dietician for user {user['name']}")
+                    else:
+                        print(f"[COUNTDOWN NOTIFICATION DEBUG] ❌ Failed to send notification to dietician for user {user['name']}")
+            else:
+                print("[COUNTDOWN NOTIFICATION DEBUG] ❌ No dietician token found")
+        else:
+            print("[COUNTDOWN NOTIFICATION DEBUG] No users with 1 day remaining found")
+        
+        print(f"[COUNTDOWN NOTIFICATION DEBUG] ===== CHECK COMPLETE: {len(users_with_one_day)} users found =====")
+        return users_with_one_day
+        
+    except Exception as e:
+        print(f"[COUNTDOWN NOTIFICATION DEBUG] ❌ Error checking users with 1 day remaining: {e}")
+        import traceback
+        print(f"[COUNTDOWN NOTIFICATION DEBUG] Traceback: {traceback.format_exc()}")
+        return []

@@ -2784,6 +2784,10 @@ async def send_notification(request: dict):
             user_name = request.get("userName", "User")
             success = notification_service.send_diet_reminder_notification(recipient_id, user_name)
             
+        elif notification_type == "dietician_diet_reminder":
+            user_name = request.get("userName", "User")
+            success = notification_service.send_dietician_diet_reminder_notification(recipient_id, user_name)
+            
         else:
             # Generic notification
             title = request.get("title", "Notification")
