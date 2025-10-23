@@ -25,6 +25,7 @@ class SimpleNotificationService:
     def get_user_token(self, user_id: str) -> Optional[str]:
         """
         Get notification token for a user.
+        Handles special case for 'dietician' recipient.
         Returns None if user doesn't exist or has no token.
         """
         try:
@@ -33,6 +34,17 @@ class SimpleNotificationService:
             if not self.db:
                 logger.error("[SimpleNotification] Firestore not initialized")
                 return None
+            
+            # CRITICAL FIX: Handle 'dietician' as special recipient
+            if user_id == "dietician":
+                logger.info(f"[SimpleNotification] Getting dietician token (special case)")
+                from services.firebase_client import get_dietician_notification_token
+                dietician_token = get_dietician_notification_token()
+                if dietician_token:
+                    logger.info(f"[SimpleNotification] ✅ Dietician token found: {dietician_token[:20]}...")
+                else:
+                    logger.error(f"[SimpleNotification] ❌ No dietician token found")
+                return dietician_token
             
             # Get user document
             doc = self.db.collection("user_profiles").document(user_id).get()
@@ -154,11 +166,22 @@ class SimpleNotificationService:
             }
         )
     
-    def send_message_notification(self, recipient_id: str, sender_name: str, message: str, is_dietician: bool = False) -> bool:
+    def send_message_notification(self, recipient_id: str, sender_name: str, message: str, is_dietician: bool = False, sender_user_id: str = None) -> bool:
         """
         Send notification for new message.
+        
+        Args:
+            recipient_id: User ID or 'dietician' to send notification to
+            sender_name: Name of the message sender
+            message: Message content
+            is_dietician: True if sender is dietician, False if sender is user
+            sender_user_id: User ID of sender (for tracking)
         """
-        logger.info(f"[SimpleNotification] Sending message notification to {recipient_id}")
+        logger.info(f"[SimpleNotification] ===== MESSAGE NOTIFICATION =====")
+        logger.info(f"[SimpleNotification] Recipient: {recipient_id}")
+        logger.info(f"[SimpleNotification] Sender: {sender_name}")
+        logger.info(f"[SimpleNotification] Is Dietician: {is_dietician}")
+        logger.info(f"[SimpleNotification] Sender User ID: {sender_user_id}")
         
         if is_dietician:
             title = f"Message from {sender_name}"
@@ -167,16 +190,27 @@ class SimpleNotificationService:
             title = f"New message from {sender_name}"
             body = message[:100] + "..." if len(message) > 100 else message
         
+        # Prepare notification data with proper flags for frontend handlers
+        notification_data = {
+            "type": "message_notification",
+            "senderName": sender_name,
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # CRITICAL: Add fromDietician or fromUser flag based on sender
+        if is_dietician:
+            notification_data["fromDietician"] = True
+            logger.info(f"[SimpleNotification] Setting fromDietician=True (dietician -> user)")
+        else:
+            notification_data["fromUser"] = sender_user_id or True
+            logger.info(f"[SimpleNotification] Setting fromUser={sender_user_id or True} (user -> dietician)")
+        
         return self.send_notification(
             recipient_id=recipient_id,
             title=title,
             body=body,
-            data={
-                "type": "message_notification",
-                "senderName": sender_name,
-                "message": message,
-                "timestamp": datetime.now().isoformat()
-            }
+            data=notification_data
         )
     
     def send_appointment_notification(self, recipient_id: str, appointment_type: str, appointment_date: str, time_slot: str) -> bool:

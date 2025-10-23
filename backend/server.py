@@ -2772,7 +2772,8 @@ async def send_notification(request: dict):
             sender_name = request.get("senderName", "Someone")
             message = request.get("message", "")
             is_dietician = request.get("isDietician", False)
-            success = notification_service.send_message_notification(recipient_id, sender_name, message, is_dietician)
+            sender_user_id = request.get("senderUserId")  # Get sender user ID for tracking
+            success = notification_service.send_message_notification(recipient_id, sender_name, message, is_dietician, sender_user_id)
             
         elif notification_type == "appointment":
             appointment_type = request.get("appointmentType", "scheduled")
@@ -2836,6 +2837,77 @@ async def test_notification(user_id: str):
     except Exception as e:
         logger.error(f"[SIMPLE NOTIFICATION] Error testing notification: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to test notification: {e}")
+
+@api_router.get("/notifications/debug/token/{user_id}")
+async def debug_token_status(user_id: str):
+    """
+    Debug endpoint to check token status for a user or dietician.
+    Use 'dietician' as user_id to check dietician token.
+    """
+    try:
+        logger.info(f"[DEBUG TOKEN] Checking token status for: {user_id}")
+        
+        result = {
+            "userId": user_id,
+            "timestamp": datetime.now().isoformat(),
+            "tokenFound": False,
+            "tokenPreview": None,
+            "tokenValid": False,
+            "platform": None,
+            "lastUpdate": None,
+            "isDietician": False,
+            "errors": []
+        }
+        
+        if user_id == "dietician":
+            # Check dietician token
+            result["isDietician"] = True
+            
+            try:
+                from services.firebase_client import get_dietician_notification_token
+                token = get_dietician_notification_token()
+                
+                if token:
+                    result["tokenFound"] = True
+                    result["tokenPreview"] = token[:30] + "..."
+                    result["tokenValid"] = token.startswith("ExponentPushToken")
+                else:
+                    result["errors"].append("No dietician token found in database")
+                    
+            except Exception as e:
+                result["errors"].append(f"Error getting dietician token: {str(e)}")
+        else:
+            # Check regular user token
+            doc = firestore_db.collection("user_profiles").document(user_id).get()
+            
+            if not doc.exists:
+                result["errors"].append(f"User document not found for {user_id}")
+                return result
+            
+            data = doc.to_dict()
+            
+            # Check if user is actually dietician
+            result["isDietician"] = data.get("isDietician", False)
+            
+            # Get token
+            token = data.get("expoPushToken") or data.get("notificationToken")
+            
+            if token:
+                result["tokenFound"] = True
+                result["tokenPreview"] = token[:30] + "..."
+                result["tokenValid"] = token.startswith("ExponentPushToken")
+                result["platform"] = data.get("platform")
+                result["lastUpdate"] = data.get("lastTokenUpdate")
+            else:
+                result["errors"].append("No token found in user document")
+                result["errors"].append("User needs to log into mobile app to register for notifications")
+        
+        logger.info(f"[DEBUG TOKEN] Result: {json.dumps(result, indent=2)}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"[DEBUG TOKEN] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to debug token: {e}")
 
 @api_router.post("/users/{user_id}/diet/notifications/schedule")
 async def schedule_diet_notifications(user_id: str):

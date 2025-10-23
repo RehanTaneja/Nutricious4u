@@ -1170,6 +1170,7 @@ export const sendMessageNotification = async (
     type: 'message',
     message,
     senderName,
+    senderUserId,  // CRITICAL: Include sender user ID for proper tracking
     isDietician: senderIsDietician
   });
   return response.data;
