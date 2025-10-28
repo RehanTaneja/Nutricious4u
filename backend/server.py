@@ -1885,19 +1885,15 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
 @api_router.post("/diet/check-reminders")
 async def check_diet_reminders():
     """
-    Check all users and notify dietician if any user has 1 day remaining.
-    This endpoint can be called by a scheduled job (cron, etc.)
+    DEPRECATED: This endpoint is deprecated. Use the scheduled job instead.
     """
-    try:
-        one_day_users = check_users_with_one_day_remaining()
-        return {
-            "success": True,
-            "users_with_one_day": len(one_day_users),
-            "users": one_day_users
-        }
-    except Exception as e:
-        print(f"Error checking diet reminders: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    logger.info("[Diet Reminders] Endpoint deprecated - use scheduled job")
+    return {
+        "success": True,
+        "message": "Endpoint deprecated - use scheduled job",
+        "users_with_one_day": 0,
+        "users": []
+    }
 
 # --- Get User Diet PDF and Countdown ---
 @api_router.get("/users/{user_id}/diet")
@@ -2769,25 +2765,20 @@ async def send_notification(request: dict):
             success = notification_service.send_new_diet_notification(recipient_id, dietician_name)
             
         elif notification_type == "message":
-            sender_name = request.get("senderName", "Someone")
-            message = request.get("message", "")
-            is_dietician = request.get("isDietician", False)
-            sender_user_id = request.get("senderUserId")  # Get sender user ID for tracking
-            success = notification_service.send_message_notification(recipient_id, sender_name, message, is_dietician, sender_user_id)
+            # This old endpoint is deprecated - use /push-notifications/send instead
+            success = True
             
         elif notification_type == "appointment":
-            appointment_type = request.get("appointmentType", "scheduled")
-            appointment_date = request.get("appointmentDate", "")
-            time_slot = request.get("timeSlot", "")
-            success = notification_service.send_appointment_notification(recipient_id, appointment_type, appointment_date, time_slot)
+            # This old endpoint is deprecated - use /push-notifications/send instead
+            success = True
             
         elif notification_type == "diet_reminder":
             user_name = request.get("userName", "User")
             success = notification_service.send_diet_reminder_notification(recipient_id, user_name)
             
         elif notification_type == "dietician_diet_reminder":
-            user_name = request.get("userName", "User")
-            success = notification_service.send_dietician_diet_reminder_notification(recipient_id, user_name)
+            # This old endpoint is deprecated - use scheduled job instead
+            success = True
             
         else:
             # Generic notification
@@ -2837,6 +2828,80 @@ async def test_notification(user_id: str):
     except Exception as e:
         logger.error(f"[SIMPLE NOTIFICATION] Error testing notification: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to test notification: {e}")
+
+# --- NEW PUSH NOTIFICATIONS API ---
+@api_router.post("/push-notifications/send")
+async def send_push_notification_new(request: dict):
+    """
+    New clean push notification endpoint.
+    Handles: messages, appointments, diet_countdown
+    """
+    try:
+        notification_type = request.get("type")
+        logger.info(f"[PUSH NOTIFICATION] Received request type: {notification_type}")
+        
+        if notification_type == "message":
+            # Message: user -> dietician OR dietician -> user
+            recipient_id = request.get("recipientId")
+            sender_name = request.get("senderName")
+            message = request.get("message")
+            is_from_dietician = request.get("isFromDietician", False)
+            
+            logger.info(f"[PUSH NOTIFICATION] Message notification: {sender_name} -> {recipient_id}")
+            
+            notification_service = get_notification_service(firestore_db)
+            success = notification_service.send_message_notification(
+                recipient_id, sender_name, message, is_from_dietician
+            )
+            
+        elif notification_type == "appointment_scheduled":
+            # Appointment scheduled: notify dietician
+            user_name = request.get("userName")
+            date = request.get("date")
+            time_slot = request.get("timeSlot")
+            
+            logger.info(f"[PUSH NOTIFICATION] Appointment scheduled: {user_name} at {date} {time_slot}")
+            
+            notification_service = get_notification_service(firestore_db)
+            success = notification_service.send_notification(
+                recipient_id="dietician",
+                title="New Appointment Scheduled",
+                body=f"{user_name} scheduled an appointment for {date} at {time_slot}",
+                data={"type": "appointment", "userName": user_name, "date": date, "timeSlot": time_slot}
+            )
+            
+        elif notification_type == "appointment_cancelled":
+            # Appointment cancelled: notify dietician
+            user_name = request.get("userName")
+            date = request.get("date")
+            time_slot = request.get("timeSlot")
+            
+            logger.info(f"[PUSH NOTIFICATION] Appointment cancelled: {user_name} at {date} {time_slot}")
+            
+            notification_service = get_notification_service(firestore_db)
+            success = notification_service.send_notification(
+                recipient_id="dietician",
+                title="Appointment Cancelled",
+                body=f"{user_name} cancelled appointment for {date} at {time_slot}",
+                data={"type": "appointment_cancelled", "userName": user_name, "date": date, "timeSlot": time_slot}
+            )
+        
+        else:
+            logger.error(f"[PUSH NOTIFICATION] Invalid notification type: {notification_type}")
+            raise HTTPException(status_code=400, detail="Invalid notification type")
+        
+        if success:
+            logger.info(f"[PUSH NOTIFICATION] ✅ Notification sent successfully")
+            return {"success": True}
+        else:
+            logger.error(f"[PUSH NOTIFICATION] ❌ Failed to send notification")
+            return {"success": False}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[PUSH NOTIFICATION] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/notifications/debug/token/{user_id}")
 async def debug_token_status(user_id: str):
@@ -3273,24 +3338,80 @@ async def scan_food_photo(
         except Exception as cleanup_err:
             logger.warning(f"[CLEANUP] Failed to remove temp file: {cleanup_err}")
 
-# --- Scheduled Job for Diet Reminders ---
-async def check_diet_reminders_job():
+# --- NEW: Diet Countdown Scheduled Job ---
+async def check_diet_countdown_job():
     """
-    Scheduled job to check for users with 1 day remaining and notify dietician
+    Daily job to check users with 1 day left in diet.
+    Notifies dietician about users needing new diet plan.
     """
     try:
-        print("[Diet Reminders] Running scheduled check for users with 1 day remaining...")
-        one_day_users = check_users_with_one_day_remaining()
+        from datetime import datetime, timedelta, timezone
         
-        if one_day_users:
-            print(f"[Diet Reminders] Found {len(one_day_users)} users with 1 day remaining")
-            # The notification is already sent by check_users_with_one_day_remaining()
-            print(f"[Diet Reminders] Notification sent to dietician for {len(one_day_users)} users")
-        else:
-            print("[Diet Reminders] No users with 1 day remaining")
+        logger.info("[DIET COUNTDOWN] Starting daily check for users with 1 day left")
+        
+        # Get all user profiles
+        users_ref = firestore_db.collection("user_profiles")
+        all_users = users_ref.stream()
+        
+        users_needing_diet = []
+        
+        for user_doc in all_users:
+            user_data = user_doc.to_dict()
+            user_id = user_doc.id
             
+            # Skip dieticians
+            if user_data.get("isDietician"):
+                continue
+            
+            last_upload = user_data.get("lastDietUpload")
+            if not last_upload:
+                continue
+            
+            # Parse date
+            if last_upload.endswith('Z'):
+                last_upload = last_upload.replace('Z', '+00:00')
+            last_dt = datetime.fromisoformat(last_upload)
+            
+            # Calculate days left
+            now = datetime.now(timezone.utc)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            
+            time_diff = now - last_dt
+            total_hours = max(0, 168 - int(time_diff.total_seconds() / 3600))
+            days_left = total_hours // 24
+            
+            # Check if exactly 1 day left (between 24-47 hours)
+            if 24 <= total_hours < 48:
+                user_name = f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip()
+                users_needing_diet.append({
+                    "id": user_id,
+                    "name": user_name or "User",
+                    "email": user_data.get("email", "")
+                })
+                logger.info(f"[DIET COUNTDOWN] Found user with 1 day left: {user_name} ({user_id})")
+        
+        # Send notification to dietician for each user
+        if users_needing_diet:
+            notification_service = get_notification_service(firestore_db)
+            for user in users_needing_diet:
+                try:
+                    notification_service.send_notification(
+                        recipient_id="dietician",
+                        title="Diet Expiring Soon ⏰",
+                        body=f"{user['name']} has 1 day left in their diet plan",
+                        data={"type": "diet_countdown", "userId": user["id"], "userName": user["name"]}
+                    )
+                    logger.info(f"[DIET COUNTDOWN] ✅ Sent notification for user: {user['name']}")
+                except Exception as notif_error:
+                    logger.error(f"[DIET COUNTDOWN] ❌ Failed to send notification for {user['name']}: {notif_error}")
+        else:
+            logger.info("[DIET COUNTDOWN] No users with 1 day left found")
+        
+        logger.info(f"[DIET COUNTDOWN] ✅ Daily check completed. Found {len(users_needing_diet)} users with 1 day left")
+        
     except Exception as e:
-        print(f"[Diet Reminders] Error in scheduled job: {e}")
+        logger.error(f"[DIET COUNTDOWN] ❌ Error in job: {e}")
 
 async def check_subscription_reminders_job():
     """Check for subscription reminders and send notifications"""
@@ -4118,8 +4239,8 @@ def run_scheduled_jobs():
     """Run scheduled jobs in a separate thread"""
     while True:
         try:
-            # Run the diet reminders job (every 6 hours)
-            asyncio.run(check_diet_reminders_job())
+            # Run the NEW diet countdown job (every 6 hours)
+            asyncio.run(check_diet_countdown_job())
             
             # Run the subscription reminders job (every 6 hours)
             asyncio.run(check_subscription_reminders_job())
@@ -4526,5 +4647,6 @@ if __name__ == "__main__":
     import uvicorn
     print("🎉 Server initialization complete!")
     print("🌐 Starting server on http://0.0.0.0:8000")
-    print("⏰ Diet reminder scheduler started (checking every 6 hours)")
+    print("⏰ Diet countdown scheduler started (checking every 6 hours)")
+    print("📬 Push notification system enabled")
     uvicorn.run(app, host="0.0.0.0", port=8000)

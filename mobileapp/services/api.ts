@@ -847,6 +847,31 @@ export const listRoutines = async (userId: string): Promise<Routine[]> => {
   return response.data;
 };
 
+// --- Push Notifications ---
+export interface PushNotificationRequest {
+  type: 'message' | 'appointment_scheduled' | 'appointment_cancelled';
+  recipientId?: string;
+  senderName?: string;
+  message?: string;
+  isFromDietician?: boolean;
+  userName?: string;
+  date?: string;
+  timeSlot?: string;
+}
+
+export const sendPushNotification = async (notificationData: PushNotificationRequest): Promise<{ success: boolean }> => {
+  try {
+    logger.log('[sendPushNotification] Sending push notification:', notificationData);
+    const response = await enhancedApi.post('/push-notifications/send', notificationData);
+    logger.log('[sendPushNotification] Response:', response.data);
+    return response.data;
+  } catch (error) {
+    logger.error('[sendPushNotification] Error:', error);
+    // Don't throw error - push notifications should be non-blocking
+    return { success: false };
+  }
+};
+
 export const createRoutine = async (userId: string, routine: RoutineCreateRequest): Promise<Routine> => {
   const response = await enhancedApi.post(`/users/${userId}/routines`, routine);
   return response.data;

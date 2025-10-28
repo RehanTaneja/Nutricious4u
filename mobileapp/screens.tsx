@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
-import { logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, getNutritionData, searchFood, sendMessageNotification, resetDailyData } from './services/api';
+import { logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, getNutritionData, searchFood, sendMessageNotification, resetDailyData, sendPushNotification } from './services/api';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
@@ -1382,39 +1382,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           }
         }
         
-        // Handle message notifications from dietician
-        if (data?.type === 'message_notification' && data?.fromDietician) {
-          console.log('[Dashboard] Received message notification from dietician:', data.senderName);
-          // Show notification to user about new message
-          Alert.alert(
-            'New Message',
-            `You have a new message from your dietician`,
-            [
-              { text: 'View Message', onPress: () => navigation.navigate('DieticianMessage') },
-              { text: 'OK', style: 'default' }
-            ]
-          );
-        }
-        
-        // Handle appointment notifications
-        if (data?.type === 'appointment_notification') {
-          console.log('[Dashboard] Received appointment notification:', data.appointmentType);
-          
-          if (data.appointmentType === 'confirmed') {
-            Alert.alert(
-              'Appointment Confirmed',
-              `Your appointment has been confirmed for ${data.appointmentDate} at ${data.timeSlot}`,
-              [{ text: 'OK', style: 'default' }]
-            );
-          } else if (data.appointmentType === 'cancelled') {
-            Alert.alert(
-              'Appointment Cancelled',
-              `Your appointment for ${data.appointmentDate} at ${data.timeSlot} has been cancelled`,
-              [{ text: 'OK', style: 'default' }]
-            );
-          }
-        }
-      });
+              });
 
       return () => subscription.remove();
     }, [userId]);
@@ -7097,78 +7065,6 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     }
   }, [messages]);
 
-  // Enhanced notification system for messages
-  const sendLocalMessageNotification = async (toDietician: boolean, message: string, senderName: string = '') => {
-    try {
-      // Enhanced notification content for better background delivery
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: toDietician ? 'New message from user' : 'New message from dietician',
-          body: message,
-          sound: 'default',
-          priority: 'high',
-          autoDismiss: false,
-          sticky: false,
-          data: {
-            type: 'message_notification',
-            toDietician,
-            message,
-            senderName,
-            timestamp: new Date().toISOString(),
-            userId: auth.currentUser?.uid
-          }
-        },
-        trigger: null, // Immediate notification
-      });
-      
-      console.log('[Message Notifications] Sent local notification:', {
-        toDietician,
-        message: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
-        senderName
-      });
-    } catch (error) {
-      console.error('[Message Notifications] Error sending local notification:', error);
-    }
-  };
-
-  // Send push notification via backend (for cross-device messaging)
-  const sendPushNotification = async (recipientUserId: string, message: string, senderName: string = '') => {
-    try {
-      const currentUserId = auth.currentUser?.uid;
-      if (!currentUserId) {
-        console.error('[Message Notifications] No current user ID available');
-        return;
-      }
-      
-      console.log('[Message Notifications] Sending push notification:', {
-        recipientUserId,
-        message,
-        senderName,
-        currentUserId,
-        isDietician
-      });
-      
-      // Use enhanced API wrapper instead of direct fetch
-      const response = await sendMessageNotification(recipientUserId, message, senderName || 'User', currentUserId, isDietician);
-      
-      console.log('[Message Notifications] Push notification response:', response);
-      console.log('[Message Notifications] Push notification sent successfully');
-    } catch (error) {
-      console.error('[Message Notifications] Error sending push notification:', error);
-      
-      // Fallback: Schedule message notification locally if backend fails
-      try {
-        console.log('[Message Notifications] Attempting fallback to local notification...');
-        const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-        const isFromDietician = senderName === 'Dietician';
-        await unifiedNotificationService.scheduleMessageNotification(recipientUserId, senderName, message, isFromDietician);
-        console.log('[Message Notifications] Fallback: Message notification scheduled locally');
-      } catch (localError) {
-        console.error('[Message Notifications] Fallback also failed:', localError);
-      }
-    }
-  };
-
   const handleSend = async () => {
     if (!inputText.trim() || !userId) {
       console.log('[DieticianMessageScreen] Cannot send message:', { inputText: inputText?.trim(), userId });
@@ -7204,17 +7100,21 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       // Send enhanced notification to recipient (not sender)
       const senderName = isDietician ? 'Dietician' : (chatUserProfile ? `${chatUserProfile.firstName} ${chatUserProfile.lastName}`.trim() : 'User');
       
-      // Don't send local notification to sender - only send push notifications to recipient
-      // Local notifications are for the current device, push notifications are for other devices
-      
-      // Also send push notification for cross-device messaging
-      if (!isDietician) {
-        // User sending to dietician - send push to dietician
-        await sendPushNotification('dietician', inputText, senderName);
-      } else {
-        // Dietician sending to user - send push to specific user
-        await sendPushNotification(userId, inputText, senderName);
+      // Send push notification to recipient
+      try {
+        await sendPushNotification({
+          type: 'message',
+          recipientId: isDietician ? userId : 'dietician',
+          senderName: senderName,
+          message: inputText,
+          isFromDietician: isDietician
+        });
+        console.log('[DieticianMessageScreen] Push notification sent successfully');
+      } catch (notifError) {
+        console.log('[DieticianMessageScreen] Push notification failed (non-critical):', notifError);
+        // Don't block message sending if notification fails
       }
+      
     } catch (error) {
       console.error('[DieticianMessageScreen] Error sending message:', error);
       alert('Failed to send message. Please try again.');
@@ -7440,12 +7340,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data;
       
-      // Handle user message notifications - refresh messages list
-      if (data?.type === 'message_notification' && data?.fromUser) {
-        console.log('[DieticianMessagesListScreen] Received message from user:', data.fromUser);
-        // Refresh the messages list to show new message
-        // The existing useEffect will handle the refresh
-      }
+      // Message notification handling (if needed in future)
     });
 
     return () => subscription.remove();
@@ -11132,26 +11027,20 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         
         console.log('[Appointment Debug] ✅ Appointment saved successfully with atomic transaction, ID:', result);
         
-        // Send notification to dietician about new appointment booking
+        // Send push notification to dietician
         try {
-          console.log('[Appointment Notification] Sending notification to dietician...');
-          
-          // Use backend API instead of local service
-          const { sendAppointmentNotification } = require('./services/api');
-          await sendAppointmentNotification(
-            'scheduled',
-            userName,
-            formatDate(selectedDate),
-            selectedTimeSlot,
-            appointmentData.userEmail
-          );
-          
-          console.log('[Appointment Notification] ✅ Dietician notification sent successfully');
-        } catch (notificationError) {
-          console.error('[Appointment Notification] Failed to send dietician notification:', notificationError);
-          // Don't fail the appointment booking if notification fails
+          await sendPushNotification({
+            type: 'appointment_scheduled',
+            userName: userName,
+            date: selectedDate.toLocaleDateString(),
+            timeSlot: selectedTimeSlot
+          });
+          console.log('[Appointment Debug] Push notification sent successfully');
+        } catch (notifError) {
+          console.log('[Appointment Debug] Push notification failed (non-critical):', notifError);
+          // Don't block appointment creation if notification fails
         }
-      
+        
       setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
       setShowSuccess(true);
       // Optionally, refresh appointments
@@ -11257,8 +11146,27 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   const handleCancelAppointment = async (appointmentId: string) => {
     setLoading(true);
     try {
+      // Get appointment details before deleting for notification
+      const appt = appointments.find(a => a.id === appointmentId);
+      
       // Delete appointment from Firestore
       await firestore.collection('appointments').doc(appointmentId).delete();
+      
+      // Send push notification to dietician
+      if (appt) {
+        try {
+          await sendPushNotification({
+            type: 'appointment_cancelled',
+            userName: appt.userName || 'User',
+            date: new Date(appt.date).toLocaleDateString(),
+            timeSlot: appt.timeSlot
+          });
+          console.log('[Appointment Cancel] Push notification sent successfully');
+        } catch (notifError) {
+          console.log('[Appointment Cancel] Push notification failed (non-critical):', notifError);
+          // Don't block cancellation if notification fails
+        }
+      }
       
       // Remove from local state
       setAppointments(appointments.filter(appt => appt.id !== appointmentId));
@@ -11550,19 +11458,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data;
       
-      // Handle user message notifications
-      if (data?.type === 'message_notification' && data?.fromUser) {
-        console.log('[DieticianDashboard] Received message from user:', data.fromUser);
-        // Show notification to dietician about new message
-        Alert.alert(
-          'New Message',
-          `You have a new message from ${data.senderName || 'a user'}`,
-          [
-            { text: 'View Messages', onPress: () => navigation.navigate('Messages') },
-            { text: 'OK', style: 'default' }
-          ]
-        );
-      }
+      // Message notification handling (if needed in future)
       
       // Handle dietician diet reminder notifications
       if (data?.type === 'dietician_diet_reminder') {
