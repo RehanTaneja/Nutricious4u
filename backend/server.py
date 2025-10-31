@@ -417,7 +417,7 @@ async def get_nutrition_from_gemini(food_name, quantity):
     )
     logger.info(f"[GEMINI PROMPT STRING] {prompt}")
     try:
-        model = GenerativeModel('gemini-2.5-flash')
+        model = GenerativeModel('gemini-2.5-flash-lite')
         response = await asyncio.get_event_loop().run_in_executor(None, lambda: model.generate_content(prompt))
         raw = response.text.strip()
         logger.info(f"[GEMINI RAW RESPONSE - UNCHANGED] {raw}")
@@ -460,7 +460,7 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
     
     logger.info(f"[GEMINI WORKOUT PROMPT STRING] {prompt}")
     try:
-        model = GenerativeModel('gemini-2.5-flash')
+        model = GenerativeModel('gemini-2.5-flash-lite')
         # Add timeout to the Gemini API call
         response = await asyncio.wait_for(
             asyncio.get_event_loop().run_in_executor(None, lambda: model.generate_content(prompt)),
@@ -490,7 +490,7 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
 
 async def call_gemini_vision(image_path: str):
     # Use Gemini Vision API to extract calories, protein, fat from the image
-    model = GenerativeModel('gemini-2.5-flash')
+    model = GenerativeModel('gemini-2.5-flash-lite')
     prompt = (
         "You are a bot that gives us 3 comma separated numbers representing the calories, protein and fat in the food shown in this photo. Under no circumstances include any other text or extra numbers nor ask any further questions. If you can't give an exact value then give an estimate but only give numbers in the desired format. Only if the food item doesn't exist or can't be recognized will you say the word 'Error' and that's it."
     )
@@ -1376,7 +1376,7 @@ async def chatbot_message(request: ChatMessageRequest):
         # formatted_history = [genai.Content(**msg) for msg in formatted_history]
 
         # Call Gemini
-        model = GenerativeModel('models/gemini-2.5-flash')
+        model = GenerativeModel('gemini-2.5-flash-lite')
         def get_response():
             content_history = [ContentDict(**msg) for msg in formatted_history]
             chat = model.start_chat(history=content_history)
