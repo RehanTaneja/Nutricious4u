@@ -96,57 +96,134 @@ export const firestore = firebase.firestore();
 export default firebase;
 
 export async function registerForPushNotificationsAsync(userId?: string) {
+  console.log('═══════════════════════════════════════════════════════════════');
+  console.log('🔔 [PUSH TOKEN REGISTRATION] START');
+  console.log('═══════════════════════════════════════════════════════════════');
+  console.log(`[PUSH TOKEN] Time: ${new Date().toISOString()}`);
+  console.log(`[PUSH TOKEN] Platform: ${Platform.OS}`);
+  console.log(`[PUSH TOKEN] User ID provided: ${userId || 'None'}`);
+  console.log(`[PUSH TOKEN] Current user: ${auth.currentUser?.uid || 'None'}`);
+  console.log(`[PUSH TOKEN] Current user email: ${auth.currentUser?.email || 'None'}`);
+  
   let token;
   try {
+    // Step 1: Check existing permission status
+    console.log('[PUSH TOKEN] Step 1: Checking existing notification permissions...');
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    console.log(`[PUSH TOKEN] ✓ Existing permission status: ${existingStatus}`);
+    
     let finalStatus = existingStatus;
+    
+    // Step 2: Request permissions if needed
     if (existingStatus !== 'granted') {
+      console.log('[PUSH TOKEN] Step 2: Permission not granted, requesting...');
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      console.log(`[PUSH TOKEN] ✓ Permission request result: ${finalStatus}`);
+    } else {
+      console.log('[PUSH TOKEN] Step 2: Permission already granted, skipping request');
     }
+    
+    // Step 3: Check if permission was granted
     if (finalStatus !== 'granted') {
+      console.log('[PUSH TOKEN] ❌ FAILED: Notification permission not granted');
+      console.log(`[PUSH TOKEN] Final status: ${finalStatus}`);
+      console.log('═══════════════════════════════════════════════════════════════');
       logger.log('Failed to get push token for push notification!');
       return;
     }
     
-    // Platform-specific token generation for EAS builds
-    if (Platform.OS === 'ios') {
-      // For iOS EAS builds, use Expo push token
-      token = (await Notifications.getExpoPushTokenAsync({
-        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b' // Your project ID
-      })).data;
-    } else {
-      // For Android EAS builds, use Expo push token
-      token = (await Notifications.getExpoPushTokenAsync({
-        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b' // Your project ID
-      })).data;
+    console.log('[PUSH TOKEN] ✓ Permission granted successfully');
+    
+    // Step 4: Get Expo push token
+    console.log('[PUSH TOKEN] Step 3: Getting Expo push token...');
+    console.log(`[PUSH TOKEN] Platform: ${Platform.OS}`);
+    console.log('[PUSH TOKEN] Project ID: 23b497a5-baac-44c7-82a4-487a59bfff5b');
+    
+    try {
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b'
+      });
+      token = tokenData.data;
+      console.log(`[PUSH TOKEN] ✓ Token received successfully`);
+      console.log(`[PUSH TOKEN] Token preview: ${token.substring(0, 30)}...`);
+      console.log(`[PUSH TOKEN] Token length: ${token.length}`);
+      console.log(`[PUSH TOKEN] Token type: ${typeof token}`);
+      console.log(`[PUSH TOKEN] Token starts with 'ExponentPushToken': ${token.startsWith('ExponentPushToken')}`);
+    } catch (tokenError) {
+      console.log('[PUSH TOKEN] ❌ FAILED to get Expo push token');
+      console.error('[PUSH TOKEN] Token error:', tokenError);
+      console.log('═══════════════════════════════════════════════════════════════');
+      throw tokenError;
     }
     
-    logger.log('Expo push token:', token);
-    logger.log('Platform:', Platform.OS);
-    logger.log('Token type:', typeof token);
-    
-    // Save token to Firestore with error handling
+    // Step 5: Save token to Firestore
+    console.log('[PUSH TOKEN] Step 4: Saving token to Firestore...');
     try {
       // Use provided userId or get from auth
       const user = userId ? { uid: userId } : auth.currentUser;
-      if (user && token) {
-        await firebase.firestore().collection('user_profiles').doc(user.uid).set({ 
-          expoPushToken: token,
-          platform: Platform.OS,
-          lastTokenUpdate: new Date().toISOString()
-        }, { merge: true });
-        logger.log('Saved expoPushToken to Firestore with platform info');
-        logger.log(`Token saved for user: ${user.uid}`);
-      } else {
-        logger.log('No user or token available for saving');
+      console.log(`[PUSH TOKEN] User for saving: ${user?.uid || 'None'}`);
+      
+      if (!user) {
+        console.log('[PUSH TOKEN] ❌ FAILED: No user available for saving token');
+        console.log('═══════════════════════════════════════════════════════════════');
+        return token;
       }
+      
+      if (!token) {
+        console.log('[PUSH TOKEN] ❌ FAILED: No token available for saving');
+        console.log('═══════════════════════════════════════════════════════════════');
+        return token;
+      }
+      
+      const saveData = { 
+        expoPushToken: token,
+        platform: Platform.OS,
+        lastTokenUpdate: new Date().toISOString()
+      };
+      
+      console.log(`[PUSH TOKEN] Saving to: user_profiles/${user.uid}`);
+      console.log(`[PUSH TOKEN] Save data:`, JSON.stringify(saveData, null, 2));
+      
+      await firebase.firestore().collection('user_profiles').doc(user.uid).set(saveData, { merge: true });
+      
+      console.log('[PUSH TOKEN] ✓ Token saved successfully to Firestore');
+      console.log(`[PUSH TOKEN] ✓ Token saved for user: ${user.uid}`);
+      
+      // Verify save was successful
+      console.log('[PUSH TOKEN] Step 5: Verifying token was saved...');
+      const doc = await firebase.firestore().collection('user_profiles').doc(user.uid).get();
+      const savedData = doc.data();
+      const savedToken = savedData?.expoPushToken;
+      
+      if (savedToken === token) {
+        console.log('[PUSH TOKEN] ✓✓✓ VERIFICATION SUCCESS: Token matches saved token');
+        console.log(`[PUSH TOKEN] Saved token preview: ${savedToken.substring(0, 30)}...`);
+      } else {
+        console.log('[PUSH TOKEN] ❌ VERIFICATION FAILED: Saved token does not match');
+        console.log(`[PUSH TOKEN] Expected: ${token.substring(0, 30)}...`);
+        console.log(`[PUSH TOKEN] Got: ${savedToken ? savedToken.substring(0, 30) + '...' : 'None'}`);
+      }
+      
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log('🔔 [PUSH TOKEN REGISTRATION] SUCCESS');
+      console.log('═══════════════════════════════════════════════════════════════');
+      
+      logger.log('Saved expoPushToken to Firestore with platform info');
+      logger.log(`Token saved for user: ${user.uid}`);
     } catch (error) {
+      console.log('[PUSH TOKEN] ❌ FAILED to save push token to Firestore');
+      console.error('[PUSH TOKEN] Save error:', error);
+      console.log('═══════════════════════════════════════════════════════════════');
       logger.log('Failed to save push token to Firestore:', error);
     }
   } catch (e) {
+    console.log('[PUSH TOKEN] ❌ CRITICAL ERROR in registerForPushNotificationsAsync');
+    console.error('[PUSH TOKEN] Error:', e);
+    console.log('═══════════════════════════════════════════════════════════════');
     logger.log('Error registering for push notifications:', e);
   }
+  
   return token;
 }
 

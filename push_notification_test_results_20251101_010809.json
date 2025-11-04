@@ -1,0 +1,65 @@
+{
+  "timestamp": "2025-11-01T01:07:55.621602",
+  "backend_url": "https://nutricious4u-production.up.railway.app/api",
+  "tests": [
+    {
+      "test": "Backend Connectivity",
+      "passed": true
+    },
+    {
+      "test": "Push Notification Endpoint",
+      "passed": true
+    },
+    {
+      "test": "Dietician Token",
+      "passed": false,
+      "details": {
+        "userId": "dietician",
+        "timestamp": "2025-11-01T05:07:56.593730",
+        "tokenFound": false,
+        "tokenPreview": null,
+        "tokenValid": false,
+        "platform": null,
+        "lastUpdate": null,
+        "isDietician": true,
+        "errors": [
+          "No dietician token found in database"
+        ]
+      }
+    },
+    {
+      "test": "User Token",
+      "passed": false,
+      "details": {
+        "userId": "test_user_123",
+        "timestamp": "2025-11-01T05:07:59.278439",
+        "tokenFound": false,
+        "tokenPreview": null,
+        "tokenValid": false,
+        "platform": null,
+        "lastUpdate": null,
+        "isDietician": false,
+        "errors": [
+          "No token found in user document",
+          "User needs to log into mobile app to register for notifications"
+        ]
+      }
+    },
+    {
+      "test": "Message Notification (User \u2192 Dietician)",
+      "passed": false
+    },
+    {
+      "test": "Message Notification (Dietician \u2192 User)",
+      "passed": false
+    },
+    {
+      "test": "Appointment Scheduled Notification",
+      "passed": false
+    },
+    {
+      "test": "Appointment Cancelled Notification",
+      "passed": false
+    }
+  ]
+}

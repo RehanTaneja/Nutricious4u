@@ -1,0 +1,171 @@
+[95m[2025-11-01 01:07:55.621] 
+================================================================================[0m
+[95m[2025-11-01 01:07:55.621] COMPREHENSIVE PUSH NOTIFICATION SYSTEM TESTING[0m
+[95m[2025-11-01 01:07:55.621] ================================================================================[0m
+[96m[2025-11-01 01:07:55.621] ℹ️  Backend URL: https://nutricious4u-production.up.railway.app/api[0m
+[96m[2025-11-01 01:07:55.621] ℹ️  Test started at: 2025-11-01 01:07:55[0m
+[95m[2025-11-01 01:07:55.621] 
+================================================================================[0m
+[95m[2025-11-01 01:07:55.621] TEST 1: Backend Connectivity[0m
+[95m[2025-11-01 01:07:55.621] ================================================================================[0m
+[96m[2025-11-01 01:07:55.621] ℹ️  Testing connection to: https://nutricious4u-production.up.railway.app/api/[0m
+[96m[2025-11-01 01:07:55.956] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:07:55.956] ℹ️  Response text: {"message":"Fitness Tracker API is running!"}[0m
+[92m[2025-11-01 01:07:55.956] ✅ Backend is reachable[0m
+[95m[2025-11-01 01:07:55.958] 
+================================================================================[0m
+[95m[2025-11-01 01:07:55.958] TEST 2: Push Notification Endpoint Availability[0m
+[95m[2025-11-01 01:07:55.958] ================================================================================[0m
+[96m[2025-11-01 01:07:55.958] ℹ️  Testing endpoint: https://nutricious4u-production.up.railway.app/api/push-notifications/send[0m
+[96m[2025-11-01 01:07:56.304] ℹ️  Response status: 400[0m
+[96m[2025-11-01 01:07:56.304] ℹ️  Response body: {"detail":"Invalid notification type"}[0m
+[92m[2025-11-01 01:07:56.304] ✅ Push notification endpoint exists (status 400)[0m
+[95m[2025-11-01 01:07:56.306] 
+================================================================================[0m
+[95m[2025-11-01 01:07:56.306] Getting Users List[0m
+[95m[2025-11-01 01:07:56.307] ================================================================================[0m
+[93m[2025-11-01 01:07:56.307] ⚠️  No /users endpoint available, using test data[0m
+[93m[2025-11-01 01:07:56.307] ⚠️  No users found. Using default test user.[0m
+[95m[2025-11-01 01:07:56.307] 
+================================================================================[0m
+[95m[2025-11-01 01:07:56.307] Getting Token for User: dietician[0m
+[95m[2025-11-01 01:07:56.307] ================================================================================[0m
+[96m[2025-11-01 01:07:56.307] ℹ️  Calling debug endpoint: /notifications/debug/token/dietician[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Response body: {
+  "userId": "dietician",
+  "timestamp": "2025-11-01T05:07:56.593730",
+  "tokenFound": false,
+  "tokenPreview": null,
+  "tokenValid": false,
+  "platform": null,
+  "lastUpdate": null,
+  "isDietician": true,
+  "errors": [
+    "No dietician token found in database"
+  ]
+}[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Token found: False[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Token valid: False[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Token preview: None[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Platform: None[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Last update: None[0m
+[96m[2025-11-01 01:07:58.917] ℹ️  Is dietician: True[0m
+[93m[2025-11-01 01:07:58.917] ⚠️  Errors: ['No dietician token found in database'][0m
+[91m[2025-11-01 01:07:58.917] ❌ No valid token for dietician[0m
+[95m[2025-11-01 01:07:58.920] 
+================================================================================[0m
+[95m[2025-11-01 01:07:58.920] Getting Token for User: test_user_123[0m
+[95m[2025-11-01 01:07:58.920] ================================================================================[0m
+[96m[2025-11-01 01:07:58.920] ℹ️  Calling debug endpoint: /notifications/debug/token/test_user_123[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Response body: {
+  "userId": "test_user_123",
+  "timestamp": "2025-11-01T05:07:59.278439",
+  "tokenFound": false,
+  "tokenPreview": null,
+  "tokenValid": false,
+  "platform": null,
+  "lastUpdate": null,
+  "isDietician": false,
+  "errors": [
+    "No token found in user document",
+    "User needs to log into mobile app to register for notifications"
+  ]
+}[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Token found: False[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Token valid: False[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Token preview: None[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Platform: None[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Last update: None[0m
+[96m[2025-11-01 01:07:59.720] ℹ️  Is dietician: False[0m
+[93m[2025-11-01 01:07:59.720] ⚠️  Errors: ['No token found in user document', 'User needs to log into mobile app to register for notifications'][0m
+[91m[2025-11-01 01:07:59.720] ❌ No valid token for test_user_123[0m
+[95m[2025-11-01 01:07:59.722] 
+================================================================================[0m
+[95m[2025-11-01 01:07:59.722] TEST 3: Message Notification (User → Dietician)[0m
+[95m[2025-11-01 01:07:59.722] ================================================================================[0m
+[96m[2025-11-01 01:07:59.722] ℹ️  Sender: Test User (ID: test_user_123)[0m
+[96m[2025-11-01 01:07:59.722] ℹ️  Recipient: Dietician[0m
+[96m[2025-11-01 01:07:59.722] ℹ️  Notification payload:[0m
+[96m[2025-11-01 01:07:59.723] ℹ️  {
+  "type": "message",
+  "recipientId": "dietician",
+  "senderName": "Test User",
+  "message": "Hello dietician! This is a test message.",
+  "isFromDietician": false
+}[0m
+[96m[2025-11-01 01:07:59.723] ℹ️  Sending POST to: https://nutricious4u-production.up.railway.app/api/push-notifications/send[0m
+[96m[2025-11-01 01:08:01.666] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:08:01.666] ℹ️  Response body: {"success":false}[0m
+[91m[2025-11-01 01:08:01.666] ❌ Message notification failed (success=false)[0m
+[95m[2025-11-01 01:08:03.674] 
+================================================================================[0m
+[95m[2025-11-01 01:08:03.674] TEST 4: Message Notification (Dietician → User)[0m
+[95m[2025-11-01 01:08:03.674] ================================================================================[0m
+[96m[2025-11-01 01:08:03.674] ℹ️  Sender: Dietician[0m
+[96m[2025-11-01 01:08:03.674] ℹ️  Recipient: Test User (ID: test_user_123)[0m
+[96m[2025-11-01 01:08:03.674] ℹ️  Notification payload:[0m
+[96m[2025-11-01 01:08:03.674] ℹ️  {
+  "type": "message",
+  "recipientId": "test_user_123",
+  "senderName": "Dietician",
+  "message": "Hello! This is a test message from your dietician.",
+  "isFromDietician": true
+}[0m
+[96m[2025-11-01 01:08:03.674] ℹ️  Sending POST to: https://nutricious4u-production.up.railway.app/api/push-notifications/send[0m
+[96m[2025-11-01 01:08:04.283] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:08:04.283] ℹ️  Response body: {"success":false}[0m
+[91m[2025-11-01 01:08:04.283] ❌ Message notification failed (success=false)[0m
+[95m[2025-11-01 01:08:06.290] 
+================================================================================[0m
+[95m[2025-11-01 01:08:06.290] TEST 5: Appointment Scheduled Notification[0m
+[95m[2025-11-01 01:08:06.290] ================================================================================[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  User: Test User[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  Date: 2025-11-02[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  Time: 10:00 AM[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  Notification payload:[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  {
+  "type": "appointment_scheduled",
+  "userName": "Test User",
+  "date": "2025-11-02",
+  "timeSlot": "10:00 AM"
+}[0m
+[96m[2025-11-01 01:08:06.290] ℹ️  Sending POST to: https://nutricious4u-production.up.railway.app/api/push-notifications/send[0m
+[96m[2025-11-01 01:08:06.990] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:08:06.991] ℹ️  Response body: {"success":false}[0m
+[91m[2025-11-01 01:08:06.991] ❌ Appointment notification failed (success=false)[0m
+[95m[2025-11-01 01:08:08.995] 
+================================================================================[0m
+[95m[2025-11-01 01:08:08.995] TEST 6: Appointment Cancelled Notification[0m
+[95m[2025-11-01 01:08:08.995] ================================================================================[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  User: Test User[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  Date: 2025-11-02[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  Time: 10:00 AM[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  Notification payload:[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  {
+  "type": "appointment_cancelled",
+  "userName": "Test User",
+  "date": "2025-11-02",
+  "timeSlot": "10:00 AM"
+}[0m
+[96m[2025-11-01 01:08:08.995] ℹ️  Sending POST to: https://nutricious4u-production.up.railway.app/api/push-notifications/send[0m
+[96m[2025-11-01 01:08:09.632] ℹ️  Response status: 200[0m
+[96m[2025-11-01 01:08:09.632] ℹ️  Response body: {"success":false}[0m
+[91m[2025-11-01 01:08:09.632] ❌ Appointment notification failed (success=false)[0m
+[95m[2025-11-01 01:08:09.634] 
+================================================================================[0m
+[95m[2025-11-01 01:08:09.634] TEST SUMMARY[0m
+[95m[2025-11-01 01:08:09.634] ================================================================================[0m
+[96m[2025-11-01 01:08:09.634] ℹ️  Total tests: 8[0m
+[92m[2025-11-01 01:08:09.634] ✅ Passed: 2[0m
+[91m[2025-11-01 01:08:09.634] ❌ Failed: 6[0m
+[94m[2025-11-01 01:08:09.634] ✅ PASS: Backend Connectivity[0m
+[94m[2025-11-01 01:08:09.634] ✅ PASS: Push Notification Endpoint[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: Dietician Token[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: User Token[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: Message Notification (User → Dietician)[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: Message Notification (Dietician → User)[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: Appointment Scheduled Notification[0m
+[94m[2025-11-01 01:08:09.634] ❌ FAIL: Appointment Cancelled Notification[0m
+[92m[2025-11-01 01:08:09.635] ✅ Results saved to: push_notification_test_results_20251101_010809.json[0m

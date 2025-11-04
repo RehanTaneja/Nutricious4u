@@ -1,0 +1,139 @@
+{
+  "timestamp": "2025-11-01T21:06:34.649869",
+  "tests": [
+    {
+      "name": "Firestore Structure Check",
+      "status": "PASS",
+      "timestamp": "2025-11-01T21:06:38.739711",
+      "details": {
+        "issues_found": []
+      }
+    },
+    {
+      "name": "User Token Registration",
+      "status": "FAIL",
+      "timestamp": "2025-11-01T21:06:40.188478",
+      "details": {
+        "issues_found": [],
+        "token_stats": {
+          "total_users": 9,
+          "users_with_expo_token": 2,
+          "users_with_notification_token": 0,
+          "users_with_no_token": 7,
+          "dietician_has_token": false,
+          "sample_tokens": [
+            {
+              "user_id": "EMoXb6rFuwN3xKsotq54K0kVArf1",
+              "token_preview": "ExponentPushToken[CZ1RD0C4ZVT7...",
+              "is_dietician": false,
+              "last_update": "2025-08-27T08:13:30.923Z"
+            },
+            {
+              "user_id": "mBVlWBBpoaXyOVr8Y4AoHZunq9f1",
+              "token_preview": "ExponentPushToken[pOfhFsFxSQia...",
+              "is_dietician": false,
+              "last_update": "2025-10-30T23:51:38.217Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Backend Endpoint Test",
+      "status": "PASS",
+      "timestamp": "2025-11-01T21:06:45.191248",
+      "details": {
+        "issues_found": []
+      }
+    },
+    {
+      "name": "Expo Push Service Test",
+      "status": "PASS",
+      "timestamp": "2025-11-01T21:06:46.777093",
+      "details": {
+        "issues_found": [],
+        "token_used": "ExponentPushToken[CZ1RD0C4ZVT7..."
+      }
+    },
+    {
+      "name": "Real Message Flow Simulation",
+      "status": "FAIL",
+      "timestamp": "2025-11-01T21:06:48.198034",
+      "details": {
+        "issues_found": [
+          "Missing user or dietician"
+        ],
+        "user_id": "EMoXb6rFuwN3xKsotq54K0kVArf1",
+        "dietician_id": null
+      }
+    },
+    {
+      "name": "App.json Configuration",
+      "status": "PASS",
+      "timestamp": "2025-11-01T21:06:49.204182",
+      "details": {
+        "issues_found": []
+      }
+    }
+  ],
+  "critical_issues": [],
+  "warnings": [
+    {
+      "warning": "User GCESeM7FdBVvDBRpz2kdJb1Ldig2 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.172822"
+    },
+    {
+      "warning": "User LwYQdgUeTXb1WOrxhJCPkdE609D2 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.173485"
+    },
+    {
+      "warning": "User XcsgelRKFvh6r5ulW6eKKcjWRHJ2 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.174120"
+    },
+    {
+      "warning": "User m5UMdpqsfzN0dl7QNBAUdxYcxOU2 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.174536"
+    },
+    {
+      "warning": "User test_user Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.175399"
+    },
+    {
+      "warning": "User test_user_123 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.175767"
+    },
+    {
+      "warning": "User xXOmzQx0bWNZT5oQgxVDT4mSngq1 Missing Token",
+      "details": "User has not registered for push notifications. They need to log in and grant notification permissions.",
+      "timestamp": "2025-11-01T21:06:40.176120"
+    },
+    {
+      "warning": "Backend Endpoint Returns Failure",
+      "details": "Endpoint is working but returned success=false. This is expected for test user. Real users might have different issues.",
+      "timestamp": "2025-11-01T21:06:44.314213"
+    }
+  ],
+  "recommendations": [
+    {
+      "recommendation": "Dietician Needs to Re-Login",
+      "details": "Ask the dietician to log out and log back in to the mobile app, and grant notification permissions when prompted.",
+      "timestamp": "2025-11-01T21:06:40.188460"
+    },
+    {
+      "recommendation": "Add Android Notification Icon",
+      "details": "Add notification icon to app.json: expo.android.notification.icon",
+      "timestamp": "2025-11-01T21:06:49.204136"
+    },
+    {
+      "recommendation": "Add iOS Push Notification Entitlements",
+      "details": "Add proper iOS configuration for push notifications in app.json",
+      "timestamp": "2025-11-01T21:06:49.204170"
+    }
+  ]
+}

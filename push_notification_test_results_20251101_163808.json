@@ -1,0 +1,61 @@
+{
+  "timestamp": "2025-11-01T16:38:02.337762",
+  "tests": [
+    {
+      "name": "Backend Health",
+      "status": "PASS",
+      "details": "Backend is accessible (status: 200)",
+      "timestamp": "2025-11-01T16:38:02.727255"
+    },
+    {
+      "name": "Token Check - EMoXb6rFuwN3xKsotq54K0kVArf1",
+      "status": "PASS",
+      "details": "Valid token found (android, updated: 2025-08-27T08:13:30.923Z)",
+      "timestamp": "2025-11-01T16:38:06.311231"
+    },
+    {
+      "name": "Token Check - dietician",
+      "status": "FAIL",
+      "details": "No token found. Errors: ['No dietician token found in database']",
+      "timestamp": "2025-11-01T16:38:08.106109"
+    },
+    {
+      "name": "Message: User -> Dietician",
+      "status": "SKIP",
+      "details": "Dietician has no token",
+      "timestamp": "2025-11-01T16:38:08.107284"
+    },
+    {
+      "name": "Message: Dietician -> User",
+      "status": "PASS",
+      "details": "Notification sent successfully",
+      "timestamp": "2025-11-01T16:38:08.970414"
+    },
+    {
+      "name": "Appointment: Scheduled",
+      "status": "SKIP",
+      "details": "Dietician has no token",
+      "timestamp": "2025-11-01T16:38:08.973390"
+    },
+    {
+      "name": "Appointment: Cancelled",
+      "status": "SKIP",
+      "details": "Dietician has no token",
+      "timestamp": "2025-11-01T16:38:08.973412"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "passed": 3,
+    "failed": 1,
+    "warnings": 3
+  },
+  "issues_found": [
+    "User dietician has no push token",
+    "Dietician has no push token - all notifications to dietician will fail"
+  ],
+  "recommendations": [
+    "Dietician must log in to the mobile app to register push token",
+    "Dietician must log in to the mobile app to register push token"
+  ]
+}

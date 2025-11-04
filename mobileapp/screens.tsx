@@ -7101,16 +7101,43 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       const senderName = isDietician ? 'Dietician' : (chatUserProfile ? `${chatUserProfile.firstName} ${chatUserProfile.lastName}`.trim() : 'User');
       
       // Send push notification to recipient
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log('📨 [MESSAGE PUSH NOTIFICATION] START');
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log(`[MESSAGE PUSH] Time: ${new Date().toISOString()}`);
+      console.log(`[MESSAGE PUSH] Sender: ${senderName}`);
+      console.log(`[MESSAGE PUSH] Is Dietician: ${isDietician}`);
+      console.log(`[MESSAGE PUSH] Recipient ID: ${isDietician ? userId : 'dietician'}`);
+      console.log(`[MESSAGE PUSH] Message length: ${inputText.length}`);
+      
       try {
-        await sendPushNotification({
+        const notificationPayload = {
           type: 'message',
           recipientId: isDietician ? userId : 'dietician',
           senderName: senderName,
           message: inputText,
           isFromDietician: isDietician
-        });
+        };
+        
+        console.log('[MESSAGE PUSH] Payload:', JSON.stringify(notificationPayload, null, 2));
+        console.log('[MESSAGE PUSH] Calling sendPushNotification...');
+        
+        const result = await sendPushNotification(notificationPayload);
+        
+        console.log('[MESSAGE PUSH] Result:', JSON.stringify(result, null, 2));
+        
+        if (result?.success) {
+          console.log('[MESSAGE PUSH] ✓✓✓ Push notification sent successfully');
+        } else {
+          console.log('[MESSAGE PUSH] ❌ Push notification returned success=false');
+          console.log('[MESSAGE PUSH] This likely means recipient has no push token registered');
+        }
+        console.log('═══════════════════════════════════════════════════════════════');
         console.log('[DieticianMessageScreen] Push notification sent successfully');
       } catch (notifError) {
+        console.log('[MESSAGE PUSH] ❌ Push notification failed with error');
+        console.error('[MESSAGE PUSH] Error:', notifError);
+        console.log('═══════════════════════════════════════════════════════════════');
         console.log('[DieticianMessageScreen] Push notification failed (non-critical):', notifError);
         // Don't block message sending if notification fails
       }
@@ -11028,15 +11055,41 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         console.log('[Appointment Debug] ✅ Appointment saved successfully with atomic transaction, ID:', result);
         
         // Send push notification to dietician
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log('📅 [APPOINTMENT PUSH NOTIFICATION] START');
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log(`[APPOINTMENT PUSH] Time: ${new Date().toISOString()}`);
+        console.log(`[APPOINTMENT PUSH] User: ${userName}`);
+        console.log(`[APPOINTMENT PUSH] Date: ${selectedDate.toLocaleDateString()}`);
+        console.log(`[APPOINTMENT PUSH] Time Slot: ${selectedTimeSlot}`);
+        
         try {
-          await sendPushNotification({
+          const notificationPayload = {
             type: 'appointment_scheduled',
             userName: userName,
             date: selectedDate.toLocaleDateString(),
             timeSlot: selectedTimeSlot
-          });
+          };
+          
+          console.log('[APPOINTMENT PUSH] Payload:', JSON.stringify(notificationPayload, null, 2));
+          console.log('[APPOINTMENT PUSH] Calling sendPushNotification...');
+          
+          const result = await sendPushNotification(notificationPayload);
+          
+          console.log('[APPOINTMENT PUSH] Result:', JSON.stringify(result, null, 2));
+          
+          if (result?.success) {
+            console.log('[APPOINTMENT PUSH] ✓✓✓ Push notification sent successfully');
+          } else {
+            console.log('[APPOINTMENT PUSH] ❌ Push notification returned success=false');
+            console.log('[APPOINTMENT PUSH] This likely means dietician has no push token registered');
+          }
+          console.log('═══════════════════════════════════════════════════════════════');
           console.log('[Appointment Debug] Push notification sent successfully');
         } catch (notifError) {
+          console.log('[APPOINTMENT PUSH] ❌ Push notification failed with error');
+          console.error('[APPOINTMENT PUSH] Error:', notifError);
+          console.log('═══════════════════════════════════════════════════════════════');
           console.log('[Appointment Debug] Push notification failed (non-critical):', notifError);
           // Don't block appointment creation if notification fails
         }
@@ -11154,15 +11207,41 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       
       // Send push notification to dietician
       if (appt) {
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log('🚫 [APPOINTMENT CANCEL PUSH NOTIFICATION] START');
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log(`[CANCEL PUSH] Time: ${new Date().toISOString()}`);
+        console.log(`[CANCEL PUSH] User: ${appt.userName || 'User'}`);
+        console.log(`[CANCEL PUSH] Date: ${new Date(appt.date).toLocaleDateString()}`);
+        console.log(`[CANCEL PUSH] Time Slot: ${appt.timeSlot}`);
+        
         try {
-          await sendPushNotification({
+          const notificationPayload = {
             type: 'appointment_cancelled',
             userName: appt.userName || 'User',
             date: new Date(appt.date).toLocaleDateString(),
             timeSlot: appt.timeSlot
-          });
+          };
+          
+          console.log('[CANCEL PUSH] Payload:', JSON.stringify(notificationPayload, null, 2));
+          console.log('[CANCEL PUSH] Calling sendPushNotification...');
+          
+          const result = await sendPushNotification(notificationPayload);
+          
+          console.log('[CANCEL PUSH] Result:', JSON.stringify(result, null, 2));
+          
+          if (result?.success) {
+            console.log('[CANCEL PUSH] ✓✓✓ Push notification sent successfully');
+          } else {
+            console.log('[CANCEL PUSH] ❌ Push notification returned success=false');
+            console.log('[CANCEL PUSH] This likely means dietician has no push token registered');
+          }
+          console.log('═══════════════════════════════════════════════════════════════');
           console.log('[Appointment Cancel] Push notification sent successfully');
         } catch (notifError) {
+          console.log('[CANCEL PUSH] ❌ Push notification failed with error');
+          console.error('[CANCEL PUSH] Error:', notifError);
+          console.log('═══════════════════════════════════════════════════════════════');
           console.log('[Appointment Cancel] Push notification failed (non-critical):', notifError);
           // Don't block cancellation if notification fails
         }

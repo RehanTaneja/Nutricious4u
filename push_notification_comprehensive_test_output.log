@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/Users/rehantaneja/Documents/Nutricious4u-main copy/backend/services/firebase_client.py", line 35, in initialize_firebase
+    raise ValueError("FIREBASE_PROJECT_ID is required")
+ValueError: FIREBASE_PROJECT_ID is required
+[96mℹ️  Initializing Firebase using backend's firebase_client...[0m
+🔥 Initializing Firebase...
+❌ FIREBASE_PROJECT_ID is required
+!!!!!!!!!! FIREBASE INITIALIZATION FAILED !!!!!!!!!!
+Failed to initialize Firebase: FIREBASE_PROJECT_ID is required
+❌ Firebase initialization failed completely
+[91m❌ Firebase not initialized in backend[0m

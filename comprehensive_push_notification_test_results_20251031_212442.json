@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-10-31T21:24:42.300764",
+  "backend_url": "http://localhost:8000",
+  "tests": [
+    {
+      "category": "Infrastructure",
+      "test_name": "Backend Connection",
+      "status": "FAILED",
+      "timestamp": "2025-10-31T21:24:42.309386",
+      "details": {
+        "backend_url": "http://localhost:8000",
+        "error": "Connection refused - is the server running?"
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "warnings": 0
+  }
+}
