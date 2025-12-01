@@ -2,15 +2,16 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
 import { Platform } from 'react-native';
-import { 
-  API_KEY, 
-  AUTH_DOMAIN, 
-  PROJECT_ID, 
-  STORAGE_BUCKET, 
-  MESSAGING_SENDER_ID, 
-  APP_ID 
+import {
+  API_KEY,
+  AUTH_DOMAIN,
+  PROJECT_ID,
+  STORAGE_BUCKET,
+  MESSAGING_SENDER_ID,
+  APP_ID
 } from '@env';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { logger } from '../utils/logger';
 
 // Configure notification behavior
@@ -32,7 +33,13 @@ console.log('PROJECT_ID:', PROJECT_ID || 'MISSING');
 console.log('STORAGE_BUCKET:', STORAGE_BUCKET || 'MISSING');
 console.log('MESSAGING_SENDER_ID:', MESSAGING_SENDER_ID || 'MISSING');
 console.log('APP_ID:', APP_ID || 'MISSING');
+console.log('EXPO_PROJECT_ID:', (Constants?.expoConfig?.extra as any)?.eas?.projectId || (Constants as any)?.easConfig?.projectId || process.env.EXPO_PROJECT_ID || 'MISSING');
 console.log('================================');
+
+const EXPO_PROJECT_ID =
+  (Constants?.expoConfig?.extra as any)?.eas?.projectId ||
+  (Constants as any)?.easConfig?.projectId ||
+  process.env.EXPO_PROJECT_ID;
 
 // Firebase configuration
 const firebaseConfig = {
@@ -136,13 +143,19 @@ export async function registerForPushNotificationsAsync(userId?: string) {
     console.log('[PUSH TOKEN] ✓ Permission granted successfully');
     
     // Step 4: Get Expo push token
+    if (!EXPO_PROJECT_ID) {
+      console.log('[PUSH TOKEN] ❌ Missing Expo project ID, cannot request push token');
+      console.log('═══════════════════════════════════════════════════════════════');
+      return;
+    }
+
     console.log('[PUSH TOKEN] Step 3: Getting Expo push token...');
     console.log(`[PUSH TOKEN] Platform: ${Platform.OS}`);
-    console.log('[PUSH TOKEN] Project ID: 23b497a5-baac-44c7-82a4-487a59bfff5b');
+    console.log(`[PUSH TOKEN] Project ID: ${EXPO_PROJECT_ID}`);
     
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b'
+        projectId: EXPO_PROJECT_ID
       });
       token = tokenData.data;
       console.log(`[PUSH TOKEN] ✓ Token received successfully`);

@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-12-01T02:09:38.486994",
+  "tests": [],
+  "issues": [
+    {
+      "issue": "Unexpected Failure",
+      "details": "Dietician has token but backend still returned failure. Check backend logs."
+    }
+  ],
+  "recommendations": [],
+  "dietician_info": {
+    "id": "mBVlWBBpoaXyOVr8Y4AoHZunq9f1",
+    "email": "mBVlWBBpoaXyOVr8Y4AoHZunq9f1@example.com",
+    "has_token": true,
+    "token_preview": "ExponentPushToken[pOfhFsFxSQia..."
+  },
+  "user_info": {
+    "id": "EMoXb6rFuwN3xKsotq54K0kVArf1",
+    "name": "Rehan Taneja",
+    "has_token": true,
+    "token_preview": "ExponentPushToken[CZ1RD0C4ZVT7..."
+  }
+}

@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { auth, firestore } from './firebase';
 import { logger } from '../utils/logger';
 
@@ -36,6 +37,11 @@ export interface DietNotification {
   extractedFrom: string;
   createdAt: string;
 }
+
+const EXPO_PROJECT_ID =
+  (Constants?.expoConfig?.extra as any)?.eas?.projectId ||
+  (Constants as any)?.easConfig?.projectId ||
+  process.env.EXPO_PROJECT_ID;
 
 class NotificationService {
   private static instance: NotificationService;
@@ -81,17 +87,16 @@ class NotificationService {
 
   private async getPushToken(): Promise<string | null> {
     try {
-      if (Platform.OS === 'ios') {
-        const token = (await Notifications.getExpoPushTokenAsync({
-          projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b'
-        })).data;
-        return token;
-      } else {
-        const token = (await Notifications.getExpoPushTokenAsync({
-          projectId: '23b497a5-baac-44c7-82a4-487a59bfff5b'
-        })).data;
-        return token;
+      if (!EXPO_PROJECT_ID) {
+        logger.warn('[NotificationService] Missing Expo project ID, cannot fetch push token');
+        return null;
       }
+
+      const token = (await Notifications.getExpoPushTokenAsync({
+        projectId: EXPO_PROJECT_ID
+      })).data;
+
+      return token;
     } catch (error) {
       logger.error('[NotificationService] Failed to get push token:', error);
       return null;
