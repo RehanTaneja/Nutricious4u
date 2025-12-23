@@ -223,6 +223,16 @@ function AppContent() {
     const registerPushIfNeeded = async () => {
       try {
         if (!user || pushRegisteredThisSession) return;
+        if (!__DEV__) {
+          try {
+            await logFrontendEvent(user.uid, 'PUSH_REG_ATTEMPT', {
+              source: 'guard_effect',
+              platform: Platform.OS
+            });
+          } catch (logErr) {
+            console.warn('[NOTIFICATIONS] (guard_effect) Failed to log push reg attempt:', logErr);
+          }
+        }
         await registerPushWithLogging(user.uid, 'guard_effect');
       } catch (error) {
         console.error('[NOTIFICATIONS] (Guard) ❌ Push registration failed:', error);
@@ -473,12 +483,22 @@ function AppContent() {
               (global as any).isLoginInProgress = true; // Set global flag
               setPushRegisteredThisSession(false); // allow push registration once per session for this user
               
-              // ✅ FIX: Register for push notifications AFTER user login with stable user ID
-              try {
+            // ✅ FIX: Register for push notifications AFTER user login with stable user ID
+            try {
+                if (!__DEV__) {
+                  try {
+                    await logFrontendEvent(firebaseUser.uid, 'PUSH_REG_ATTEMPT', {
+                      source: 'auth_state_change',
+                      platform: Platform.OS
+                    });
+                  } catch (logErr) {
+                    console.warn('[NOTIFICATIONS] (auth_state_change) Failed to log push reg attempt:', logErr);
+                  }
+                }
                 await registerPushWithLogging(firebaseUser.uid, 'auth_state_change');
-              } catch (error) {
+            } catch (error) {
                 console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
-              }
+            }
               
               try {
                 // Check if user is dietician by trying to get their profile from backend
