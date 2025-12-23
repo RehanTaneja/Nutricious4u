@@ -92,11 +92,11 @@ class NotificationService {
         return null;
       }
 
-      const token = (await Notifications.getExpoPushTokenAsync({
+        const token = (await Notifications.getExpoPushTokenAsync({
         projectId: EXPO_PROJECT_ID
-      })).data;
+        })).data;
 
-      return token;
+        return token;
     } catch (error) {
       logger.error('[NotificationService] Failed to get push token:', error);
       return null;

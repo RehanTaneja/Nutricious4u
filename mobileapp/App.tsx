@@ -178,6 +178,29 @@ function AppContent() {
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
+  const [pushRegisteredThisSession, setPushRegisteredThisSession] = useState(false);
+
+  // Guarded push registration: ensure we attempt registration once per session when a user is present
+  useEffect(() => {
+    const registerPushIfNeeded = async () => {
+      try {
+        if (!user || pushRegisteredThisSession) return;
+        console.log('[NOTIFICATIONS] (Guard) Attempting push registration for user:', user.uid, 'Platform:', Platform.OS);
+        const token = await registerForPushNotificationsAsync(user.uid);
+        if (token) {
+          console.log('[NOTIFICATIONS] (Guard) ✅ Push token obtained and saved via guard');
+          console.log('[NOTIFICATIONS] (Guard) Token preview:', token.substring(0, 30) + '...');
+          setPushRegisteredThisSession(true);
+        } else {
+          console.warn('[NOTIFICATIONS] (Guard) ⚠️ No push token obtained');
+        }
+      } catch (error) {
+        console.error('[NOTIFICATIONS] (Guard) ❌ Push registration failed:', error);
+      }
+    };
+
+    registerPushIfNeeded();
+  }, [user, pushRegisteredThisSession]);
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
@@ -418,6 +441,7 @@ function AppContent() {
               setCheckingProfile(true);
               isLoginInProgress = true; // Set login flag
               (global as any).isLoginInProgress = true; // Set global flag
+              setPushRegisteredThisSession(false); // allow push registration once per session for this user
               
               // ✅ FIX: Register for push notifications AFTER user login with stable user ID
               try {
@@ -430,6 +454,7 @@ function AppContent() {
                 if (token) {
                   console.log('[NOTIFICATIONS] ✅ Push notification token obtained and saved');
                   console.log('[NOTIFICATIONS] Token preview:', token.substring(0, 30) + '...');
+                  setPushRegisteredThisSession(true);
                 } else {
                   console.warn('[NOTIFICATIONS] ⚠️ No push notification token obtained');
                 }
