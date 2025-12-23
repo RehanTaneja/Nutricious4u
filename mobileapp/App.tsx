@@ -180,20 +180,50 @@ function AppContent() {
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
   const [pushRegisteredThisSession, setPushRegisteredThisSession] = useState(false);
 
+  // Helper: register push with logging so we can see results in backend logs
+  const registerPushWithLogging = async (uid: string, source: string) => {
+    console.log(`[NOTIFICATIONS] (${source}) Attempting push registration for user:`, uid, 'Platform:', Platform.OS);
+    const result = {
+      token: null as string | null,
+      error: null as any
+    };
+    try {
+      const token = await registerForPushNotificationsAsync(uid);
+      result.token = token || null;
+      if (token) {
+        console.log(`[NOTIFICATIONS] (${source}) ✅ Push token obtained and saved`);
+        console.log(`[NOTIFICATIONS] (${source}) Token preview:`, token.substring(0, 30) + '...');
+        setPushRegisteredThisSession(true);
+      } else {
+        console.warn(`[NOTIFICATIONS] (${source}) ⚠️ No push token obtained`);
+      }
+    } catch (err) {
+      result.error = err;
+      console.error(`[NOTIFICATIONS] (${source}) ❌ Push registration failed:`, err);
+    }
+
+    // Log to backend for observability (only in production)
+    if (!__DEV__) {
+      try {
+        await logFrontendEvent(uid, 'PUSH_REGISTRATION_RESULT', {
+          source,
+          platform: Platform.OS,
+          tokenPreview: result.token ? result.token.substring(0, 30) + '...' : null,
+          error: result.error ? String(result.error) : null
+        });
+      } catch (logErr) {
+        console.warn(`[NOTIFICATIONS] (${source}) Failed to log push registration result:`, logErr);
+      }
+    }
+    return result.token;
+  };
+
   // Guarded push registration: ensure we attempt registration once per session when a user is present
   useEffect(() => {
     const registerPushIfNeeded = async () => {
       try {
         if (!user || pushRegisteredThisSession) return;
-        console.log('[NOTIFICATIONS] (Guard) Attempting push registration for user:', user.uid, 'Platform:', Platform.OS);
-        const token = await registerForPushNotificationsAsync(user.uid);
-        if (token) {
-          console.log('[NOTIFICATIONS] (Guard) ✅ Push token obtained and saved via guard');
-          console.log('[NOTIFICATIONS] (Guard) Token preview:', token.substring(0, 30) + '...');
-          setPushRegisteredThisSession(true);
-        } else {
-          console.warn('[NOTIFICATIONS] (Guard) ⚠️ No push token obtained');
-        }
+        await registerPushWithLogging(user.uid, 'guard_effect');
       } catch (error) {
         console.error('[NOTIFICATIONS] (Guard) ❌ Push registration failed:', error);
       }
@@ -445,19 +475,7 @@ function AppContent() {
               
               // ✅ FIX: Register for push notifications AFTER user login with stable user ID
               try {
-                console.log('[NOTIFICATIONS] User logged in, registering for push notifications');
-                console.log('[NOTIFICATIONS] User ID:', firebaseUser.uid);
-                console.log('[NOTIFICATIONS] Platform:', Platform.OS);
-                
-                // Pass the user ID directly to prevent auth state confusion
-                const token = await registerForPushNotificationsAsync(firebaseUser.uid);
-                if (token) {
-                  console.log('[NOTIFICATIONS] ✅ Push notification token obtained and saved');
-                  console.log('[NOTIFICATIONS] Token preview:', token.substring(0, 30) + '...');
-                  setPushRegisteredThisSession(true);
-                } else {
-                  console.warn('[NOTIFICATIONS] ⚠️ No push notification token obtained');
-                }
+                await registerPushWithLogging(firebaseUser.uid, 'auth_state_change');
               } catch (error) {
                 console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
               }

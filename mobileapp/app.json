@@ -51,6 +51,8 @@
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
+        "NOTIFICATIONS",
+        "POST_NOTIFICATIONS",
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK"

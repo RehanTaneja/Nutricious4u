@@ -39,7 +39,8 @@ console.log('================================');
 const EXPO_PROJECT_ID =
   (Constants?.expoConfig?.extra as any)?.eas?.projectId ||
   (Constants as any)?.easConfig?.projectId ||
-  process.env.EXPO_PROJECT_ID;
+  process.env.EXPO_PROJECT_ID ||
+  '38ed8fe9-6087-4fdd-9164-a0c36ee3a9fb'; // fallback to known EAS project ID
 
 // Firebase configuration
 const firebaseConfig = {
