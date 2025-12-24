@@ -3,7 +3,7 @@
  * Handles all notification types uniformly based on how popular apps work.
  */
 
-import { Notifications } from 'expo';
+import * as Notifications from 'expo-notifications';
 import { Platform, Alert } from 'react-native';
 
 // Simple logger for notifications

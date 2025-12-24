@@ -4,6 +4,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
 import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { simpleNotificationHandler } from './services/simpleNotificationHandler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
@@ -183,6 +185,32 @@ function AppContent() {
   // Helper: register push with logging so we can see results in backend logs
   const registerPushWithLogging = async (uid: string, source: string) => {
     console.log(`[NOTIFICATIONS] (${source}) Attempting push registration for user:`, uid, 'Platform:', Platform.OS);
+    const projectId =
+      (Constants?.expoConfig?.extra as any)?.eas?.projectId ||
+      (Constants as any)?.easConfig?.projectId ||
+      process.env.EXPO_PROJECT_ID ||
+      'MISSING';
+    let permissionStatus: string | null = null;
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      permissionStatus = status;
+    } catch (permErr) {
+      console.warn(`[NOTIFICATIONS] (${source}) Failed to read notification permission:`, permErr);
+    }
+
+    if (!__DEV__) {
+      try {
+        await logFrontendEvent(uid, 'PUSH_REG_ATTEMPT', {
+          source,
+          platform: Platform.OS,
+          projectId,
+          permissionStatus
+        });
+      } catch (logErr) {
+        console.warn(`[NOTIFICATIONS] (${source}) Failed to log push reg attempt:`, logErr);
+      }
+    }
+
     const result = {
       token: null as string | null,
       error: null as any
@@ -208,6 +236,8 @@ function AppContent() {
         await logFrontendEvent(uid, 'PUSH_REGISTRATION_RESULT', {
           source,
           platform: Platform.OS,
+          projectId,
+          permissionStatus,
           tokenPreview: result.token ? result.token.substring(0, 30) + '...' : null,
           error: result.error ? String(result.error) : null
         });
@@ -218,29 +248,65 @@ function AppContent() {
     return result.token;
   };
 
-  // Guarded push registration: ensure we attempt registration once per session when a user is present
+  // CRITICAL FIX: Force push registration on every app launch with retry logic
+  // Previous guard was too restrictive and prevented re-registration on failures
   useEffect(() => {
-    const registerPushIfNeeded = async () => {
-      try {
-        if (!user || pushRegisteredThisSession) return;
-        if (!__DEV__) {
-          try {
-            await logFrontendEvent(user.uid, 'PUSH_REG_ATTEMPT', {
-              source: 'guard_effect',
-              platform: Platform.OS
-            });
-          } catch (logErr) {
-            console.warn('[NOTIFICATIONS] (guard_effect) Failed to log push reg attempt:', logErr);
+    const registerPushWithRetry = async () => {
+      if (!user) {
+        console.log('[NOTIFICATIONS] (Guard) No user, skipping push registration');
+        return;
+      }
+
+      // Skip if already successfully registered this session
+      if (pushRegisteredThisSession) {
+        console.log('[NOTIFICATIONS] (Guard) Already registered this session, skipping');
+        return;
+      }
+
+      console.log('[NOTIFICATIONS] (Guard) 🚀 Starting push registration with retry logic');
+      console.log('[NOTIFICATIONS] (Guard) User ID:', user.uid);
+      console.log('[NOTIFICATIONS] (Guard) Platform:', Platform.OS);
+
+      const maxRetries = 3;
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[NOTIFICATIONS] (Guard) Attempt ${attempt}/${maxRetries}`);
+          
+          const token = await registerPushWithLogging(user.uid, `guard_effect_attempt_${attempt}`);
+          
+          if (token) {
+            console.log(`[NOTIFICATIONS] (Guard) ✅ SUCCESS on attempt ${attempt}`);
+            console.log(`[NOTIFICATIONS] (Guard) Token: ${token.substring(0, 30)}...`);
+            return; // Success!
+          } else {
+            console.warn(`[NOTIFICATIONS] (Guard) ⚠️ No token returned on attempt ${attempt}`);
           }
+        } catch (error) {
+          lastError = error;
+          console.error(`[NOTIFICATIONS] (Guard) ❌ Attempt ${attempt} failed:`, error);
         }
-        await registerPushWithLogging(user.uid, 'guard_effect');
-      } catch (error) {
-        console.error('[NOTIFICATIONS] (Guard) ❌ Push registration failed:', error);
+
+        // Wait before retry (exponential backoff: 2s, 4s, 8s)
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`[NOTIFICATIONS] (Guard) Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+
+      console.error(`[NOTIFICATIONS] (Guard) ❌ All ${maxRetries} registration attempts failed`);
+      if (lastError) {
+        console.error('[NOTIFICATIONS] (Guard) Last error:', lastError);
       }
     };
 
-    registerPushIfNeeded();
-  }, [user, pushRegisteredThisSession]);
+    // Add a small delay to ensure auth state is fully settled
+    const timeoutId = setTimeout(registerPushWithRetry, 2000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [user]); // Removed pushRegisteredThisSession dependency to allow re-registration on app restart
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
@@ -485,16 +551,6 @@ function AppContent() {
               
             // ✅ FIX: Register for push notifications AFTER user login with stable user ID
             try {
-                if (!__DEV__) {
-                  try {
-                    await logFrontendEvent(firebaseUser.uid, 'PUSH_REG_ATTEMPT', {
-                      source: 'auth_state_change',
-                      platform: Platform.OS
-                    });
-                  } catch (logErr) {
-                    console.warn('[NOTIFICATIONS] (auth_state_change) Failed to log push reg attempt:', logErr);
-                  }
-                }
                 await registerPushWithLogging(firebaseUser.uid, 'auth_state_change');
             } catch (error) {
                 console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
