@@ -230,6 +230,7 @@ export async function registerForPushNotificationsAsync(userId?: string) {
       console.error('[PUSH TOKEN] Save error:', error);
       console.log('═══════════════════════════════════════════════════════════════');
       logger.log('Failed to save push token to Firestore:', error);
+      return null; // FIX: Return null so caller knows save failed and retry can happen
     }
   } catch (e) {
     console.log('[PUSH TOKEN] ❌ CRITICAL ERROR in registerForPushNotificationsAsync');
