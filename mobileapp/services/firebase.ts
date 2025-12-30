@@ -188,6 +188,20 @@ export async function registerForPushNotificationsAsync(userId?: string) {
       const user = userId ? { uid: userId } : auth.currentUser;
       console.log(`[PUSH TOKEN] User for saving: ${user?.uid || 'None'}`);
       
+      // CRITICAL FIX: Force refresh ID token to ensure Firestore has valid auth
+      // This resolves the timing issue where Firestore's auth context may not be
+      // synchronized with Firebase Auth immediately after onAuthStateChanged fires
+      if (auth.currentUser) {
+        console.log('[PUSH TOKEN] Refreshing ID token for Firestore auth...');
+        try {
+          await auth.currentUser.getIdToken(true);
+          console.log('[PUSH TOKEN] ✓ ID token refreshed successfully');
+        } catch (tokenRefreshError) {
+          console.error('[PUSH TOKEN] ⚠️ ID token refresh failed:', tokenRefreshError);
+          // Continue anyway - the existing token might still work
+        }
+      }
+      
       if (!user) {
         console.log('[PUSH TOKEN] ❌ FAILED: No user available for saving token');
         console.log('═══════════════════════════════════════════════════════════════');
@@ -235,11 +249,14 @@ export async function registerForPushNotificationsAsync(userId?: string) {
       
       logger.log('Saved expoPushToken to Firestore with platform info');
       logger.log(`Token saved for user: ${user.uid}`);
-    } catch (error) {
+    } catch (error: any) {
       console.log('[PUSH TOKEN] ❌ FAILED to save push token to Firestore');
-      console.error('[PUSH TOKEN] Save error:', error);
+      console.error('[PUSH TOKEN] Save error code:', error?.code);
+      console.error('[PUSH TOKEN] Save error message:', error?.message);
+      console.error('[PUSH TOKEN] Full error:', error);
       console.log('═══════════════════════════════════════════════════════════════');
       logger.log('Failed to save push token to Firestore:', error);
+      logger.log('Error code:', error?.code, 'Error message:', error?.message);
       return null; // FIX: Return null so caller knows save failed and retry can happen
     }
   } catch (e) {

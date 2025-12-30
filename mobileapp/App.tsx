@@ -551,6 +551,13 @@ function AppContent() {
               
             // ✅ FIX: Register for push notifications AFTER user login with stable user ID
             try {
+                // CRITICAL FIX: Wait for Firebase auth to fully propagate to Firestore
+                // This resolves the timing issue where Firestore security rules fail
+                // because request.auth is not yet synchronized with the new login
+                console.log('[NOTIFICATIONS] Waiting 3s for auth token to propagate to Firestore...');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                console.log('[NOTIFICATIONS] Auth propagation delay complete, proceeding with registration');
+                
                 await registerPushWithLogging(firebaseUser.uid, 'auth_state_change');
             } catch (error) {
                 console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
