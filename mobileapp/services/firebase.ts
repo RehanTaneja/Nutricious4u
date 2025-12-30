@@ -25,6 +25,16 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Setup Android notification channel (required for Android 8.0+)
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'Default',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF231F7C',
+  });
+}
+
 // Debug environment variables
 console.log('=== FIREBASE CONFIG DEBUG ===');
 console.log('API_KEY:', API_KEY ? `${API_KEY.substring(0, 10)}...` : 'MISSING');
@@ -138,7 +148,7 @@ export async function registerForPushNotificationsAsync(userId?: string) {
       console.log(`[PUSH TOKEN] Final status: ${finalStatus}`);
       console.log('═══════════════════════════════════════════════════════════════');
       logger.log('Failed to get push token for push notification!');
-      return;
+      return null; // FIX: Return null to signal failure, enabling retry
     }
     
     console.log('[PUSH TOKEN] ✓ Permission granted successfully');
@@ -147,7 +157,7 @@ export async function registerForPushNotificationsAsync(userId?: string) {
     if (!EXPO_PROJECT_ID) {
       console.log('[PUSH TOKEN] ❌ Missing Expo project ID, cannot request push token');
       console.log('═══════════════════════════════════════════════════════════════');
-      return;
+      return null; // FIX: Return null to signal failure, enabling retry
     }
 
     console.log('[PUSH TOKEN] Step 3: Getting Expo push token...');
@@ -181,7 +191,7 @@ export async function registerForPushNotificationsAsync(userId?: string) {
       if (!user) {
         console.log('[PUSH TOKEN] ❌ FAILED: No user available for saving token');
         console.log('═══════════════════════════════════════════════════════════════');
-        return token;
+        return null; // FIX: Return null (not token) to signal failure - token wasn't saved!
       }
       
       if (!token) {
@@ -237,6 +247,7 @@ export async function registerForPushNotificationsAsync(userId?: string) {
     console.error('[PUSH TOKEN] Error:', e);
     console.log('═══════════════════════════════════════════════════════════════');
     logger.log('Error registering for push notifications:', e);
+    return null; // FIX: Return null on any critical error to signal failure
   }
   
   return token;
