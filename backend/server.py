@@ -280,6 +280,24 @@ async def ios_connection_middleware(request, call_next):
     
     logger.info(f"[REQUEST] {request.method} {request.url.path} from {client_ip} (Platform: {platform}, UA: {user_agent[:50]}...)")
     
+    # Log frontend events from query parameters (for push notification debugging)
+    if request.query_params:
+        frontend_event = request.query_params.get('frontendEvent')
+        if frontend_event:
+            # Extract user ID from path if available
+            path_parts = request.url.path.split('/')
+            user_id = 'unknown'
+            if 'users' in path_parts:
+                try:
+                    user_idx = path_parts.index('users')
+                    if user_idx + 1 < len(path_parts):
+                        user_id = path_parts[user_idx + 1][:15] + '...'
+                except:
+                    pass
+            
+            logger.info(f"[FRONTEND_EVENT] {frontend_event} - user: {user_id}")
+            logger.info(f"[FRONTEND_EVENT] Details: {dict(request.query_params)}")
+    
     try:
         # Add timeout handling for long-running requests
         import asyncio

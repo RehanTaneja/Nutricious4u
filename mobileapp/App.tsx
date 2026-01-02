@@ -283,7 +283,7 @@ function AppContent() {
           } else {
             console.warn(`[NOTIFICATIONS] (Guard) ⚠️ No token returned on attempt ${attempt}`);
           }
-        } catch (error) {
+      } catch (error) {
           lastError = error;
           console.error(`[NOTIFICATIONS] (Guard) ❌ Attempt ${attempt} failed:`, error);
         }

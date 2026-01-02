@@ -37,6 +37,13 @@
             {
               "client_id": "383526478160-e8eq7b8pr1bslp6tmbbs8b8sdno0jt12.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "383526478160-em6g7gb6qov60mds6aanjfg1r7rqbqer.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nutricious4u.app"
+              }
             }
           ]
         }

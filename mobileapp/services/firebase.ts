@@ -13,6 +13,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { logger } from '../utils/logger';
+import { logFrontendEvent } from './api';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -164,20 +165,103 @@ export async function registerForPushNotificationsAsync(userId?: string) {
     console.log(`[PUSH TOKEN] Platform: ${Platform.OS}`);
     console.log(`[PUSH TOKEN] Project ID: ${EXPO_PROJECT_ID}`);
     
+    // Get user ID for backend logging
+    const currentUserId = userId || auth.currentUser?.uid || 'unknown';
+    
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: EXPO_PROJECT_ID
       });
+      
+      // Enhanced logging - visible in backend logs
+      console.log('[PUSH TOKEN] Raw tokenData:', JSON.stringify(tokenData));
+      console.log('[PUSH TOKEN] Type of data:', typeof tokenData.data);
+      console.log('[PUSH TOKEN] Data length:', tokenData.data?.length);
+      console.log('[PUSH TOKEN] Data value:', tokenData.data);
+      
+      // Log to backend for visibility
+      if (!__DEV__ && currentUserId !== 'unknown') {
+        try {
+          await logFrontendEvent(currentUserId, 'PUSH_TOKEN_DATA_RECEIVED', {
+            platform: Platform.OS,
+            projectId: EXPO_PROJECT_ID,
+            tokenDataType: typeof tokenData.data,
+            tokenDataLength: tokenData.data?.length,
+            tokenDataValue: tokenData.data ? (tokenData.data.substring(0, 50) + (tokenData.data.length > 50 ? '...' : '')) : null,
+            tokenDataIsEmpty: tokenData.data === '' || (typeof tokenData.data === 'string' && tokenData.data.trim() === ''),
+            rawTokenData: JSON.stringify(tokenData)
+          });
+        } catch (logErr) {
+          console.warn('[PUSH TOKEN] Failed to log tokenData to backend:', logErr);
+        }
+      }
+      
       token = tokenData.data;
+      
+      // Validate token is not empty
+      if (!token || (typeof token === 'string' && token.trim() === '')) {
+        console.log('[PUSH TOKEN] ❌ Token is empty - tokenData:', JSON.stringify(tokenData));
+        console.log('[PUSH TOKEN] ❌ Token validation failed: empty string or null');
+        
+        // Log to backend for visibility
+        if (!__DEV__ && currentUserId !== 'unknown') {
+          try {
+            await logFrontendEvent(currentUserId, 'PUSH_TOKEN_VALIDATION_FAILED', {
+              platform: Platform.OS,
+              projectId: EXPO_PROJECT_ID,
+              reason: 'empty_string_or_null',
+              tokenDataType: typeof tokenData.data,
+              tokenDataLength: tokenData.data?.length,
+              tokenDataValue: tokenData.data,
+              rawTokenData: JSON.stringify(tokenData)
+            });
+          } catch (logErr) {
+            console.warn('[PUSH TOKEN] Failed to log validation failure to backend:', logErr);
+          }
+        }
+        
+        return null; // Return null, not empty string
+      }
+      
       console.log(`[PUSH TOKEN] ✓ Token received successfully`);
       console.log(`[PUSH TOKEN] Token preview: ${token.substring(0, 30)}...`);
       console.log(`[PUSH TOKEN] Token length: ${token.length}`);
       console.log(`[PUSH TOKEN] Token type: ${typeof token}`);
       console.log(`[PUSH TOKEN] Token starts with 'ExponentPushToken': ${token.startsWith('ExponentPushToken')}`);
+      
+      // Log successful token to backend
+      if (!__DEV__ && currentUserId !== 'unknown') {
+        try {
+          await logFrontendEvent(currentUserId, 'PUSH_TOKEN_VALIDATION_SUCCESS', {
+            platform: Platform.OS,
+            projectId: EXPO_PROJECT_ID,
+            tokenLength: token.length,
+            tokenPreview: token.substring(0, 30) + '...',
+            tokenStartsWithExponent: token.startsWith('ExponentPushToken')
+          });
+        } catch (logErr) {
+          console.warn('[PUSH TOKEN] Failed to log success to backend:', logErr);
+        }
+      }
     } catch (tokenError) {
       console.log('[PUSH TOKEN] ❌ FAILED to get Expo push token');
       console.error('[PUSH TOKEN] Token error:', tokenError);
       console.log('═══════════════════════════════════════════════════════════════');
+      
+      // Log error to backend for visibility
+      if (!__DEV__ && currentUserId !== 'unknown') {
+        try {
+          await logFrontendEvent(currentUserId, 'PUSH_TOKEN_ERROR', {
+            platform: Platform.OS,
+            projectId: EXPO_PROJECT_ID,
+            errorMessage: String(tokenError),
+            errorType: tokenError?.constructor?.name || 'Unknown'
+          });
+        } catch (logErr) {
+          console.warn('[PUSH TOKEN] Failed to log error to backend:', logErr);
+        }
+      }
+      
       throw tokenError;
     }
     
