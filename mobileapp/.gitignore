@@ -40,3 +40,5 @@ yarn-error.*
 *.tsbuildinfo
 
 firebase_service_account.json
+# google-services.json - REMOVED: Required for EAS builds (safe to commit, not a secret)
+# GoogleService-Info.plist - REMOVED: Required for EAS builds (safe to commit, not a secret)

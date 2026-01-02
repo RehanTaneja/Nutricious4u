@@ -86,8 +86,8 @@ backend/services/firebase_service_account.json
 
 # Security - Firebase and API keys
 **/firebase_service_account.json
-**/google-services.json
-**/GoogleService-Info.plist
+# **/google-services.json - REMOVED: Required for EAS builds (safe to commit, not a secret)
+# **/GoogleService-Info.plist - REMOVED: Required for EAS builds (safe to commit, not a secret)
 **/*.pem
 **/*.key
 **/*_key.json
@@ -112,8 +112,8 @@ backend/services/firebase_service_account.json
 # Firebase credentials
 backend/services/firebase_service_account.json
 **/firebase_service_account.json
-**/google-services.json
-**/GoogleService-Info.plist
+# **/google-services.json - REMOVED: Required for EAS builds (safe to commit, not a secret)
+# **/GoogleService-Info.plist - REMOVED: Required for EAS builds (safe to commit, not a secret)
 
 # Environment files
 .env
@@ -127,6 +127,4 @@ backend/services/firebase_service_account.json
 **/*.pem
 **/*.key
 
-mobileapp/nutricious4u-63158-firebase-adminsdk-fbsvc-75599d1f92.json
-mobileapp/nutricious4u-63158-firebase-adminsdk-fbsvc-75599d1f92.json
 mobileapp/nutricious4u-63158-firebase-adminsdk-fbsvc-75599d1f92.json
