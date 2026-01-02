@@ -58,7 +58,9 @@
     "react-native-svg": "15.11.2",
     "react-native-webview": "13.13.5",
     "react-native-wheel-picker-expo": "^0.5.4",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "expo-device": "~7.1.4",
+    "expo-constants": "~17.1.8"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

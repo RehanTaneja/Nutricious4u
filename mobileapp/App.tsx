@@ -3,7 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
-import firebase, { auth, firestore, registerForPushNotificationsAsync, setupDietNotificationListener } from './services/firebase';
+import firebase, { auth, firestore, setupDietNotificationListener } from './services/firebase';
+import { registerAndSavePushToken } from './services/pushTokenManager';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { simpleNotificationHandler } from './services/simpleNotificationHandler';
@@ -216,7 +217,7 @@ function AppContent() {
       error: null as any
     };
     try {
-      const token = await registerForPushNotificationsAsync(uid);
+      const token = await registerAndSavePushToken(uid);
       result.token = token || null;
       if (token) {
         console.log(`[NOTIFICATIONS] (${source}) ✅ Push token obtained and saved`);
