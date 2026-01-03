@@ -185,16 +185,20 @@ function AppContent() {
 
   // Helper: register push with logging so we can see results in backend logs
   const registerPushWithLogging = async (uid: string, source: string) => {
-    console.log(`[NOTIFICATIONS] (${source}) Attempting push registration for user:`, uid, 'Platform:', Platform.OS);
+    console.log(`[NOTIFICATIONS] (${source}) Starting push registration for user: ${uid.substring(0, 8)}...`);
+    console.log(`[NOTIFICATIONS] (${source}) Platform: ${Platform.OS}`);
     const projectId =
       (Constants?.expoConfig?.extra as any)?.eas?.projectId ||
       (Constants as any)?.easConfig?.projectId ||
       process.env.EXPO_PROJECT_ID ||
       'MISSING';
+    console.log(`[NOTIFICATIONS] (${source}) Project ID: ${projectId}`);
+    
     let permissionStatus: string | null = null;
     try {
       const { status } = await Notifications.getPermissionsAsync();
       permissionStatus = status;
+      console.log(`[NOTIFICATIONS] (${source}) Permission status: ${permissionStatus}`);
     } catch (permErr) {
       console.warn(`[NOTIFICATIONS] (${source}) Failed to read notification permission:`, permErr);
     }
@@ -217,18 +221,39 @@ function AppContent() {
       error: null as any
     };
     try {
+      console.log(`[NOTIFICATIONS] (${source}) Calling registerAndSavePushToken...`);
       const token = await registerAndSavePushToken(uid);
+      
+      console.log(`[NOTIFICATIONS] (${source}) Token result:`, token ? `${token.substring(0, 30)}...` : 'null');
+      
       result.token = token || null;
       if (token) {
-        console.log(`[NOTIFICATIONS] (${source}) ✅ Push token obtained and saved`);
+        console.log(`[NOTIFICATIONS] (${source}) ✅ Token registered successfully`);
         console.log(`[NOTIFICATIONS] (${source}) Token preview:`, token.substring(0, 30) + '...');
         setPushRegisteredThisSession(true);
       } else {
-        console.warn(`[NOTIFICATIONS] (${source}) ⚠️ No push token obtained`);
+        console.log(`[NOTIFICATIONS] (${source}) ❌ Token is null or empty`);
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.log(`[NOTIFICATIONS] (${source}) ❌ Exception caught:`, err);
+      console.log(`[NOTIFICATIONS] (${source}) Error message:`, err.message);
+      console.log(`[NOTIFICATIONS] (${source}) Error code:`, err.code);
       result.error = err;
       console.error(`[NOTIFICATIONS] (${source}) ❌ Push registration failed:`, err);
+      
+      // LOG FIREBASE INITIALIZATION ERROR TO BACKEND
+      if (!__DEV__) {
+        try {
+          await logFrontendEvent(uid, 'PUSH_TOKEN_ERROR', {
+            platform: Platform.OS,
+            projectId,
+            errorMessage: err.message || String(err),
+            errorType: err.constructor?.name || 'Unknown'
+          });
+        } catch (logErr) {
+          console.warn(`[NOTIFICATIONS] (${source}) Failed to log error to backend:`, logErr);
+        }
+      }
     }
 
     // Log to backend for observability (only in production)

@@ -62,20 +62,28 @@ export async function getExpoPushToken(projectId: string, userId: string): Promi
   token: string | null;
   error: Error | null;
 }> {
-  console.log('[PUSH SERVICE] Step 3: Getting Expo push token...');
-  console.log(`[PUSH SERVICE] Platform: ${Platform.OS}`);
-  console.log(`[PUSH SERVICE] Project ID: ${projectId}`);
+  console.log('[PUSH TOKEN] ===== TOKEN RETRIEVAL START =====');
+  console.log('[PUSH TOKEN] Step 3: Getting Expo push token...');
+  console.log(`[PUSH TOKEN] Platform: ${Platform.OS}`);
+  console.log(`[PUSH TOKEN] Project ID: ${projectId}`);
+  console.log(`[PUSH TOKEN] User ID: ${userId}`);
+  console.log(`[PUSH TOKEN] Calling getExpoPushTokenAsync with projectId: ${projectId}`);
   
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: projectId
     });
     
-    // Enhanced logging - visible in backend logs
-    console.log('[PUSH SERVICE] Raw tokenData:', JSON.stringify(tokenData));
-    console.log('[PUSH SERVICE] Type of data:', typeof tokenData.data);
-    console.log('[PUSH SERVICE] Data length:', tokenData.data?.length);
-    console.log('[PUSH SERVICE] Data value:', tokenData.data);
+    // ENHANCED LOGGING - Comprehensive token data analysis
+    console.log('[PUSH TOKEN] ===== TOKEN DATA RECEIVED =====');
+    console.log('[PUSH TOKEN] Full tokenData:', JSON.stringify(tokenData, null, 2));
+    console.log('[PUSH TOKEN] tokenData.data:', tokenData.data);
+    console.log('[PUSH TOKEN] Type:', typeof tokenData.data);
+    console.log('[PUSH TOKEN] Length:', tokenData.data?.length);
+    console.log('[PUSH TOKEN] Is empty string?', tokenData.data === '');
+    console.log('[PUSH TOKEN] Is null?', tokenData.data === null);
+    console.log('[PUSH TOKEN] Is undefined?', tokenData.data === undefined);
+    console.log('[PUSH TOKEN] ================================');
     
     // Log to backend for visibility
     if (!__DEV__ && userId !== 'unknown') {
@@ -96,10 +104,12 @@ export async function getExpoPushToken(projectId: string, userId: string): Promi
     
     const token = tokenData.data;
     
-    // Validate token is not empty
+    // VALIDATE TOKEN IS NOT EMPTY
     if (!token || (typeof token === 'string' && token.trim() === '')) {
-      console.log('[PUSH SERVICE] ❌ Token is empty - tokenData:', JSON.stringify(tokenData));
-      console.log('[PUSH SERVICE] ❌ Token validation failed: empty string or null');
+      console.log('[PUSH TOKEN] ❌ Token is null, undefined, or empty string');
+      console.log('[PUSH TOKEN] This indicates Firebase is not initialized properly');
+      console.log('[PUSH TOKEN] tokenData:', JSON.stringify(tokenData));
+      console.log('[PUSH TOKEN] ❌ Token validation failed: empty string or null');
       
       // Log to backend for visibility
       if (!__DEV__ && userId !== 'unknown') {
@@ -121,11 +131,12 @@ export async function getExpoPushToken(projectId: string, userId: string): Promi
       return { token: null, error: new Error('Token is empty or null') };
     }
     
-    console.log(`[PUSH SERVICE] ✓ Token received successfully`);
-    console.log(`[PUSH SERVICE] Token preview: ${token.substring(0, 30)}...`);
-    console.log(`[PUSH SERVICE] Token length: ${token.length}`);
-    console.log(`[PUSH SERVICE] Token type: ${typeof token}`);
-    console.log(`[PUSH SERVICE] Token starts with 'ExponentPushToken': ${token.startsWith('ExponentPushToken')}`);
+    console.log(`[PUSH TOKEN] ✓ Token received successfully`);
+    console.log(`[PUSH TOKEN] Token preview: ${token.substring(0, 30)}...`);
+    console.log(`[PUSH TOKEN] Token length: ${token.length}`);
+    console.log(`[PUSH TOKEN] Token type: ${typeof token}`);
+    console.log(`[PUSH TOKEN] Token starts with 'ExponentPushToken': ${token.startsWith('ExponentPushToken')}`);
+    console.log('[PUSH TOKEN] ===== TOKEN RETRIEVAL SUCCESS =====');
     
     // Log successful token to backend
     if (!__DEV__ && userId !== 'unknown') {
@@ -144,8 +155,12 @@ export async function getExpoPushToken(projectId: string, userId: string): Promi
     
     return { token, error: null };
   } catch (tokenError: any) {
-    console.log('[PUSH SERVICE] ❌ FAILED to get Expo push token');
-    console.error('[PUSH SERVICE] Token error:', tokenError);
+    console.log('[PUSH TOKEN] ❌ FATAL ERROR in getExpoPushToken');
+    console.log('[PUSH TOKEN] ❌ FAILED to get Expo push token');
+    console.error('[PUSH TOKEN] Error:', tokenError);
+    console.log('[PUSH TOKEN] Error message:', tokenError.message);
+    console.log('[PUSH TOKEN] Error code:', tokenError.code);
+    console.log('[PUSH TOKEN] Error stack:', tokenError.stack);
     console.log('═══════════════════════════════════════════════════════════════');
     
     // Log error to backend for visibility

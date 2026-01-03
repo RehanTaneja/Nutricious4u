@@ -42,6 +42,7 @@
       "buildNumber": "1"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
@@ -72,13 +73,12 @@
         "expo-build-properties",
         {
           "android": {
-            "googleServicesFile": "google-services.json",
             "enableProguardInReleaseBuilds": false,
             "enableSeparateBuildPerCPUArchitecture": false,
             "hermesFlags": "enable-hermes"
           },
           "ios": {
-            "googleServicesFile": "GoogleService-Info.plist"
+            "googleServicesFile": "./GoogleService-Info.plist"
           }
         }
       ],
