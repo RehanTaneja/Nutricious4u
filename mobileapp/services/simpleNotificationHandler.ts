@@ -83,6 +83,16 @@ export class SimpleNotificationHandler {
         this.handleMessageNotification(data, title, body);
         break;
         
+      case 'message_notification':
+        // Skip popup for dietician-to-user messages (push notification is already shown)
+        if (data?.fromDietician) {
+          logger.log('[SimpleNotificationHandler] Message from dietician - skipping popup (push notification already shown)');
+          return; // Don't show popup, push notification is sufficient
+        }
+        // For user-to-dietician messages, show popup
+        this.handleMessageNotification(data, title, body);
+        break;
+        
       case 'appointment':
         this.handleAppointmentNotification(data, title, body);
         break;

@@ -7098,7 +7098,29 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       setInputText('');
       
       // Send enhanced notification to recipient (not sender)
-      const senderName = isDietician ? 'Dietician' : (chatUserProfile ? `${chatUserProfile.firstName} ${chatUserProfile.lastName}`.trim() : 'User');
+      // For users sending to dietician, get current user's profile for sender name
+      let senderName: string;
+      if (isDietician) {
+        senderName = 'Dietician';
+      } else {
+        // User sending to dietician - fetch current user's profile
+        try {
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            const currentUserProfile = await getUserProfileSafe(currentUser.uid);
+            if (currentUserProfile?.firstName || currentUserProfile?.lastName) {
+              senderName = `${currentUserProfile.firstName || ''} ${currentUserProfile.lastName || ''}`.trim();
+            } else {
+              senderName = 'User';
+            }
+          } else {
+            senderName = 'User';
+          }
+        } catch (profileError) {
+          console.warn('[DieticianMessageScreen] Failed to fetch current user profile for notification:', profileError);
+          senderName = 'User';
+        }
+      }
       
       // Send push notification to recipient
       console.log('═══════════════════════════════════════════════════════════════');
