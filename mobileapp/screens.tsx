@@ -149,6 +149,8 @@ const WGER_CATEGORY_NAMES: { [key: number]: string } = {
 // --- Recipes Screen ---
 const RecipesScreen = ({ navigation }: { navigation: any }) => {
   const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const isFocused = useIsFocused();
   const [recipes, setRecipes] = useState<any[]>([]);
   const [filteredRecipes, setFilteredRecipes] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -223,6 +225,13 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
     
     return () => clearTimeout(delayedFetch);
   }, []);
+
+  // Ensure ScrollView starts at top when screen is focused
+  useEffect(() => {
+    if (isFocused && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [isFocused]);
 
   // Search functionality
   useEffect(() => {
@@ -385,6 +394,7 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView 
+          ref={scrollViewRef}
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -1153,6 +1163,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [burnedToday, setBurnedToday] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const isFocused = useIsFocused();
   const userId = auth.currentUser?.uid;
@@ -1210,6 +1221,12 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     checkNewDietPopup();
   }, [userId, isFocused]);
 
+  // Ensure ScrollView starts at top when screen is focused
+  useEffect(() => {
+    if (isFocused && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [isFocused]);
 
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
@@ -2101,7 +2118,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   return (
     <SafeAreaView style={styles.container}> 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={scrollViewRef}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 20 }} 
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.headerContainer}>
         <Text style={styles.screenTitle}>Dashboard</Text>
       </View>
@@ -3605,6 +3626,7 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const { userId } = route.params;
   const { setHasCompletedQuiz } = useContext(AppContext);
+  const isFocused = useIsFocused();
   const [currentWeight, setCurrentWeight] = useState('');
   const [goalWeight, setGoalWeight] = useState('');
   const [height, setHeight] = useState('');
@@ -3619,6 +3641,13 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [loading, setLoading] = useState(false);
   const [targets, setTargets] = useState({ calories: 0, protein: 0, fat: 0 });
   const scrollRef = useRef<ScrollView>(null);
+
+  // Ensure ScrollView starts at top when screen is focused
+  useEffect(() => {
+    if (isFocused && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     // Recalculate targets when relevant fields change

@@ -12,13 +12,13 @@ export const SPACING_PRESETS = {
 
 /**
  * Get standardized top spacing for screens
- * Formula: Safe Area Top Only (no additional padding)
+ * Formula: Half of Safe Area Top (reduced padding)
  * 
  * @param preset - Spacing preset (kept for compatibility, but not used)
- * @returns Safe area top inset only
+ * @returns Half of safe area top inset
  */
 export const useStandardTopSpacing = (preset: number = SPACING_PRESETS.PRIMARY): number => {
   const insets = useSafeAreaInsets();
-  // Return only safe area top - no additional padding
-  return insets.top;
+  // Return half of safe area top - reduced padding
+  return Math.round(insets.top / 2);
 };
