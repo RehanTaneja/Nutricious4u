@@ -17,6 +17,7 @@ import { getUserProfileSafe, UserProfile } from './services/api';
 import { auth } from './services/firebase';
 import { ActivityIndicator } from 'react-native';
 import { format, isToday, isYesterday } from 'date-fns';
+import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 
 
 
@@ -30,6 +31,7 @@ interface Message {
 }
 
 export const ChatbotScreen = () => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.FULLSCREEN);
   const [messages, setMessages] = useState([
     { id: '1', text: 'Hello! I am NutriBot, your personal nutrition assistant. I can provide diet and nutrition advice based on your profile. Please note: I am not a substitute for professional medical advice. Always consult a healthcare provider for medical decisions.', sender: 'bot', timestamp: Date.now() }
   ]);
@@ -183,7 +185,7 @@ export const ChatbotScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.chatbotContainer}>
+    <SafeAreaView style={[styles.chatbotContainer, { paddingTop: topSpacing }]}>
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -221,7 +223,6 @@ const styles = StyleSheet.create({
   chatbotContainer: {
     flex: 1,
     backgroundColor: '#F0FFF4', // Using direct color value from COLORS
-    paddingTop: 60,
   },
   inputContainer: {
     flexDirection: 'row',

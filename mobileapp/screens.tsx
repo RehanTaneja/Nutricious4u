@@ -41,6 +41,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import firebase from './services/firebase';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
+import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
@@ -147,6 +148,7 @@ const WGER_CATEGORY_NAMES: { [key: number]: string } = {
 
 // --- Recipes Screen ---
 const RecipesScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [recipes, setRecipes] = useState<any[]>([]);
   const [filteredRecipes, setFilteredRecipes] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -590,6 +592,7 @@ const ErrorPopup = ({ message, onClose }: { message: string; onClose: () => void
 // --- Login/Signup Screen ---
 
 const LoginSignupScreen = () => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -859,7 +862,7 @@ const LoginSignupScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, paddingTop: 50 }}
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, paddingTop: topSpacing }}
           keyboardShouldPersistTaps="handled"
         >
           <View style={{alignItems: 'center'}}>
@@ -1145,6 +1148,7 @@ const CircularProgress = ({
 
 // --- DashboardScreen ---
 const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [summary, setSummary] = useState<LogSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -2096,8 +2100,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}> 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.container}> 
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
       <View style={styles.headerContainer}>
         <Text style={styles.screenTitle}>Dashboard</Text>
       </View>
@@ -2969,6 +2973,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 };
 
 const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FoodItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3045,8 +3050,8 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}> 
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={styles.container}> 
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
@@ -3196,6 +3201,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
 };
 
 const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3284,8 +3290,8 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
   };
 
   return (
-    <SafeAreaView style={[styles.container, {backgroundColor: COLORS.background, paddingTop: 50}]}> 
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={[styles.container, {backgroundColor: COLORS.background}]}> 
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
@@ -3371,6 +3377,7 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
 };
 
 const SettingsScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -3514,14 +3521,14 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}> 
+      <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}> 
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}> 
+    <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}> 
       <View style={styles.settingsContainer}>
         <Text style={styles.screenTitle}>Settings</Text>
         {error ? (
@@ -3595,6 +3602,7 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
 
 // --- QnA Screen ---
 const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const { userId } = route.params;
   const { setHasCompletedQuiz } = useContext(AppContext);
   const [currentWeight, setCurrentWeight] = useState('');
@@ -3685,7 +3693,7 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       >
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 50, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: topSpacing, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -3767,6 +3775,7 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
 
 // --- Account Settings Screen ---
 const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [editProfile, setEditProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -4395,6 +4404,7 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
 const NOTIFICATIONS_KEY = 'userNotifications';
 
 const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -5460,7 +5470,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}> 
+    <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}> 
       <View style={styles.settingsContainer}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -5954,6 +5964,7 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
 
 // --- Tracking Details Screen ---
 const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const { summary: initialSummary, burnedToday: initialBurnedToday, userProfile, workoutSummary } = route.params || {};
   
   // State for fresh data
@@ -6207,8 +6218,8 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingHorizontal: 16, paddingTop: 50 }]}> 
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={[styles.container, { paddingHorizontal: 16 }]}> 
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
@@ -6364,6 +6375,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
 
 // --- Routine Screen ---
 const RoutineScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const userId = auth.currentUser?.uid;
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -6514,8 +6526,8 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingHorizontal: 16, paddingTop: 50 }]}> 
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={[styles.container, { paddingHorizontal: 16 }]}> 
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
@@ -6698,6 +6710,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
 
 // --- Dietician Screen ---
 const DieticianScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [isDietician, setIsDietician] = React.useState(false);
   React.useEffect(() => {
     const user = auth.currentUser;
@@ -6735,7 +6748,7 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={[styles.container, { flex: 1 }]}> 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 50, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.dieticianHeaderContainer}>
@@ -6778,6 +6791,7 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
 
 // --- Dietician Message Screen ---
 const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.FULLSCREEN);
   const [messages, setMessages] = React.useState<any[]>([]);
   const [inputText, setInputText] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -7255,7 +7269,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <View style={dieticianMessageStyles.header}>
+        <View style={[dieticianMessageStyles.header, { paddingTop: topSpacing }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={dieticianMessageStyles.backButton}>
             <ArrowLeft size={28} color="#6EE7B7" />
           </TouchableOpacity>
@@ -7298,7 +7312,6 @@ const dieticianMessageStyles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 50,
     paddingBottom: 10,
     paddingHorizontal: 10,
     backgroundColor: '#F0FFF4',
@@ -7378,6 +7391,7 @@ const dieticianMessageStyles = StyleSheet.create({
 
 // --- Dietician Messages List Screen ---
 const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [loading, setLoading] = React.useState(true);
   const [userList, setUserList] = React.useState<any[]>([]);
 
@@ -7533,7 +7547,7 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F0FFF4' }}>
-      <View style={{ paddingTop: 50, paddingHorizontal: 16, flex: 1 }}>
+      <View style={{ paddingTop: topSpacing, paddingHorizontal: 16, flex: 1 }}>
         <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' }}>Messages</Text>
         {loading ? (
           <ActivityIndicator size="large" color="#6EE7B7" style={{ marginTop: 40 }} />
@@ -8273,7 +8287,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
     paddingHorizontal: 24,
-    paddingTop: 50,
   },
   accountBackArrow: {
     color: COLORS.primary,
@@ -9002,7 +9015,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    paddingTop: 50,
     paddingHorizontal: 20,
   },
   uploadBackButton: {
@@ -9895,6 +9907,7 @@ export {
 
 // --- Subscription Selection Screen ---
 const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -9974,14 +9987,14 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+    <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
       <View style={styles.settingsContainer}>
         <Text style={styles.screenTitle}>Choose Your Plan</Text>
         <Text style={styles.screenSubtitle}>Select a subscription plan to unlock premium features</Text>
@@ -10080,6 +10093,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
 
 // --- My Subscriptions Screen ---
 const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -10257,14 +10271,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+    <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.settingsContainer}>
           <View style={styles.screenHeader}>
@@ -10527,6 +10541,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
 // --- Notifications Screen ---
 const NotificationsScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -10619,14 +10634,14 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+      <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 32, paddingHorizontal: 16 }]}>
+    <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
       <ScrollView 
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
@@ -10759,6 +10774,7 @@ function groupMessagesByDate(messages: any[]) {
 
 // --- Schedule Appointment Screen ---
 const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [selectedDate, setSelectedDate] = React.useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -11368,8 +11384,8 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={styles.container}>
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
@@ -11505,6 +11521,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
 
 // --- Dietician Dashboard Screen ---
 const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [appointments, setAppointments] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [weekDates, setWeekDates] = React.useState<Date[]>([]);
@@ -11961,8 +11978,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
-        <View style={styles.headerContainer}>
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
           <View style={{ width: 60 }} />
           <Text style={styles.screenTitle}>Slot</Text>
           <View style={{ width: 60 }} />
@@ -11978,8 +11995,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: 50 }]}>
-      <View style={styles.headerContainer}>
+    <SafeAreaView style={styles.container}>
+      <View style={[styles.headerContainer, { paddingTop: topSpacing }]}>
         <View style={{ width: 60 }} />
         <Text style={styles.screenTitle}>Slot</Text>
         <View style={{ width: 60 }} />
@@ -12296,6 +12313,7 @@ const createMissingUserProfile = async (userId: string, userData: any) => {
 
 // --- UploadDietScreen (Dietician) ---
 const UploadDietScreen = ({ navigation }: { navigation: any }) => {
+  const topSpacing = useStandardTopSpacing(SPACING_PRESETS.PRIMARY);
   const [users, setUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -12762,7 +12780,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header without back button */}
-      <View style={styles.uploadHeaderContainer}>
+      <View style={[styles.uploadHeaderContainer, { paddingTop: topSpacing }]}>
         <Text style={styles.uploadScreenTitle}>Upload Diet</Text>
       </View>
 
