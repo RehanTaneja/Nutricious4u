@@ -4547,6 +4547,13 @@ async def activate_free_trial(userId: str):
         if user_data.get("freeTrialUsed", False):
             raise HTTPException(status_code=400, detail="Free trial has already been used. You can only use it once.")
         
+        # Check if user is on a paid plan - only free plan users can activate trial
+        is_subscription_active = user_data.get("isSubscriptionActive", False)
+        subscription_plan = user_data.get("subscriptionPlan")
+        # User is on paid plan if they have active subscription and plan is not "free" or "trial"
+        if is_subscription_active and subscription_plan and subscription_plan not in ["free", "trial"]:
+            raise HTTPException(status_code=400, detail="You already have an active paid subscription. Free trial is only available for free plan users.")
+        
         # Calculate trial dates (1 day)
         from datetime import datetime, timedelta
         start_date = datetime.now()

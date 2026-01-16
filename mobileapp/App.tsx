@@ -765,9 +765,13 @@ function AppContent() {
                       // Check for mandatory popups (trial activation or plan selection)
                       // Only check if user is not a dietician
                       if (!isDieticianAccount) {
-                        // Check if user hasn't used free trial
-                        if (!subscriptionStatus.freeTrialUsed) {
-                          console.log('[Mandatory Popup] User has not used free trial, showing trial activation popup');
+                        // Check if user is on free plan (not paid plan) and hasn't used free trial
+                        const isOnFreePlan = subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive || 
+                                            subscriptionStatus.subscriptionPlan === "free" || 
+                                            !subscriptionStatus.subscriptionPlan;
+                        
+                        if (isOnFreePlan && !subscriptionStatus.freeTrialUsed) {
+                          console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
                           setShowMandatoryTrialPopup(true);
                         }
                         // Check if trial expired or plan expired and requires plan selection
