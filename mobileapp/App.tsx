@@ -347,6 +347,38 @@ function AppContent() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
   const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser, refreshSubscriptionStatus } = useSubscription();
+
+  // Effect to check for mandatory popups when subscription status changes
+  // This runs after user logs in and when subscription status is updated
+  useEffect(() => {
+    const checkSubscriptionForPopups = async () => {
+      // Only check if user is logged in, not a dietician, and not already showing a popup
+      if (!user?.uid || isDietician) {
+        return;
+      }
+      
+      // Don't check if popups are already showing
+      if (showMandatoryTrialPopup || showMandatoryPlanPopup) {
+        return;
+      }
+
+      try {
+        // Add small delay to avoid conflicts with login sequence
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const status = await getSubscriptionStatus(user.uid);
+        await checkAndShowMandatoryPopups(status);
+      } catch (error) {
+        console.error('[Subscription Popup Check] Error:', error);
+      }
+    };
+
+    // Only check if user is logged in and app is not in loading state
+    if (user && !checkingAuth && !checkingProfile && !loading) {
+      checkSubscriptionForPopups();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isDietician, checkingAuth, checkingProfile, loading]);
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state
@@ -765,29 +797,7 @@ function AppContent() {
                       // Check for mandatory popups (trial activation or plan selection)
                       // Only check if user is not a dietician
                       if (!isDieticianAccount) {
-                        // Check if user is on free plan (not paid plan) and hasn't used free trial
-                        const isOnFreePlan = subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive || 
-                                            subscriptionStatus.subscriptionPlan === "free" || 
-                                            !subscriptionStatus.subscriptionPlan;
-                        
-                        if (isOnFreePlan && !subscriptionStatus.freeTrialUsed) {
-                          console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
-                          setShowMandatoryTrialPopup(true);
-                        }
-                        // Check if trial expired or plan expired and requires plan selection
-                        else if (subscriptionStatus.requiresPlanSelection) {
-                          console.log('[Mandatory Popup] User needs to select a plan, showing plan selection popup');
-                          // Fetch plans for the popup
-                          try {
-                            const plans = await getSubscriptionPlans();
-                            setAvailablePlans(plans);
-                            setShowMandatoryPlanPopup(true);
-                          } catch (planError) {
-                            console.error('[Mandatory Popup] Failed to fetch plans:', planError);
-                            // Still show popup, plans will be empty
-                            setShowMandatoryPlanPopup(true);
-                          }
-                        }
+                        await checkAndShowMandatoryPopups(subscriptionStatus);
                       }
                       
                       // Add longer delay before next API call
@@ -1016,6 +1026,62 @@ function AppContent() {
     checkingProfile,
     loading
   });
+
+  // Function to check and show mandatory popups based on subscription status
+  const checkAndShowMandatoryPopups = async (subscriptionStatus: any) => {
+    if (!user?.uid || isDietician) return;
+    
+    setSubscriptionStatus(subscriptionStatus);
+    
+    // Check if subscription was cancelled or requires plan selection
+    const isCancelled = subscriptionStatus.subscriptionStatus === "cancelled";
+    const needsPlanSelection = subscriptionStatus.requiresPlanSelection || isCancelled;
+    
+    // Check if user is on free plan (not paid plan) and hasn't used free trial
+    const isOnFreePlan = subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive || 
+                        subscriptionStatus.subscriptionPlan === "free" || 
+                        !subscriptionStatus.subscriptionPlan;
+    
+    // Priority 1: If cancelled or requires plan selection, show plan selection popup
+    if (needsPlanSelection) {
+      console.log('[Mandatory Popup] User needs to select a plan (cancelled or expired), showing plan selection popup');
+      try {
+        const plans = await getSubscriptionPlans();
+        setAvailablePlans(plans);
+        setShowMandatoryPlanPopup(true);
+      } catch (planError) {
+        console.error('[Mandatory Popup] Failed to fetch plans:', planError);
+        setShowMandatoryPlanPopup(true);
+      }
+    }
+    // Priority 2: If on free plan and hasn't used trial, show trial activation popup
+    else if (isOnFreePlan && !subscriptionStatus.freeTrialUsed) {
+      console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
+      setShowMandatoryTrialPopup(true);
+    }
+  };
+
+  // Function to refresh subscription status and check for mandatory popups
+  // This can be called after cancellation or other subscription changes
+  const refreshSubscriptionAndCheckPopups = async () => {
+    if (!user?.uid || isDietician) return;
+    
+    try {
+      const status = await getSubscriptionStatus(user.uid);
+      await checkAndShowMandatoryPopups(status);
+      
+      // Update subscription state
+      if (status.isFreeUser || !status.isSubscriptionActive) {
+        setHasActiveSubscription(false);
+        setIsFreeUser(true);
+      } else {
+        setHasActiveSubscription(true);
+        setIsFreeUser(false);
+      }
+    } catch (error) {
+      console.error('[Refresh Subscription] Error:', error);
+    }
+  };
 
   // Handler for trial activation
   const handleActivateTrial = async () => {

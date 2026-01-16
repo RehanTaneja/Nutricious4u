@@ -4251,14 +4251,29 @@ async def get_subscription_status(userId: str):
         is_trial_active = False
         requires_plan_selection = False
         
-        if trial_end_date:
+        # Check subscription status
+        subscription_status = user_data.get("subscriptionStatus")
+        is_subscription_active = user_data.get("isSubscriptionActive", False)
+        subscription_plan = user_data.get("subscriptionPlan")
+        
+        # Determine if plan selection is required
+        # 1. If subscription was cancelled
+        if subscription_status == "cancelled":
+            requires_plan_selection = True
+        # 2. If trial expired and no active plan
+        elif trial_end_date:
             trial_end = datetime.fromisoformat(trial_end_date)
             if datetime.now() < trial_end:
                 is_trial_active = True
             else:
                 # Trial expired, check if user has selected a plan
-                if not user_data.get("isSubscriptionActive", False) or user_data.get("subscriptionPlan") == "trial":
+                if not is_subscription_active or subscription_plan == "trial":
                     requires_plan_selection = True
+        # 3. If subscription expired and no active plan (and not cancelled)
+        elif not is_subscription_active and subscription_status != "cancelled":
+            # Check if user had a paid plan that expired
+            if subscription_plan and subscription_plan not in ["free", "trial", None]:
+                requires_plan_selection = True
         
         subscription_data = {
             "subscriptionPlan": user_data.get("subscriptionPlan"),
@@ -4293,9 +4308,14 @@ async def get_subscription_status(userId: str):
                 })
                 subscription_data["isSubscriptionActive"] = False
                 subscription_data["subscriptionStatus"] = "expired"
-                # If trial expired and no plan selected, require plan selection
-                if subscription_data["subscriptionPlan"] == "trial":
+                # If subscription expired and no plan selected, require plan selection
+                # Check if it was a paid plan (not free or trial)
+                if subscription_data["subscriptionPlan"] in ["trial"] or (
+                    subscription_data["subscriptionPlan"] and 
+                    subscription_data["subscriptionPlan"] not in ["free", None]
+                ):
                     subscription_data["requiresPlanSelection"] = True
+                    requires_plan_selection = True  # Update local variable too
         
         return subscription_data
         
@@ -4355,13 +4375,14 @@ async def cancel_subscription(userId: str):
             # Don't fail the subscription cancellation if notification cancellation fails
         
         # Cancel subscription by setting it to inactive and clearing plan
+        # NOTE: Do NOT set subscriptionPlan to "free" - keep it as None so requiresPlanSelection is triggered
         cancel_data = {
             "isSubscriptionActive": False,
-            "subscriptionPlan": None,
+            "subscriptionPlan": None,  # Keep as None (not "free") to trigger plan selection popup
             "subscriptionStartDate": None,
             "subscriptionEndDate": None,
             "currentSubscriptionAmount": 0.0,
-            "subscriptionStatus": "cancelled",
+            "subscriptionStatus": "cancelled",  # Mark as cancelled to trigger mandatory popup
             "pendingPlanSwitch": None,  # Clear any pending plan switch
             "nextPlanId": None
         }
@@ -4369,7 +4390,7 @@ async def cancel_subscription(userId: str):
         firestore_db.collection("user_profiles").document(userId).update(cancel_data)
         
         # Include notification count in success message
-        message = f"Subscription cancelled successfully. You are now on the free plan."
+        message = f"Subscription cancelled successfully. Please select a new plan to continue."
         if cancelled_notifications_count > 0:
             message += f" {cancelled_notifications_count} diet notifications have been cancelled."
         

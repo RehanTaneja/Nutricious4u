@@ -10303,6 +10303,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [showCancelSuccessModal, setShowCancelSuccessModal] = useState(false);
   const [cancelSuccessMessage, setCancelSuccessMessage] = useState('');
   const [togglingAutoRenewal, setTogglingAutoRenewal] = useState(false);
+  const [showMandatoryPlanPopupAfterCancel, setShowMandatoryPlanPopupAfterCancel] = useState(false);
+  const [selectedPlanForCancel, setSelectedPlanForCancel] = useState<string | null>(null);
   const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
@@ -10315,7 +10317,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) {
         setError('User not authenticated');
-        return;
+        return null;
       }
       
       const status = await getSubscriptionStatus(userId);
@@ -10323,9 +10325,12 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       
       // Check if user needs to select a plan
       checkIfPlanSelectionNeeded(status);
+      
+      return status; // Return status for use after cancellation
     } catch (e) {
       setError('Failed to load subscription status');
       console.error('Error fetching subscription status:', e);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -10421,9 +10426,31 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         setCancelSuccessMessage(successMessage);
         setShowCancelSuccessModal(true);
         // Refresh subscription status
-        fetchSubscriptionStatus();
+        const updatedStatus = await fetchSubscriptionStatus();
         // Refresh the subscription context
         refreshSubscriptionStatus();
+        
+        // After cancellation, check if we need to show mandatory plan selection popup
+        // Check the updated status to see if plan selection is required
+        if (updatedStatus && (updatedStatus.requiresPlanSelection || updatedStatus.subscriptionStatus === "cancelled")) {
+          // Fetch plans and show mandatory popup
+          try {
+            const plans = await getSubscriptionPlans();
+            setPlans(plans);
+            // Close success modal and show mandatory popup
+            setTimeout(() => {
+              setShowCancelSuccessModal(false);
+              setShowMandatoryPlanPopupAfterCancel(true);
+            }, 2000); // Show success message for 2 seconds first
+          } catch (planError) {
+            console.error('[Cancellation] Failed to fetch plans:', planError);
+            // Still show popup
+            setTimeout(() => {
+              setShowCancelSuccessModal(false);
+              setShowMandatoryPlanPopupAfterCancel(true);
+            }, 2000);
+          }
+        }
       } else {
         Alert.alert('Error', result.message || 'Failed to cancel subscription');
       }
@@ -10731,7 +10758,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           <View style={[styles.successPopup, { backgroundColor: '#34D399', padding: 32, margin: 30 }]}>
             <Text style={styles.successTitle}>Cancel Subscription</Text>
             <Text style={styles.successMessage}>
-              Are you sure you want to cancel your subscription? You will be moved to the free plan.
+              Are you sure you want to cancel your subscription? You will need to select a new plan to continue using premium features.
             </Text>
             <View style={[styles.modalButtonRow, { marginTop: 24 }]}>
               <TouchableOpacity
@@ -10774,6 +10801,37 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Mandatory Plan Selection Popup After Cancellation */}
+      <MandatoryPlanSelectionPopup
+        visible={showMandatoryPlanPopupAfterCancel}
+        plans={plans}
+        selectedPlan={selectedPlanForCancel}
+        onSelectPlan={setSelectedPlanForCancel}
+        onConfirm={async () => {
+          if (!selectedPlanForCancel) return;
+          try {
+            setAddingAmount(true);
+            const userId = auth.currentUser?.uid;
+            if (!userId) return;
+
+            const result = await selectSubscription(userId, selectedPlanForCancel);
+            if (result.success) {
+              setShowMandatoryPlanPopupAfterCancel(false);
+              setSelectedPlanForCancel(null);
+              await fetchSubscriptionStatus();
+              refreshSubscriptionStatus();
+              Alert.alert('Success', result.message);
+            }
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Failed to select plan');
+          } finally {
+            setAddingAmount(false);
+          }
+        }}
+        confirming={addingAmount}
+        message="Your subscription has been cancelled. Please select a plan to continue your fitness journey."
+      />
     </SafeAreaView>
   );
 }; 
