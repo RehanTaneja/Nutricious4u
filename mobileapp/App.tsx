@@ -45,10 +45,12 @@ import {
   RecipesScreen, // <-- import the new recipes screen
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen, // <-- import my subscriptions screen
+  MandatoryTrialActivationPopup, // <-- import mandatory trial activation popup
+  MandatoryPlanSelectionPopup, // <-- import mandatory plan selection popup
   QnAScreen,
   AccountSettingsScreen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getQueueStatus } from './services/api';
+import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getQueueStatus, activateFreeTrial, getTrialStatus } from './services/api';
 
 type User = firebase.User;
 
@@ -182,6 +184,14 @@ function AppContent() {
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
   const [pushRegisteredThisSession, setPushRegisteredThisSession] = useState(false);
+  // Mandatory popup states
+  const [showMandatoryTrialPopup, setShowMandatoryTrialPopup] = useState(false);
+  const [showMandatoryPlanPopup, setShowMandatoryPlanPopup] = useState(false);
+  const [activatingTrial, setActivatingTrial] = useState(false);
+  const [selectingPlan, setSelectingPlan] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<any>(null);
 
   // Helper: register push with logging so we can see results in backend logs
   const registerPushWithLogging = async (uid: string, source: string) => {
@@ -737,6 +747,7 @@ function AppContent() {
                       );
                       
                       const subscriptionStatus = await Promise.race([subscriptionPromise, timeoutPromise]) as any;
+                      setSubscriptionStatus(subscriptionStatus);
                     
                     // Check if user is on free plan or has active subscription
                     if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
@@ -749,6 +760,30 @@ function AppContent() {
                         console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(true);
                         setIsFreeUser(false);
+                      }
+                      
+                      // Check for mandatory popups (trial activation or plan selection)
+                      // Only check if user is not a dietician
+                      if (!isDieticianAccount) {
+                        // Check if user hasn't used free trial
+                        if (!subscriptionStatus.freeTrialUsed) {
+                          console.log('[Mandatory Popup] User has not used free trial, showing trial activation popup');
+                          setShowMandatoryTrialPopup(true);
+                        }
+                        // Check if trial expired or plan expired and requires plan selection
+                        else if (subscriptionStatus.requiresPlanSelection) {
+                          console.log('[Mandatory Popup] User needs to select a plan, showing plan selection popup');
+                          // Fetch plans for the popup
+                          try {
+                            const plans = await getSubscriptionPlans();
+                            setAvailablePlans(plans);
+                            setShowMandatoryPlanPopup(true);
+                          } catch (planError) {
+                            console.error('[Mandatory Popup] Failed to fetch plans:', planError);
+                            // Still show popup, plans will be empty
+                            setShowMandatoryPlanPopup(true);
+                          }
+                        }
                       }
                       
                       // Add longer delay before next API call
@@ -977,6 +1012,65 @@ function AppContent() {
     checkingProfile,
     loading
   });
+
+  // Handler for trial activation
+  const handleActivateTrial = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      setActivatingTrial(true);
+      const result = await activateFreeTrial(user.uid);
+      
+      if (result.success) {
+        console.log('[Trial Activation] Success:', result.message);
+        setShowMandatoryTrialPopup(false);
+        // Refresh subscription status
+        const newStatus = await getSubscriptionStatus(user.uid);
+        setSubscriptionStatus(newStatus);
+        setHasActiveSubscription(true);
+        setIsFreeUser(false);
+        refreshSubscriptionStatus();
+        Alert.alert('Success', result.message);
+      }
+    } catch (error: any) {
+      console.error('[Trial Activation] Error:', error);
+      Alert.alert('Error', error.message || 'Failed to activate free trial');
+    } finally {
+      setActivatingTrial(false);
+    }
+  };
+
+  // Handler for plan selection
+  const handleSelectPlan = (planId: string) => {
+    setSelectedPlanId(planId);
+  };
+
+  const handleConfirmPlanSelection = async () => {
+    if (!user?.uid || !selectedPlanId) return;
+    
+    try {
+      setSelectingPlan(true);
+      const result = await selectSubscription(user.uid, selectedPlanId);
+      
+      if (result.success) {
+        console.log('[Plan Selection] Success:', result.message);
+        setShowMandatoryPlanPopup(false);
+        setSelectedPlanId(null);
+        // Refresh subscription status
+        const newStatus = await getSubscriptionStatus(user.uid);
+        setSubscriptionStatus(newStatus);
+        setHasActiveSubscription(true);
+        setIsFreeUser(false);
+        refreshSubscriptionStatus();
+        Alert.alert('Success', result.message);
+      }
+    } catch (error: any) {
+      console.error('[Plan Selection] Error:', error);
+      Alert.alert('Error', error.message || 'Failed to select plan');
+    } finally {
+      setSelectingPlan(false);
+    }
+  };
 
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
@@ -1211,6 +1305,26 @@ function AppContent() {
           </View>
         </View>
       </Modal>
+
+      {/* Mandatory Trial Activation Popup */}
+      <MandatoryTrialActivationPopup
+        visible={showMandatoryTrialPopup}
+        onActivate={handleActivateTrial}
+        activating={activatingTrial}
+      />
+
+      {/* Mandatory Plan Selection Popup */}
+      <MandatoryPlanSelectionPopup
+        visible={showMandatoryPlanPopup}
+        plans={availablePlans}
+        selectedPlan={selectedPlanId}
+        onSelectPlan={handleSelectPlan}
+        onConfirm={handleConfirmPlanSelection}
+        confirming={selectingPlan}
+        message={subscriptionStatus?.subscriptionStatus === 'trial' 
+          ? "Your free trial has ended. Select a plan to continue your fitness journey."
+          : "Select a plan to continue your fitness journey"}
+      />
 
       {/* Subscription Popup Modal */}
       <Modal

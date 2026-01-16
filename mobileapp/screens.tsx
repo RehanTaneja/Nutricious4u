@@ -24,6 +24,7 @@ import {
   Image,
   RefreshControl,
   Linking,
+  Switch,
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
@@ -51,7 +52,7 @@ import { dashboardCache } from './services/cache';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -9931,7 +9932,9 @@ export {
   DieticianDashboardScreen, // <-- export the dietician dashboard screen
   RecipesScreen, // <-- export RecipesScreen
   SubscriptionSelectionScreen, // <-- export subscription selection screen
-  MySubscriptionsScreen // <-- export my subscriptions screen
+  MySubscriptionsScreen, // <-- export my subscriptions screen
+  MandatoryTrialActivationPopup, // <-- export mandatory trial activation popup
+  MandatoryPlanSelectionPopup // <-- export mandatory plan selection popup
 };
 
 // --- Subscription Selection Screen ---
@@ -10120,6 +10123,172 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
+// --- Mandatory Popup Components ---
+
+interface MandatoryTrialActivationPopupProps {
+  visible: boolean;
+  onActivate: () => void;
+  activating: boolean;
+}
+
+const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps> = ({
+  visible,
+  onActivate,
+  activating
+}) => {
+  return (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => {}} // Prevent dismissal
+    >
+      <View style={styles.popupOverlay} pointerEvents="box-none">
+        <View style={styles.popupContainer}>
+          <Text style={styles.popupTitle}>Welcome to Nutricious4u! 🎉</Text>
+          <Text style={styles.popupSubtitle}>
+            Start your fitness journey with a free 1-day trial
+          </Text>
+          
+          <View style={{ marginVertical: 20 }}>
+            <Text style={[styles.popupSubtitle, { textAlign: 'left', marginBottom: 12, color: COLORS.text }]}>
+              Your free trial includes:
+            </Text>
+            <View style={{ marginLeft: 8 }}>
+              <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
+                ✓ All premium features
+              </Text>
+              <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
+                ✓ Personalized diet plan
+              </Text>
+              <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
+                ✓ AI Chatbot support
+              </Text>
+              <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
+                ✓ Advanced notifications
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.popupConfirmButton,
+              activating && styles.popupConfirmButtonDisabled
+            ]}
+            onPress={onActivate}
+            disabled={activating}
+            activeOpacity={0.8}
+          >
+            {activating ? (
+              <ActivityIndicator color={COLORS.text} size="small" />
+            ) : (
+              <Text style={styles.popupConfirmButtonText}>
+                Activate Free Trial
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+interface MandatoryPlanSelectionPopupProps {
+  visible: boolean;
+  plans: SubscriptionPlan[];
+  selectedPlan: string | null;
+  onSelectPlan: (planId: string) => void;
+  onConfirm: () => void;
+  confirming: boolean;
+  message?: string;
+}
+
+const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = ({
+  visible,
+  plans,
+  selectedPlan,
+  onSelectPlan,
+  onConfirm,
+  confirming,
+  message
+}) => {
+  // Filter out free plan - only show paid plans
+  const paidPlans = plans.filter(plan => !plan.isFree);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => {}} // Prevent dismissal
+    >
+      <View style={styles.popupOverlay} pointerEvents="box-none">
+        <View style={styles.popupContainer}>
+          <Text style={styles.popupTitle}>Select a Subscription Plan</Text>
+          <Text style={styles.popupSubtitle}>
+            {message || "Choose a plan to continue your fitness journey"}
+          </Text>
+          
+          <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+            {paidPlans.map((plan) => (
+              <TouchableOpacity
+                key={plan.planId}
+                style={[
+                  styles.popupPlanItem,
+                  selectedPlan === plan.planId && styles.selectedPlanItem
+                ]}
+                onPress={() => onSelectPlan(plan.planId)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.popupPlanHeader}>
+                  <Text style={styles.popupPlanName}>{plan.name}</Text>
+                  <Text style={styles.popupPlanPrice}>
+                    ₹{plan.price.toLocaleString()}
+                  </Text>
+                </View>
+                <Text style={styles.popupPlanDuration}>{plan.duration}</Text>
+                <Text style={styles.popupPlanDescription}>{plan.description}</Text>
+                {plan.features && plan.features.length > 0 && (
+                  <View style={{ marginTop: 8 }}>
+                    {plan.features.slice(0, 3).map((feature, index) => (
+                      <Text key={index} style={[styles.popupPlanDescription, { fontSize: 12, marginBottom: 4 }]}>
+                        • {feature}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+                {selectedPlan === plan.planId && (
+                  <View style={styles.popupPlanSelectedIndicator}>
+                    <Text style={styles.popupPlanSelectedText}>✓ Selected</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <TouchableOpacity
+            style={[
+              styles.popupConfirmButton,
+              (!selectedPlan || confirming) && styles.popupConfirmButtonDisabled
+            ]}
+            onPress={onConfirm}
+            disabled={!selectedPlan || confirming}
+            activeOpacity={0.8}
+          >
+            {confirming ? (
+              <ActivityIndicator color={COLORS.text} size="small" />
+            ) : (
+              <Text style={styles.popupConfirmButtonText}>
+                Confirm Selection
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // --- My Subscriptions Screen ---
 const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const topSpacing = useStandardTopSpacing(SPACING_PRESETS.SECONDARY);
@@ -10133,6 +10302,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
   const [showCancelSuccessModal, setShowCancelSuccessModal] = useState(false);
   const [cancelSuccessMessage, setCancelSuccessMessage] = useState('');
+  const [togglingAutoRenewal, setTogglingAutoRenewal] = useState(false);
   const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
@@ -10200,6 +10370,27 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       Alert.alert('Error', e.message || 'Failed to select plan');
     } finally {
       setAddingAmount(false);
+    }
+  };
+
+  const handleToggleAutoRenewal = async (enabled: boolean) => {
+    try {
+      setTogglingAutoRenewal(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const result = await toggleAutoRenewal(userId, enabled);
+      if (result.success) {
+        // Refresh subscription status to get updated auto-renewal state
+        await fetchSubscriptionStatus();
+        Alert.alert('Success', result.message);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to update auto-renewal setting');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update auto-renewal setting');
+    } finally {
+      setTogglingAutoRenewal(false);
     }
   };
 
@@ -10374,6 +10565,25 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                     ₹{subscription.totalAmountPaid.toLocaleString()}
                   </Text>
                 </View>
+                
+                {!subscription.isFreeUser && subscription.isSubscriptionActive && (
+                  <View style={styles.detailRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailLabel}>Auto-Renewal</Text>
+                      <Text style={[styles.detailLabel, { fontSize: 12, marginTop: 4, color: COLORS.placeholder }]}>
+                        Automatically renew your subscription when it expires
+                      </Text>
+                    </View>
+                    <Switch
+                      value={subscription.autoRenewalEnabled ?? true}
+                      onValueChange={handleToggleAutoRenewal}
+                      disabled={togglingAutoRenewal}
+                      trackColor={{ false: COLORS.placeholder, true: COLORS.primary }}
+                      thumbColor={COLORS.white}
+                      ios_backgroundColor={COLORS.placeholder}
+                    />
+                  </View>
+                )}
               </View>
             </View>
             

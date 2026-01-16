@@ -504,6 +504,18 @@ export interface SubscriptionStatus {
   isSubscriptionActive: boolean;
   isFreeUser?: boolean; // Indicates if user is on free plan
   autoRenewalEnabled?: boolean; // Indicates if auto-renewal is enabled
+  // New subscription system fields
+  freeTrialUsed?: boolean;
+  isTrialActive?: boolean;
+  trialEndDate?: string;
+  pendingPlanSwitch?: {
+    newPlanId: string;
+    switchDate: string;
+    amount: number;
+  };
+  nextPlanId?: string;
+  subscriptionStatus?: string; // 'trial', 'active', 'expired', 'cancelled', 'pending_switch'
+  requiresPlanSelection?: boolean;
 }
 
 export interface Notification {
@@ -1031,6 +1043,16 @@ export const toggleAutoRenewal = async (userId: string, enabled: boolean): Promi
 
 export const addSubscriptionAmount = async (userId: string, planId: string): Promise<{ success: boolean; message: string; amountAdded: number; newTotal: number }> => {
   const response = await enhancedApi.post(`/subscription/add-amount/${userId}?planId=${planId}`);
+  return response.data;
+};
+
+export const activateFreeTrial = async (userId: string): Promise<{ success: boolean; message: string; trial?: { startDate: string; endDate: string; defaultDietAssigned: boolean } }> => {
+  const response = await enhancedApi.post(`/subscription/activate-trial/${userId}`);
+  return response.data;
+};
+
+export const getTrialStatus = async (userId: string): Promise<{ hasUsedTrial: boolean; isTrialActive: boolean; trialStartDate: string | null; trialEndDate: string | null; timeRemaining: number }> => {
+  const response = await enhancedApi.get(`/subscription/trial-status/${userId}`);
   return response.data;
 };
 

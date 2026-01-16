@@ -146,11 +146,21 @@ class UserProfile(BaseModel):
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
     # Subscription fields
-    subscriptionPlan: Optional[str] = None  # '1month', '2months', '3months', '6months'
+    subscriptionPlan: Optional[str] = None  # '1month', '2months', '3months', '6months', 'free', 'trial'
     subscriptionStartDate: Optional[str] = None
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: Optional[float] = 0.0
     isSubscriptionActive: Optional[bool] = False
+    currentSubscriptionAmount: Optional[float] = 0.0
+    autoRenewalEnabled: Optional[bool] = True
+    # New subscription system fields
+    freeTrialUsed: Optional[bool] = False
+    freeTrialStartDate: Optional[str] = None
+    freeTrialEndDate: Optional[str] = None
+    pendingPlanSwitch: Optional[dict] = None  # {newPlanId: str, switchDate: str, amount: float}
+    nextPlanId: Optional[str] = None
+    subscriptionStatus: Optional[str] = None  # 'trial', 'active', 'expired', 'cancelled', 'pending_switch'
+    lastPaymentReminderSent: Optional[dict] = None  # {oneWeek: bool, twoDays: bool, oneDay: bool}
 
 class UpdateUserProfile(BaseModel):
     firstName: Optional[str] = None
@@ -215,6 +225,15 @@ class SubscriptionStatus(BaseModel):
     subscriptionEndDate: Optional[str] = None
     totalAmountPaid: float = 0.0
     isSubscriptionActive: bool = False
+    autoRenewalEnabled: Optional[bool] = True
+    # New subscription system fields
+    freeTrialUsed: Optional[bool] = False
+    isTrialActive: Optional[bool] = False
+    trialEndDate: Optional[str] = None
+    pendingPlanSwitch: Optional[dict] = None
+    nextPlanId: Optional[str] = None
+    subscriptionStatus: Optional[str] = None
+    requiresPlanSelection: Optional[bool] = False
 
 # --- Appointment Models ---
 class AppointmentRequest(BaseModel):
@@ -1086,6 +1105,18 @@ async def create_user_profile(profile: UserProfile):
             profile_dict["currentSubscriptionAmount"] = 0.0
             profile_dict["totalAmountPaid"] = 0.0
             profile_dict["autoRenewalEnabled"] = True
+            # New subscription system fields
+            profile_dict["freeTrialUsed"] = False
+            profile_dict["freeTrialStartDate"] = None
+            profile_dict["freeTrialEndDate"] = None
+            profile_dict["pendingPlanSwitch"] = None
+            profile_dict["nextPlanId"] = None
+            profile_dict["subscriptionStatus"] = "expired"
+            profile_dict["lastPaymentReminderSent"] = {
+                "oneWeek": False,
+                "twoDays": False,
+                "oneDay": False
+            }
         
         # Set new_diet_received to false for all new users
         profile_dict["new_diet_received"] = False
@@ -3458,13 +3489,57 @@ async def check_subscription_reminders_job():
                 end_date = datetime.fromisoformat(subscription_end_date)
                 time_until_expiry = end_date - current_time
                 
-                # Check if subscription expires in 1 week
-                if timedelta(days=6) <= time_until_expiry <= timedelta(days=7):
-                    # Send reminder notification
-                    await send_subscription_reminder_notification(user_id, user_data)
+                # Check for payment reminders and add payment 1 day before plan ends
+                # 1 day before (23-25 hours remaining)
+                if timedelta(hours=23) <= time_until_expiry <= timedelta(hours=25):
+                    # Add payment to totalAmountPaid (only once)
+                    last_reminders = user_data.get("lastPaymentReminderSent", {})
+                    if not last_reminders.get("oneDay", False):
+                        await add_payment_on_plan_end(user_id, user_data)
+                        # Mark reminder as sent
+                        firestore_db.collection("user_profiles").document(user_id).update({
+                            "lastPaymentReminderSent": {
+                                **last_reminders,
+                                "oneDay": True
+                            }
+                        })
+                    # Send 1 day reminder notification
+                    await send_payment_reminder_notification(user_id, user_data, 1)
+                
+                # 2 days before
+                elif timedelta(days=1, hours=23) <= time_until_expiry <= timedelta(days=2, hours=1):
+                    last_reminders = user_data.get("lastPaymentReminderSent", {})
+                    if not last_reminders.get("twoDays", False):
+                        await send_payment_reminder_notification(user_id, user_data, 2)
+                        firestore_db.collection("user_profiles").document(user_id).update({
+                            "lastPaymentReminderSent": {
+                                **last_reminders,
+                                "twoDays": True
+                            }
+                        })
+                
+                # 1 week before (6-7 days)
+                elif timedelta(days=6) <= time_until_expiry <= timedelta(days=7):
+                    last_reminders = user_data.get("lastPaymentReminderSent", {})
+                    if not last_reminders.get("oneWeek", False):
+                        await send_payment_reminder_notification(user_id, user_data, 7)
+                        firestore_db.collection("user_profiles").document(user_id).update({
+                            "lastPaymentReminderSent": {
+                                **last_reminders,
+                                "oneWeek": True
+                            }
+                        })
                 
                 # Check if subscription has expired
                 elif time_until_expiry <= timedelta(0):
+                    # First check if there's a pending plan switch - activate it
+                    pending_switch = user_data.get("pendingPlanSwitch")
+                    if pending_switch:
+                        logger.info(f"[SUBSCRIPTION REMINDER] Activating pending plan switch for user {user_id}")
+                        switch_activated = await activate_pending_plan_switch(user_id, user_data)
+                        if switch_activated:
+                            continue  # Plan switch activated, skip renewal/expiry logic
+                    
                     # Check if auto-renewal is enabled and handle accordingly
                     auto_renewal_enabled = user_data.get("autoRenewalEnabled", True)  # Default to True
                     
@@ -3482,8 +3557,92 @@ async def check_subscription_reminders_job():
     except Exception as e:
         logger.error(f"[SUBSCRIPTION REMINDERS JOB] Error: {e}")
 
+async def add_payment_on_plan_end(user_id: str, user_data: dict):
+    """Add payment to totalAmountPaid 1 day before plan ends"""
+    try:
+        current_amount = user_data.get("currentSubscriptionAmount", 0.0)
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        if current_amount <= 0:
+            logger.warning(f"[PAYMENT ADD] No current subscription amount for user {user_id}")
+            return
+        
+        # Add current plan amount to total
+        new_total = current_total + current_amount
+        
+        # Update total amount paid
+        firestore_db.collection("user_profiles").document(user_id).update({
+            "totalAmountPaid": new_total
+        })
+        
+        plan_name = get_plan_name(user_data.get("subscriptionPlan", "unknown"))
+        logger.info(f"[PAYMENT ADD] Added ₹{current_amount:,.0f} to total for user {user_id} (plan: {plan_name}). New total: ₹{new_total:,.0f}")
+        
+        # Send notification to user about payment
+        user_name = user_data.get("name", "User")
+        notification_data = {
+            "userId": user_id,
+            "title": "Payment Added",
+            "body": f"Hi {user_name}, ₹{current_amount:,.0f} has been added to your total amount due for your {plan_name}.",
+            "type": "payment_added",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        firestore_db.collection("notifications").add(notification_data)
+        
+        # Send push notification if FCM token exists
+        fcm_token = user_data.get("fcmToken")
+        if fcm_token:
+            await send_push_notification(
+                fcm_token,
+                "Payment Added",
+                f"Hi {user_name}, ₹{current_amount:,.0f} has been added to your total amount due."
+            )
+        
+    except Exception as e:
+        logger.error(f"[PAYMENT ADD] Error adding payment for user {user_id}: {e}")
+
+async def send_payment_reminder_notification(user_id: str, user_data: dict, days_remaining: int):
+    """Send payment reminder notification to user"""
+    try:
+        user_name = user_data.get("name", "User")
+        subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
+        plan_name = get_plan_name(subscription_plan)
+        current_amount = user_data.get("currentSubscriptionAmount", 0.0)
+        
+        if days_remaining == 1:
+            message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Plan Ending Tomorrow"
+        elif days_remaining == 2:
+            message = f"Hi {user_name}, your {plan_name} will end in 2 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Plan Ending Soon"
+        else:
+            message = f"Hi {user_name}, your {plan_name} will end in {days_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Plan Ending Soon"
+        
+        # Create notification data
+        notification_data = {
+            "userId": user_id,
+            "title": title,
+            "body": message,
+            "type": "payment_reminder",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        # Save notification to Firestore
+        firestore_db.collection("notifications").add(notification_data)
+        
+        # Send push notification if FCM token exists
+        fcm_token = user_data.get("fcmToken")
+        if fcm_token:
+            await send_push_notification(fcm_token, title, message)
+            
+    except Exception as e:
+        logger.error(f"[PAYMENT REMINDER NOTIFICATION] Error: {e}")
+
 async def send_subscription_reminder_notification(user_id: str, user_data: dict):
-    """Send reminder notification to user about subscription expiry"""
+    """Send reminder notification to user about subscription expiry (legacy - kept for backward compatibility)"""
     try:
         user_name = user_data.get("name", "User")
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
@@ -3513,9 +3672,95 @@ async def send_subscription_reminder_notification(user_id: str, user_data: dict)
     except Exception as e:
         logger.error(f"[SUBSCRIPTION REMINDER NOTIFICATION] Error: {e}")
 
+async def activate_pending_plan_switch(user_id: str, user_data: dict):
+    """Activate a pending plan switch when current plan ends"""
+    try:
+        pending_switch = user_data.get("pendingPlanSwitch")
+        if not pending_switch:
+            return False
+        
+        new_plan_id = pending_switch.get("newPlanId")
+        switch_date_str = pending_switch.get("switchDate")
+        plan_amount = pending_switch.get("amount", 0.0)
+        
+        if not new_plan_id or not switch_date_str:
+            logger.error(f"[PLAN SWITCH] Invalid pending switch data for user {user_id}")
+            return False
+        
+        # Parse switch date (should be the end date of current plan)
+        switch_date = datetime.fromisoformat(switch_date_str)
+        now = datetime.now()
+        
+        # Only activate if we're at or past the switch date
+        if now < switch_date:
+            return False
+        
+        # Calculate new plan dates starting from switch date
+        if new_plan_id == "1month":
+            new_end_date = switch_date + timedelta(days=30)
+        elif new_plan_id == "2months":
+            new_end_date = switch_date + timedelta(days=60)
+        elif new_plan_id == "3months":
+            new_end_date = switch_date + timedelta(days=90)
+        elif new_plan_id == "6months":
+            new_end_date = switch_date + timedelta(days=180)
+        else:
+            logger.error(f"[PLAN SWITCH] Invalid plan ID {new_plan_id} for user {user_id}")
+            return False
+        
+        # Update user profile with new plan
+        # NOTE: Do NOT add to totalAmountPaid here - will be added when this plan ends (Phase 4)
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        update_data = {
+            "subscriptionPlan": new_plan_id,
+            "subscriptionStartDate": switch_date.isoformat(),
+            "subscriptionEndDate": new_end_date.isoformat(),
+            "currentSubscriptionAmount": plan_amount,
+            "totalAmountPaid": current_total,  # Keep existing total, don't add yet
+            "isSubscriptionActive": True,
+            "subscriptionStatus": "active",
+            "pendingPlanSwitch": None,  # Clear pending switch
+            "nextPlanId": None,
+            "lastPaymentReminderSent": {  # Reset reminder flags for new plan
+                "oneWeek": False,
+                "twoDays": False,
+                "oneDay": False
+            }
+        }
+        
+        firestore_db.collection("user_profiles").document(user_id).update(update_data)
+        
+        # Send notification about plan switch
+        user_name = user_data.get("name", "User")
+        plan_name = get_plan_name(new_plan_id)
+        
+        notification_data = {
+            "userId": user_id,
+            "title": "Plan Switched",
+            "body": f"Hi {user_name}, your subscription has been switched to {plan_name}.",
+            "type": "plan_switched",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        firestore_db.collection("notifications").add(notification_data)
+        
+        logger.info(f"[PLAN SWITCH] Successfully activated {new_plan_id} plan for user {user_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[PLAN SWITCH] Error activating pending plan switch for user {user_id}: {e}")
+        return False
+
 async def auto_renew_subscription(user_id: str, user_data: dict):
     """Automatically renew a user's subscription when it expires"""
     try:
+        # First check if there's a pending plan switch - activate that instead
+        switch_activated = await activate_pending_plan_switch(user_id, user_data)
+        if switch_activated:
+            logger.info(f"[AUTO RENEWAL] Activated pending plan switch for user {user_id} instead of renewing")
+            return
+        
         user_name = user_data.get("name", "User")
         current_plan = user_data.get("subscriptionPlan")
         current_total = user_data.get("totalAmountPaid", 0.0)
@@ -3549,16 +3794,23 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         elif current_plan == "6months":
             end_date = start_date + timedelta(days=180)
         
-        # Calculate new total amount
-        new_total = current_total + plan_prices[current_plan]
+        # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
+        # Keep existing total for now
+        new_total = current_total  # Payment will be added at plan end
         
         # Update user profile with renewed subscription
         update_data = {
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
             "currentSubscriptionAmount": plan_prices[current_plan],
-            "totalAmountPaid": new_total,
-            "isSubscriptionActive": True
+            "totalAmountPaid": new_total,  # Keep existing total
+            "isSubscriptionActive": True,
+            "subscriptionStatus": "active",
+            "lastPaymentReminderSent": {  # Reset reminder flags for renewed plan
+                "oneWeek": False,
+                "twoDays": False,
+                "oneDay": False
+            }
         }
         
         firestore_db.collection("user_profiles").document(user_id).update(update_data)
@@ -3718,6 +3970,7 @@ async def send_new_subscription_notification(user_id: str, user_data: dict, plan
 def get_plan_name(plan_id: str) -> str:
     """Get plan name from plan ID"""
     plan_names = {
+        "1month": "1 Month Plan",
         "2months": "2 Months Plan",
         "3months": "3 Months Plan",
         "6months": "6 Months Plan"
@@ -3892,18 +4145,67 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         # Check if user already has an active subscription
         has_active_subscription = user_data.get("isSubscriptionActive", False)
+        current_subscription_end = user_data.get("subscriptionEndDate")
+        current_plan = user_data.get("subscriptionPlan")
         
-        # Calculate new total amount (add current plan price to existing total)
-        new_total = current_total + plan_prices[request.planId]
+        # If user has active subscription, store as pending plan switch (deferred activation)
+        if has_active_subscription and current_subscription_end and current_plan and current_plan != "trial":
+            # Parse current end date
+            current_end_date = datetime.fromisoformat(current_subscription_end)
+            
+            # Calculate new plan dates starting from current plan end
+            if request.planId == "1month":
+                new_end_date = current_end_date + timedelta(days=30)
+            elif request.planId == "2months":
+                new_end_date = current_end_date + timedelta(days=60)
+            elif request.planId == "3months":
+                new_end_date = current_end_date + timedelta(days=90)
+            elif request.planId == "6months":
+                new_end_date = current_end_date + timedelta(days=180)
+            else:
+                new_end_date = current_end_date
+            
+            # Store as pending plan switch
+            pending_switch = {
+                "newPlanId": request.planId,
+                "switchDate": current_end_date.isoformat(),  # When current plan ends
+                "amount": plan_prices[request.planId]
+            }
+            
+            update_data = {
+                "pendingPlanSwitch": pending_switch,
+                "nextPlanId": request.planId,
+                "subscriptionStatus": "pending_switch"
+            }
+            
+            firestore_db.collection("user_profiles").document(request.userId).update(update_data)
+            
+            plan_name = get_plan_name(request.planId)
+            message = f"Plan switch scheduled! Your {plan_name} will activate after your current plan ends on {current_end_date.strftime('%B %d, %Y')}."
+            
+            return SubscriptionResponse(
+                success=True,
+                message=message,
+                subscription={
+                    "planId": request.planId,
+                    "switchDate": current_end_date.isoformat(),
+                    "amountPaid": plan_prices[request.planId],
+                    "isPendingSwitch": True
+                }
+            )
         
-        # Update user profile with subscription
+        # User has NO active subscription - activate immediately
+        # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
             "subscriptionEndDate": end_date.isoformat(),
             "currentSubscriptionAmount": plan_prices[request.planId],
-            "totalAmountPaid": new_total,
-            "isSubscriptionActive": True
+            "totalAmountPaid": current_total,  # Keep existing total, don't add yet
+            "isSubscriptionActive": True,
+            "subscriptionStatus": "active",
+            "pendingPlanSwitch": None,  # Clear any pending switch
+            "nextPlanId": None
         }
         
         firestore_db.collection("user_profiles").document(request.userId).update(update_data)
@@ -3911,9 +4213,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
         # Send notification to dietician about new subscription
         await send_new_subscription_notification(request.userId, user_data, request.planId)
         
-        message = f"Successfully subscribed to {request.planId} plan"
-        if has_active_subscription:
-            message += " (replaced existing active subscription)"
+        message = f"Successfully subscribed to {get_plan_name(request.planId)}. Your plan is now active!"
         
         return SubscriptionResponse(
             success=True,
@@ -3923,7 +4223,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
                 "amountPaid": plan_prices[request.planId],
-                "totalAmountPaid": new_total
+                "totalAmountPaid": current_total
             }
         )
         
@@ -3945,6 +4245,21 @@ async def get_subscription_status(userId: str):
         
         user_data = user_doc.to_dict()
         
+        # Check trial status
+        free_trial_used = user_data.get("freeTrialUsed", False)
+        trial_end_date = user_data.get("freeTrialEndDate")
+        is_trial_active = False
+        requires_plan_selection = False
+        
+        if trial_end_date:
+            trial_end = datetime.fromisoformat(trial_end_date)
+            if datetime.now() < trial_end:
+                is_trial_active = True
+            else:
+                # Trial expired, check if user has selected a plan
+                if not user_data.get("isSubscriptionActive", False) or user_data.get("subscriptionPlan") == "trial":
+                    requires_plan_selection = True
+        
         subscription_data = {
             "subscriptionPlan": user_data.get("subscriptionPlan"),
             "subscriptionStartDate": user_data.get("subscriptionStartDate"),
@@ -3953,11 +4268,19 @@ async def get_subscription_status(userId: str):
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
             "isSubscriptionActive": user_data.get("isSubscriptionActive", False),
             "isFreeUser": not user_data.get("isSubscriptionActive", False),
-            "autoRenewalEnabled": user_data.get("autoRenewalEnabled", True)  # Default to True
+            "autoRenewalEnabled": user_data.get("autoRenewalEnabled", True),  # Default to True
+            # New subscription system fields
+            "freeTrialUsed": free_trial_used,
+            "isTrialActive": is_trial_active,
+            "trialEndDate": trial_end_date,
+            "pendingPlanSwitch": user_data.get("pendingPlanSwitch"),
+            "nextPlanId": user_data.get("nextPlanId"),
+            "subscriptionStatus": user_data.get("subscriptionStatus"),
+            "requiresPlanSelection": requires_plan_selection
         }
         
         # Log the data being returned for debugging
-        logger.info(f"[GET SUBSCRIPTION STATUS] User: {userId}, Total Amount: {subscription_data['totalAmountPaid']}, End Date: {subscription_data['subscriptionEndDate']}")
+        logger.info(f"[GET SUBSCRIPTION STATUS] User: {userId}, Total Amount: {subscription_data['totalAmountPaid']}, End Date: {subscription_data['subscriptionEndDate']}, Trial Active: {is_trial_active}")
         
         # Check if subscription is still active
         if subscription_data["subscriptionEndDate"]:
@@ -3965,9 +4288,14 @@ async def get_subscription_status(userId: str):
             if datetime.now() > end_date:
                 # Update subscription status to inactive
                 firestore_db.collection("user_profiles").document(userId).update({
-                    "isSubscriptionActive": False
+                    "isSubscriptionActive": False,
+                    "subscriptionStatus": "expired"
                 })
                 subscription_data["isSubscriptionActive"] = False
+                subscription_data["subscriptionStatus"] = "expired"
+                # If trial expired and no plan selected, require plan selection
+                if subscription_data["subscriptionPlan"] == "trial":
+                    subscription_data["requiresPlanSelection"] = True
         
         return subscription_data
         
@@ -4032,7 +4360,10 @@ async def cancel_subscription(userId: str):
             "subscriptionPlan": None,
             "subscriptionStartDate": None,
             "subscriptionEndDate": None,
-            "currentSubscriptionAmount": 0.0
+            "currentSubscriptionAmount": 0.0,
+            "subscriptionStatus": "cancelled",
+            "pendingPlanSwitch": None,  # Clear any pending plan switch
+            "nextPlanId": None
         }
         
         firestore_db.collection("user_profiles").document(userId).update(cancel_data)
@@ -4192,6 +4523,149 @@ async def add_subscription_amount(userId: str, planId: str):
     except Exception as e:
         logger.error(f"[ADD SUBSCRIPTION AMOUNT] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to add subscription amount")
+
+# --- Free Trial Endpoints ---
+
+@api_router.post("/subscription/activate-trial/{userId}")
+async def activate_free_trial(userId: str):
+    """Activate free trial for a user (one-time only)"""
+    try:
+        check_firebase_availability()
+        
+        # Get user profile
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        # Check if user is a dietician (prevent dieticians from using trial)
+        if user_data.get("isDietician", False):
+            raise HTTPException(status_code=403, detail="Dieticians cannot activate free trials")
+        
+        # Check if trial was already used
+        if user_data.get("freeTrialUsed", False):
+            raise HTTPException(status_code=400, detail="Free trial has already been used. You can only use it once.")
+        
+        # Calculate trial dates (1 day)
+        from datetime import datetime, timedelta
+        start_date = datetime.now()
+        end_date = start_date + timedelta(days=1)
+        
+        # Assign default diet to user
+        default_diet_assigned = await assign_default_diet_to_user(userId, user_data)
+        
+        # Update user profile with trial information
+        update_data = {
+            "freeTrialUsed": True,
+            "freeTrialStartDate": start_date.isoformat(),
+            "freeTrialEndDate": end_date.isoformat(),
+            "subscriptionPlan": "trial",
+            "subscriptionStatus": "trial",
+            "isSubscriptionActive": True,  # Active for feature access during trial
+            "subscriptionStartDate": start_date.isoformat(),
+            "subscriptionEndDate": end_date.isoformat(),
+            "new_diet_received": True  # Trigger new diet popup
+        }
+        
+        firestore_db.collection("user_profiles").document(userId).update(update_data)
+        
+        logger.info(f"[ACTIVATE TRIAL] Successfully activated free trial for user {userId}, ends at {end_date.isoformat()}")
+        
+        return {
+            "success": True,
+            "message": "Free trial activated successfully! You now have access to all premium features for 1 day.",
+            "trial": {
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+                "defaultDietAssigned": default_diet_assigned
+            }
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[ACTIVATE TRIAL] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to activate free trial")
+
+@api_router.get("/subscription/trial-status/{userId}")
+async def get_trial_status(userId: str):
+    """Get free trial status for a user"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        free_trial_used = user_data.get("freeTrialUsed", False)
+        trial_start = user_data.get("freeTrialStartDate")
+        trial_end = user_data.get("freeTrialEndDate")
+        
+        # Check if trial is currently active
+        is_trial_active = False
+        time_remaining = 0
+        
+        if trial_end:
+            from datetime import datetime
+            end_date = datetime.fromisoformat(trial_end)
+            now = datetime.now()
+            if now < end_date:
+                is_trial_active = True
+                time_remaining = int((end_date - now).total_seconds())
+        
+        return {
+            "hasUsedTrial": free_trial_used,
+            "isTrialActive": is_trial_active,
+            "trialStartDate": trial_start,
+            "trialEndDate": trial_end,
+            "timeRemaining": time_remaining  # seconds
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[TRIAL STATUS] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get trial status")
+
+async def assign_default_diet_to_user(user_id: str, user_data: dict):
+    """Assign a default diet plan to a user during free trial"""
+    try:
+        from datetime import datetime, timezone
+        
+        # Create a default diet filename
+        default_diet_filename = f"default_diet_{user_id}_{datetime.now(timezone.utc).timestamp()}.pdf"
+        
+        # For now, we'll set the dietPdfUrl to indicate a default diet was assigned
+        # The actual PDF can be created/uploaded later if needed
+        # This triggers the new diet popup mechanism
+        diet_info = {
+            "dietPdfUrl": default_diet_filename,
+            "lastDietUpload": datetime.now(timezone.utc).isoformat(),
+            "dieticianId": "system",  # System-assigned default diet
+            "dietCacheVersion": datetime.now(timezone.utc).timestamp(),
+            "new_diet_received": True
+        }
+        
+        firestore_db.collection("user_profiles").document(user_id).update(diet_info)
+        
+        logger.info(f"[DEFAULT DIET] Assigned default diet to user {user_id}")
+        
+        # Send notification about new diet (same as when dietician uploads)
+        try:
+            from services.simple_notification_service import get_notification_service
+            notification_service = get_notification_service()
+            notification_service.send_new_diet_notification(user_id, "System")
+        except Exception as notif_error:
+            logger.warning(f"[DEFAULT DIET] Failed to send notification: {notif_error}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"[DEFAULT DIET] Error assigning default diet to user {user_id}: {e}")
+        return False
 
 @api_router.get("/notifications/{userId}")
 async def get_user_notifications(userId: str):
