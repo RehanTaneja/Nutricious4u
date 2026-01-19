@@ -187,6 +187,12 @@ function AppContent() {
   // Mandatory popup states
   const [showMandatoryTrialPopup, setShowMandatoryTrialPopup] = useState(false);
   const [showMandatoryPlanPopup, setShowMandatoryPlanPopup] = useState(false);
+  const [showTrialSuccessPopup, setShowTrialSuccessPopup] = useState(false);
+  const [trialSuccessMessage, setTrialSuccessMessage] = useState('');
+  const [showRenewalPopup, setShowRenewalPopup] = useState(false);
+  const [renewalMessage, setRenewalMessage] = useState('');
+  const [showPlanSwitchPopup, setShowPlanSwitchPopup] = useState(false);
+  const [planSwitchMessage, setPlanSwitchMessage] = useState('');
   const [activatingTrial, setActivatingTrial] = useState(false);
   const [selectingPlan, setSelectingPlan] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -689,8 +695,55 @@ function AppContent() {
                       read: true
                     });
                     
-                    setNotificationMessage(notification.message);
-                    setShowNotification(true);
+                    // Handle different notification types with specific popups
+                    const notificationType = notification.type;
+                    const notificationBody = notification.body || notification.message || '';
+                    
+                    if (notificationType === 'subscription_renewed') {
+                      // Show custom renewal popup
+                      setRenewalMessage(notificationBody);
+                      setShowRenewalPopup(true);
+                      // Refresh subscription status
+                      if (firebaseUser?.uid) {
+                        getSubscriptionStatus(firebaseUser.uid).then(status => {
+                          setSubscriptionStatus(status);
+                          refreshSubscriptionStatus();
+                        });
+                      }
+                    } else if (notificationType === 'plan_switched') {
+                      // Show custom plan switch popup
+                      setPlanSwitchMessage(notificationBody);
+                      setShowPlanSwitchPopup(true);
+                      // Refresh subscription status
+                      if (firebaseUser?.uid) {
+                        getSubscriptionStatus(firebaseUser.uid).then(status => {
+                          setSubscriptionStatus(status);
+                          refreshSubscriptionStatus();
+                        });
+                      }
+                    } else if (notificationType === 'subscription_expired') {
+                      // Show custom expiry popup with plan selection
+                      setNotificationMessage(notificationBody);
+                      setShowNotification(true);
+                      // Check if we need to show mandatory plan selection popup
+                      if (firebaseUser?.uid) {
+                        getSubscriptionStatus(firebaseUser.uid).then(status => {
+                          setSubscriptionStatus(status);
+                          if (status.requiresPlanSelection) {
+                            // Fetch plans and show mandatory popup
+                            getSubscriptionPlans().then(plans => {
+                              setAvailablePlans(plans);
+                              setShowMandatoryPlanPopup(true);
+                            });
+                          }
+                          refreshSubscriptionStatus();
+                        });
+                      }
+                    } else {
+                      // Show default notification popup for other types
+                      setNotificationMessage(notificationBody);
+                      setShowNotification(true);
+                    }
                     console.log('[NOTIFICATIONS] ✅ Notification displayed to user');
                   }
                 });
@@ -1083,6 +1136,76 @@ function AppContent() {
     }
   };
 
+  // Schedule subscription reminder notifications
+  const scheduleSubscriptionReminders = async (endDate: string, planName: string, isTrial: boolean = false, planAmount?: number) => {
+    try {
+      const endDateTime = new Date(endDate);
+      const now = new Date();
+      
+      // Calculate reminder times (30 mins, 15 mins, 5 mins before end)
+      const reminder30min = new Date(endDateTime.getTime() - 30 * 60 * 1000);
+      const reminder15min = new Date(endDateTime.getTime() - 15 * 60 * 1000);
+      const reminder5min = new Date(endDateTime.getTime() - 5 * 60 * 1000);
+      
+      const reminders = [
+        { time: reminder30min, minutes: 30 },
+        { time: reminder15min, minutes: 15 },
+        { time: reminder5min, minutes: 5 }
+      ];
+      
+      // Format amount for display
+      const amountText = planAmount ? `₹${planAmount.toLocaleString()}` : 'the plan amount';
+      
+      for (const reminder of reminders) {
+        // Only schedule if the reminder time is in the future
+        if (reminder.time > now) {
+          const secondsUntilTrigger = Math.floor((reminder.time.getTime() - now.getTime()) / 1000);
+          
+          if (secondsUntilTrigger > 0) {
+            let message = '';
+            if (isTrial) {
+              message = `Your free trial ends in ${reminder.minutes} minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
+            } else {
+              if (reminder.minutes === 30) {
+                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total. Your premium features will continue if auto-renewal is enabled.`;
+              } else if (reminder.minutes === 15) {
+                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total. Ensure auto-renewal is enabled to continue seamlessly.`;
+              } else if (reminder.minutes === 5) {
+                message = `Your ${planName} ends in ${reminder.minutes} minutes! Payment of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue.`;
+              } else {
+                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total amount due.`;
+              }
+            }
+            
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: isTrial ? 'Trial Ending Soon' : 'Plan Ending Soon',
+                body: message,
+                sound: 'default',
+                data: {
+                  type: 'subscription_reminder',
+                  minutesRemaining: reminder.minutes,
+                  isTrial: isTrial,
+                  planName: planName
+                }
+              },
+              trigger: {
+                type: 'timeInterval',
+                seconds: secondsUntilTrigger,
+                repeats: false
+              } as any
+            });
+            
+            console.log(`[Subscription Reminders] Scheduled ${reminder.minutes}min reminder for ${reminder.time.toISOString()}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Subscription Reminders] Error scheduling reminders:', error);
+      // Don't fail trial/plan activation if reminder scheduling fails
+    }
+  };
+
   // Handler for trial activation
   const handleActivateTrial = async () => {
     if (!user?.uid) return;
@@ -1100,7 +1223,15 @@ function AppContent() {
         setHasActiveSubscription(true);
         setIsFreeUser(false);
         refreshSubscriptionStatus();
-        Alert.alert('Success', result.message);
+        
+        // Schedule reminder notifications if trial end date is available
+        if (result.trial?.endDate) {
+          await scheduleSubscriptionReminders(result.trial.endDate, 'Free Trial', true);
+        }
+        
+        // Show custom success popup instead of Alert
+        setTrialSuccessMessage(result.message);
+        setShowTrialSuccessPopup(true);
       }
     } catch (error: any) {
       console.error('[Trial Activation] Error:', error);
@@ -1132,6 +1263,19 @@ function AppContent() {
         setHasActiveSubscription(true);
         setIsFreeUser(false);
         refreshSubscriptionStatus();
+        
+        // Schedule reminder notifications if subscription end date is available
+        // Check both result.subscription.endDate and newStatus.subscriptionEndDate
+        const endDate = result.subscription?.endDate || newStatus?.subscriptionEndDate;
+        if (endDate) {
+          const planName = selectedPlanId === '1month' ? '1 Month Plan' :
+                          selectedPlanId === '2months' ? '2 Months Plan' :
+                          selectedPlanId === '3months' ? '3 Months Plan' :
+                          selectedPlanId === '6months' ? '6 Months Plan' : 'Plan';
+          const planAmount = result.subscription?.amountPaid || newStatus?.currentSubscriptionAmount || 0;
+          await scheduleSubscriptionReminders(endDate, planName, false, planAmount);
+        }
+        
         Alert.alert('Success', result.message);
       }
     } catch (error: any) {
@@ -1391,10 +1535,115 @@ function AppContent() {
         onSelectPlan={handleSelectPlan}
         onConfirm={handleConfirmPlanSelection}
         confirming={selectingPlan}
-        message={subscriptionStatus?.subscriptionStatus === 'trial' 
-          ? "Your free trial has ended. Select a plan to continue your fitness journey."
+        message={subscriptionStatus?.subscriptionStatus === 'trial' || subscriptionStatus?.isTrialActive === false
+          ? "Select a plan below to continue enjoying personalized diet plans, AI chatbot support, and custom notifications."
           : "Select a plan to continue your fitness journey"}
       />
+
+      {/* Trial Success Popup */}
+      <Modal
+        visible={showTrialSuccessPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowTrialSuccessPopup(false)}
+      >
+        <View style={styles.notificationOverlay}>
+          <View style={styles.notificationPopup}>
+            <Text style={styles.notificationTitle}>🎉 Free Trial Activated!</Text>
+            <Text style={styles.notificationMessage}>{trialSuccessMessage}</Text>
+            <TouchableOpacity 
+              style={styles.notificationButton} 
+              onPress={() => setShowTrialSuccessPopup(false)}
+            >
+              <Text style={styles.notificationButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Subscription Renewal Popup */}
+      <Modal
+        visible={showRenewalPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowRenewalPopup(false)}
+      >
+        <View style={styles.notificationOverlay}>
+          <View style={styles.notificationPopup}>
+            <Text style={styles.notificationTitle}>✅ Subscription Renewed!</Text>
+            <Text style={styles.notificationMessage}>{renewalMessage}</Text>
+            <TouchableOpacity 
+              style={styles.notificationButton} 
+              onPress={() => setShowRenewalPopup(false)}
+            >
+              <Text style={styles.notificationButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Plan Switch Popup */}
+      <Modal
+        visible={showPlanSwitchPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowPlanSwitchPopup(false)}
+      >
+        <View style={styles.notificationOverlay}>
+          <View style={styles.notificationPopup}>
+            <Text style={styles.notificationTitle}>🔄 Plan Switched!</Text>
+            <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
+            <TouchableOpacity 
+              style={styles.notificationButton} 
+              onPress={() => setShowPlanSwitchPopup(false)}
+            >
+              <Text style={styles.notificationButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Subscription Renewal Popup */}
+      <Modal
+        visible={showRenewalPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowRenewalPopup(false)}
+      >
+        <View style={styles.notificationOverlay}>
+          <View style={styles.notificationPopup}>
+            <Text style={styles.notificationTitle}>✅ Subscription Renewed!</Text>
+            <Text style={styles.notificationMessage}>{renewalMessage}</Text>
+            <TouchableOpacity 
+              style={styles.notificationButton} 
+              onPress={() => setShowRenewalPopup(false)}
+            >
+              <Text style={styles.notificationButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Plan Switch Popup */}
+      <Modal
+        visible={showPlanSwitchPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowPlanSwitchPopup(false)}
+      >
+        <View style={styles.notificationOverlay}>
+          <View style={styles.notificationPopup}>
+            <Text style={styles.notificationTitle}>🔄 Plan Switched!</Text>
+            <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
+            <TouchableOpacity 
+              style={styles.notificationButton} 
+              onPress={() => setShowPlanSwitchPopup(false)}
+            >
+              <Text style={styles.notificationButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Subscription Popup Modal */}
       <Modal

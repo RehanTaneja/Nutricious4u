@@ -1041,6 +1041,11 @@ export const toggleAutoRenewal = async (userId: string, enabled: boolean): Promi
   return response.data;
 };
 
+export const cancelPlanSwitch = async (userId: string): Promise<{ success: boolean; message: string }> => {
+  const response = await enhancedApi.post(`/subscription/cancel-plan-switch/${userId}`);
+  return response.data;
+};
+
 export const addSubscriptionAmount = async (userId: string, planId: string): Promise<{ success: boolean; message: string; amountAdded: number; newTotal: number }> => {
   const response = await enhancedApi.post(`/subscription/add-amount/${userId}?planId=${planId}`);
   return response.data;

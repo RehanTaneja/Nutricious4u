@@ -52,7 +52,7 @@ import { dashboardCache } from './services/cache';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -9382,6 +9382,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  renewalButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   noSubscriptionContainer: {
     flex: 1,
@@ -10214,6 +10221,9 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
 }) => {
   // Filter out free plan - only show paid plans
   const paidPlans = plans.filter(plan => !plan.isFree);
+  
+  // Check if this is a trial end popup
+  const isTrialEnd = message?.includes('trial') || message?.includes('Trial') || !message;
 
   return (
     <Modal
@@ -10225,8 +10235,32 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
       <View style={styles.popupOverlay} pointerEvents="box-none">
         <View style={styles.popupContainer}>
           <Text style={styles.popupTitle}>Select a Subscription Plan</Text>
+          {isTrialEnd && (
+            <>
+              <Text style={[styles.popupSubtitle, { color: COLORS.primary, fontWeight: '600', marginBottom: 8, fontSize: 16 }]}>
+                ⏰ Your free trial has ended
+              </Text>
+              <View style={{ marginBottom: 16, padding: 12, backgroundColor: COLORS.lightGreen, borderRadius: 8 }}>
+                <Text style={[styles.popupPlanDescription, { marginBottom: 8, fontWeight: '600' }]}>
+                  To continue enjoying premium features:
+                </Text>
+                <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
+                  ✓ Personalized diet plans
+                </Text>
+                <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
+                  ✓ AI Chatbot support
+                </Text>
+                <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
+                  ✓ Custom diet notifications
+                </Text>
+                <Text style={[styles.popupPlanDescription, { marginTop: 8, fontStyle: 'italic' }]}>
+                  Select a plan below to continue your fitness journey!
+                </Text>
+              </View>
+            </>
+          )}
           <Text style={styles.popupSubtitle}>
-            {message || "Choose a plan to continue your fitness journey"}
+            {message || (isTrialEnd ? "" : "Choose a plan to continue your fitness journey")}
           </Text>
           
           <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
@@ -10305,6 +10339,10 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [togglingAutoRenewal, setTogglingAutoRenewal] = useState(false);
   const [showMandatoryPlanPopupAfterCancel, setShowMandatoryPlanPopupAfterCancel] = useState(false);
   const [selectedPlanForCancel, setSelectedPlanForCancel] = useState<string | null>(null);
+  const [showPlanSwitchPopup, setShowPlanSwitchPopup] = useState(false);
+  const [selectedPlanForSwitch, setSelectedPlanForSwitch] = useState<string | null>(null);
+  const [switchingPlan, setSwitchingPlan] = useState(false);
+  const [cancellingSwitch, setCancellingSwitch] = useState(false);
   const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
@@ -10401,6 +10439,57 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   const handleCancelSubscription = async () => {
     setShowCancelSubscriptionModal(true);
+  };
+
+  const handlePlanSwitch = () => {
+    fetchPlans();
+    setShowPlanSwitchPopup(true);
+  };
+
+  const handleConfirmPlanSwitch = async () => {
+    if (!selectedPlanForSwitch) return;
+    
+    try {
+      setSwitchingPlan(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const result = await selectSubscription(userId, selectedPlanForSwitch);
+      if (result.success) {
+        Alert.alert('Success', result.message);
+        setShowPlanSwitchPopup(false);
+        setSelectedPlanForSwitch(null);
+        await fetchSubscriptionStatus();
+        refreshSubscriptionStatus();
+      } else {
+        Alert.alert('Error', result.message || 'Failed to switch plan');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to switch plan');
+    } finally {
+      setSwitchingPlan(false);
+    }
+  };
+
+  const handleCancelPlanSwitch = async () => {
+    try {
+      setCancellingSwitch(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const result = await cancelPlanSwitch(userId);
+      if (result.success) {
+        Alert.alert('Success', result.message);
+        await fetchSubscriptionStatus();
+        refreshSubscriptionStatus();
+      } else {
+        Alert.alert('Error', result.message || 'Failed to cancel plan switch');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to cancel plan switch');
+    } finally {
+      setCancellingSwitch(false);
+    }
   };
 
   const confirmCancelSubscription = async () => {
@@ -10586,6 +10675,47 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                 )}
                 
+                {/* Display pending plan switch info */}
+                {subscription.pendingPlanSwitch && subscription.pendingPlanSwitch.newPlanId && (
+                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
+                    <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600' }]}>
+                      Plan Switch Scheduled:
+                    </Text>
+                    <Text style={[styles.detailValue, { color: COLORS.primary }]}>
+                      {getPlanName(subscription.subscriptionPlan || '')} → {getPlanName(subscription.pendingPlanSwitch.newPlanId)}
+                    </Text>
+                    <View style={{ flexDirection: 'row', marginTop: 8, gap: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.renewalButton, { backgroundColor: COLORS.primary, flex: 1, paddingVertical: 8 }]}
+                        onPress={handlePlanSwitch}
+                      >
+                        <Text style={[styles.renewalButtonText, { color: COLORS.white }]}>Change</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.renewalButton, { backgroundColor: COLORS.error, flex: 1, paddingVertical: 8 }]}
+                        onPress={handleCancelPlanSwitch}
+                        disabled={cancellingSwitch}
+                      >
+                        <Text style={[styles.renewalButtonText, { color: COLORS.white }]}>
+                          {cancellingSwitch ? 'Cancelling...' : 'Cancel Switch'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+                
+                {/* Display auto-renewal info if no pending switch */}
+                {!subscription.pendingPlanSwitch && subscription.autoRenewalEnabled && subscription.isSubscriptionActive && !subscription.isFreeUser && (
+                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
+                    <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600' }]}>
+                      Auto-Renewal:
+                    </Text>
+                    <Text style={[styles.detailValue, { color: COLORS.primary }]}>
+                      Current {getPlanName(subscription.subscriptionPlan || '')} will be renewed
+                    </Text>
+                  </View>
+                )}
+                
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Total Amount Due:</Text>
                   <Text style={[styles.detailValue, styles.totalAmountText]}>
@@ -10616,9 +10746,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             
             {!subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
-                <Text style={styles.renewalText}>Your subscription has expired</Text>
+                <Text style={[styles.renewalText, { fontSize: 18, fontWeight: '600', marginBottom: 8 }]}>
+                  ⚠️ Your plan has ended
+                </Text>
+                <Text style={[styles.renewalText, { fontSize: 14, color: COLORS.placeholder, marginBottom: 16, textAlign: 'center' }]}>
+                  Your plan has ended. Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.
+                </Text>
                 <StyledButton
-                  title="Renew Subscription"
+                  title="Select a Plan"
                   onPress={() => navigation.navigate('SubscriptionSelection')}
                   style={styles.renewalButton}
                 />
@@ -10639,11 +10774,18 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             {subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
                 <Text style={styles.renewalText}>Your subscription is active</Text>
-                <StyledButton
-                  title="Cancel Subscription"
-                  onPress={() => handleCancelSubscription()}
-                  style={[styles.renewalButton, { backgroundColor: '#ff4444' }]}
-                />
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                  <StyledButton
+                    title="Switch Plan"
+                    onPress={handlePlanSwitch}
+                    style={[styles.renewalButton, { flex: 1 }]}
+                  />
+                  <StyledButton
+                    title="Cancel Subscription"
+                    onPress={() => handleCancelSubscription()}
+                    style={[styles.renewalButton, { backgroundColor: '#ff4444', flex: 1 }]}
+                  />
+                </View>
               </View>
             )}
             
@@ -10832,6 +10974,74 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         confirming={addingAmount}
         message="Your subscription has been cancelled. Please select a plan to continue your fitness journey."
       />
+
+      {/* Plan Switch Popup */}
+      <Modal
+        visible={showPlanSwitchPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowPlanSwitchPopup(false)}
+      >
+        <View style={styles.popupOverlay} pointerEvents="box-none">
+          <View style={styles.popupContainer}>
+            <Text style={styles.popupTitle}>Switch Subscription Plan</Text>
+            <Text style={styles.popupSubtitle}>
+              Your new plan will activate after your current plan ends
+            </Text>
+            
+            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+              {plans.filter(plan => !plan.isFree).map((plan) => (
+                <TouchableOpacity
+                  key={plan.planId}
+                  style={[
+                    styles.popupPlanItem,
+                    selectedPlanForSwitch === plan.planId && styles.selectedPlanItem
+                  ]}
+                  onPress={() => setSelectedPlanForSwitch(plan.planId)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.popupPlanHeader}>
+                    <Text style={styles.popupPlanName}>{plan.name}</Text>
+                    <Text style={styles.popupPlanPrice}>₹{plan.price.toLocaleString()}</Text>
+                  </View>
+                  <Text style={styles.popupPlanDuration}>{plan.duration}</Text>
+                  <Text style={styles.popupPlanDescription}>{plan.description}</Text>
+                  {selectedPlanForSwitch === plan.planId && (
+                    <View style={styles.popupPlanSelectedIndicator}>
+                      <Text style={styles.popupPlanSelectedText}>✓ Selected</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.popupButtons}>
+              <TouchableOpacity
+                style={styles.popupCancelButton}
+                onPress={() => {
+                  setShowPlanSwitchPopup(false);
+                  setSelectedPlanForSwitch(null);
+                }}
+              >
+                <Text style={styles.popupCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.popupConfirmButton,
+                  (!selectedPlanForSwitch || switchingPlan) && styles.popupConfirmButtonDisabled
+                ]}
+                onPress={handleConfirmPlanSwitch}
+                disabled={!selectedPlanForSwitch || switchingPlan}
+              >
+                <Text style={styles.popupConfirmButtonText}>
+                  {switchingPlan ? 'Processing...' : 'Confirm Switch'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }; 

@@ -3616,13 +3616,13 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         # TESTING: Handle minutes for testing mode
         if time_remaining <= 60:  # If less than 60, treat as minutes
             if time_remaining == 30:
-                message = f"Hi {user_name}, your {plan_name} will end in 30 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+                message = f"Hi {user_name}, your {plan_name} ends in 30 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
                 title = "Plan Ending Soon"
             elif time_remaining == 15:
-                message = f"Hi {user_name}, your {plan_name} will end in 15 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+                message = f"Hi {user_name}, your {plan_name} ends in 15 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Ensure auto-renewal is enabled to continue seamlessly."
                 title = "Plan Ending Soon"
             elif time_remaining == 5:
-                message = f"Hi {user_name}, your {plan_name} will end in 5 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+                message = f"Hi {user_name}, your {plan_name} ends in 5 minutes! Payment of ₹{current_amount:,.0f} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue."
                 title = "Plan Ending Very Soon"
             else:
                 message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
@@ -3752,17 +3752,33 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         
         # Send notification about plan switch
         user_name = user_data.get("name", "User")
-        plan_name = get_plan_name(new_plan_id)
+        old_plan_name = get_plan_name(user_data.get("subscriptionPlan", "Unknown Plan"))
+        new_plan_name = get_plan_name(new_plan_id)
         
         notification_data = {
             "userId": user_id,
             "title": "Plan Switched",
-            "body": f"Hi {user_name}, your subscription has been switched to {plan_name}.",
+            "body": f"Hi {user_name}, your {old_plan_name} has ended. Your subscription has been switched to {new_plan_name}. Your new plan is now active!",
             "type": "plan_switched",
             "timestamp": datetime.now().isoformat(),
-            "read": False
+            "read": False,
+            "data": {
+                "oldPlan": user_data.get("subscriptionPlan"),
+                "newPlan": new_plan_id,
+                "oldPlanName": old_plan_name,
+                "newPlanName": new_plan_name
+            }
         }
         firestore_db.collection("notifications").add(notification_data)
+        
+        # Send push notification if FCM token exists
+        user_fcm_token = user_data.get("fcmToken")
+        if user_fcm_token:
+            await send_push_notification(
+                user_fcm_token,
+                "Plan Switched",
+                f"Hi {user_name}, your {old_plan_name} has ended. Switched to {new_plan_name}. Your new plan is now active!"
+            )
         
         logger.info(f"[PLAN SWITCH] Successfully activated {new_plan_id} plan for user {user_id}")
         return True
@@ -3852,10 +3868,17 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
         user_notification = {
             "userId": user_id,
             "title": "Subscription Auto-Renewed",
-            "body": f"Hi {user_name}, your {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}",
+            "body": f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly! Amount: ₹{amount:,.0f}",
             "type": "subscription_renewed",
             "timestamp": datetime.now().isoformat(),
-            "read": False
+            "read": False,
+            "data": {
+                "planId": plan_id,
+                "planName": plan_name,
+                "amount": amount,
+                "oldPlan": plan_id,
+                "newPlan": plan_id
+            }
         }
         
         firestore_db.collection("notifications").add(user_notification)
@@ -3866,7 +3889,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
             await send_push_notification(
                 user_fcm_token,
                 "Subscription Auto-Renewed",
-                f"Hi {user_name}, your {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}"
+                f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly!"
             )
         
         # Send notification to dietician
@@ -3903,14 +3926,21 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         user_name = user_data.get("name", "User")
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
         
+        # Get plan name for better messaging
+        plan_name = get_plan_name(subscription_plan) if subscription_plan else "subscription"
+        
         # Send notification to user
         user_notification = {
             "userId": user_id,
             "title": "Subscription Expired",
-            "body": f"Hi {user_name}, your {subscription_plan} subscription has expired. Renew now to continue your fitness journey!",
+            "body": f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
             "type": "subscription_expired",
             "timestamp": datetime.now().isoformat(),
-            "read": False
+            "read": False,
+            "data": {
+                "planId": subscription_plan,
+                "planName": plan_name
+            }
         }
         
         firestore_db.collection("notifications").add(user_notification)
@@ -3921,7 +3951,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
             await send_push_notification(
                 user_fcm_token,
                 "Subscription Expired",
-                f"Hi {user_name}, your {subscription_plan} subscription has expired. Renew now to continue your fitness journey!"
+                f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue!"
             )
         
         # Send notification to dietician
@@ -4171,6 +4201,29 @@ async def select_subscription(request: SelectSubscriptionRequest):
         if has_active_subscription and current_subscription_end and current_plan and current_plan != "trial":
             # Parse current end date
             current_end_date = datetime.fromisoformat(current_subscription_end)
+            
+            # If switching to the same plan, treat it as renewal and enable auto-renewal
+            if request.planId == current_plan:
+                # Enable auto-renewal and clear any pending switch
+                firestore_db.collection("user_profiles").document(request.userId).update({
+                    "autoRenewalEnabled": True,
+                    "pendingPlanSwitch": None,
+                    "nextPlanId": None,
+                    "subscriptionStatus": "active"
+                })
+                
+                plan_name = get_plan_name(request.planId)
+                message = f"Auto-renewal enabled! Your {plan_name} will automatically renew when it expires."
+                
+                return SubscriptionResponse(
+                    success=True,
+                    message=message,
+                    subscription={
+                        "planId": request.planId,
+                        "autoRenewalEnabled": True,
+                        "isRenewal": True
+                    }
+                )
             
             # Calculate new plan dates starting from current plan end
             if request.planId == "1month":
@@ -4424,6 +4477,42 @@ async def cancel_subscription(userId: str):
     except Exception as e:
         logger.error(f"[CANCEL SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+@api_router.post("/subscription/cancel-plan-switch/{userId}")
+async def cancel_plan_switch(userId: str):
+    """Cancel a pending plan switch"""
+    try:
+        check_firebase_availability()
+        
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        pending_switch = user_data.get("pendingPlanSwitch")
+        
+        if not pending_switch:
+            raise HTTPException(status_code=400, detail="No pending plan switch found")
+        
+        # Clear pending plan switch
+        firestore_db.collection("user_profiles").document(userId).update({
+            "pendingPlanSwitch": None,
+            "nextPlanId": None,
+            "subscriptionStatus": "active"  # Revert to active status
+        })
+        
+        logger.info(f"[CANCEL PLAN SWITCH] Cancelled pending plan switch for user {userId}")
+        
+        return {
+            "success": True,
+            "message": "Plan switch cancelled successfully. Your current plan will continue."
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"[CANCEL PLAN SWITCH] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel plan switch")
 
 @api_router.post("/subscription/toggle-auto-renewal/{userId}")
 async def toggle_auto_renewal(userId: str, enabled: bool = True):
@@ -4775,16 +4864,32 @@ async def delete_notification(notificationId: str):
 
 
 def run_scheduled_jobs():
-    """Run scheduled jobs in a separate thread"""
+    """Run scheduled jobs in a separate thread
+    TESTING: Runs every 1 minute to catch narrow reminder windows (30min, 15min, 5min)
+    PRODUCTION: Can be changed to 6 hours (21600 seconds) when testing is complete
+    """
+    # TESTING: Run every 1 minute for testing with scaled-down time frames
+    # PRODUCTION: Change to 6 * 60 * 60 = 21600 seconds (6 hours) when ready
+    JOB_INTERVAL_SECONDS = 60  # TESTING: 1 minute | PRODUCTION: 21600 (6 hours)
+    
+    while True:
+        try:
+            # Run the subscription reminders job
+            asyncio.run(check_subscription_reminders_job())
+        except Exception as e:
+            print(f"[Scheduled Jobs] Error: {e}")
+        
+        # Wait before next check
+        time.sleep(JOB_INTERVAL_SECONDS)
+
+def run_diet_countdown_job():
+    """Run diet countdown job separately (every 6 hours)"""
     while True:
         try:
             # Run the NEW diet countdown job (every 6 hours)
             asyncio.run(check_diet_countdown_job())
-            
-            # Run the subscription reminders job (every 6 hours)
-            asyncio.run(check_subscription_reminders_job())
         except Exception as e:
-            print(f"[Scheduled Jobs] Error: {e}")
+            print(f"[Diet Countdown Job] Error: {e}")
         
         # Wait for 6 hours
         time.sleep(6 * 60 * 60)
@@ -4802,8 +4907,14 @@ def run_notification_scheduler():
         time.sleep(60)
 
 # Start the scheduled job threads
+# Subscription reminders need to run frequently for testing (every 1 minute)
+# Can be scaled back to 6 hours in production by changing JOB_INTERVAL_SECONDS in run_scheduled_jobs()
 scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
 scheduler_thread.start()
+
+# Diet countdown job runs separately every 6 hours
+diet_countdown_thread = threading.Thread(target=run_diet_countdown_job, daemon=True)
+diet_countdown_thread.start()
 
 # DISABLED: Backend notification scheduler to prevent conflicts with local scheduling
 # notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
