@@ -10343,6 +10343,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [selectedPlanForSwitch, setSelectedPlanForSwitch] = useState<string | null>(null);
   const [switchingPlan, setSwitchingPlan] = useState(false);
   const [cancellingSwitch, setCancellingSwitch] = useState(false);
+  const [showPlanSwitchSuccessPopup, setShowPlanSwitchSuccessPopup] = useState(false);
+  const [planSwitchSuccessMessage, setPlanSwitchSuccessMessage] = useState('');
   const { refreshSubscriptionStatus } = useSubscription();
 
   useEffect(() => {
@@ -10456,7 +10458,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
       const result = await selectSubscription(userId, selectedPlanForSwitch);
       if (result.success) {
-        Alert.alert('Success', result.message);
+        setPlanSwitchSuccessMessage(result.message);
+        setShowPlanSwitchSuccessPopup(true);
         setShowPlanSwitchPopup(false);
         setSelectedPlanForSwitch(null);
         await fetchSubscriptionStatus();
@@ -10677,22 +10680,22 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 
                 {/* Display pending plan switch info */}
                 {subscription.pendingPlanSwitch && subscription.pendingPlanSwitch.newPlanId && (
-                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
-                    <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600' }]}>
+                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30', flexWrap: 'wrap' }]}>
+                    <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600', width: '100%' }]}>
                       Plan Switch Scheduled:
                     </Text>
-                    <Text style={[styles.detailValue, { color: COLORS.primary }]}>
+                    <Text style={[styles.detailValue, { color: COLORS.primary, flexShrink: 1, flexWrap: 'wrap', textAlign: 'left', width: '100%' }]}>
                       {getPlanName(subscription.subscriptionPlan || '')} → {getPlanName(subscription.pendingPlanSwitch.newPlanId)}
                     </Text>
-                    <View style={{ flexDirection: 'row', marginTop: 8, gap: 8 }}>
+                    <View style={{ flexDirection: 'row', marginTop: 8, gap: 8, width: '100%' }}>
                       <TouchableOpacity
-                        style={[styles.renewalButton, { backgroundColor: COLORS.primary, flex: 1, paddingVertical: 8 }]}
+                        style={[styles.renewalButton, { backgroundColor: COLORS.primary, flex: 1, paddingVertical: 8, minWidth: 0 }]}
                         onPress={handlePlanSwitch}
                       >
                         <Text style={[styles.renewalButtonText, { color: COLORS.white }]}>Change</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.renewalButton, { backgroundColor: COLORS.error, flex: 1, paddingVertical: 8 }]}
+                        style={[styles.renewalButton, { backgroundColor: COLORS.error, flex: 1, paddingVertical: 8, minWidth: 0 }]}
                         onPress={handleCancelPlanSwitch}
                         disabled={cancellingSwitch}
                       >
@@ -11042,9 +11045,32 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Plan Switch Success Popup */}
+      <Modal
+        visible={showPlanSwitchSuccessPopup}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowPlanSwitchSuccessPopup(false)}
+      >
+        <View style={styles.successPopupOverlay}>
+          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+            <Text style={styles.successTitle}>✅ Plan Switch Scheduled!</Text>
+            <Text style={styles.successMessage}>{planSwitchSuccessMessage}</Text>
+            <TouchableOpacity
+              style={[styles.successButton, { backgroundColor: COLORS.white }]}
+              onPress={() => {
+                setShowPlanSwitchSuccessPopup(false);
+              }}
+            >
+              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
-}; 
+};
 
 // --- Notifications Screen ---
 const NotificationsScreen = ({ navigation }: { navigation: any }) => {

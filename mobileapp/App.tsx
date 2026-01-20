@@ -513,9 +513,10 @@ function AppContent() {
 
   useEffect(() => {
     let unsubscribe: any;
-    let notificationUnsubscribe: any;
-    let dietNotificationSubscription: any;
-    let timeoutId: any;
+      let notificationUnsubscribe: any;
+      let dietNotificationSubscription: any;
+      let localNotificationSubscription: any;
+      let timeoutId: any;
     
     // Set a timeout to prevent infinite loading - reduced for iOS stability
     timeoutId = setTimeout(() => {
@@ -589,10 +590,25 @@ function AppContent() {
       }
     };
 
-    const initializeServices = async () => {
-      try {
-        
-        // Set up simple notification handler
+      const initializeServices = async () => {
+        try {
+          
+          // Set up listener for local scheduled notifications (subscription reminders)
+          localNotificationSubscription = Notifications.addNotificationReceivedListener(async (notification) => {
+            const data = notification.request.content.data;
+            const title = notification.request.content.title || 'Notification';
+            const body = notification.request.content.body || '';
+            
+            console.log('[Local Notification] Received:', { type: data?.type, title, body });
+            
+            if (data?.type === 'subscription_reminder') {
+              // Show reminder notification
+              setNotificationMessage(body);
+              setShowNotification(true);
+            }
+          });
+          
+          // Set up simple notification handler
         try {
           console.log('[NOTIFICATIONS] Setting up simple notification handler');
           simpleNotificationHandler.initialize();
@@ -721,7 +737,7 @@ function AppContent() {
                           refreshSubscriptionStatus();
                         });
                       }
-                    } else if (notificationType === 'subscription_expired') {
+                    } else if (notificationType === 'subscription_expired' || notificationType === 'trial_expired') {
                       // Show custom expiry popup with plan selection
                       setNotificationMessage(notificationBody);
                       setShowNotification(true);
@@ -739,6 +755,16 @@ function AppContent() {
                           refreshSubscriptionStatus();
                         });
                       }
+                    } else if (notificationType === 'payment_added') {
+                      // Don't show payment_added notifications separately - they're included in subscription_expired
+                      // Just refresh subscription status
+                      if (firebaseUser?.uid) {
+                        refreshSubscriptionStatus();
+                      }
+                    } else if (notificationType === 'payment_reminder' || notificationType === 'trial_reminder') {
+                      // Show reminder notifications
+                      setNotificationMessage(notificationBody);
+                      setShowNotification(true);
                     } else {
                       // Show default notification popup for other types
                       setNotificationMessage(notificationBody);
@@ -835,7 +861,9 @@ function AppContent() {
                       setSubscriptionStatus(subscriptionStatus);
                     
                     // Check if user is on free plan or has active subscription
-                    if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
+                    // Only update isFreeUser if we have valid subscription status data
+                    if (subscriptionStatus && typeof subscriptionStatus === 'object') {
+                      if (subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive) {
                         console.log('[Subscription Check] User is on free plan or has no active subscription');
                         console.log('[Subscription Check] subscriptionStatus:', subscriptionStatus);
                         setHasActiveSubscription(false);
@@ -846,6 +874,9 @@ function AppContent() {
                         setHasActiveSubscription(true);
                         setIsFreeUser(false);
                       }
+                    } else {
+                      console.log('[Subscription Check] Invalid subscription status, keeping current isFreeUser state');
+                    }
                       
                       // Check for mandatory popups (trial activation or plan selection)
                       // Only check if user is not a dietician
@@ -1004,9 +1035,10 @@ function AppContent() {
     
     return () => {
       if (unsubscribe) unsubscribe();
-      if (notificationUnsubscribe) notificationUnsubscribe();
-      if (dietNotificationSubscription) dietNotificationSubscription.remove();
-      if (timeoutId) clearTimeout(timeoutId);
+        if (notificationUnsubscribe) notificationUnsubscribe();
+        if (dietNotificationSubscription) dietNotificationSubscription.remove();
+        if (localNotificationSubscription) localNotificationSubscription.remove();
+        if (timeoutId) clearTimeout(timeoutId);
     };
   }, []); // Removed forceReload dependency to prevent unnecessary re-renders
 
@@ -1123,13 +1155,15 @@ function AppContent() {
       const status = await getSubscriptionStatus(user.uid);
       await checkAndShowMandatoryPopups(status);
       
-      // Update subscription state
-      if (status.isFreeUser || !status.isSubscriptionActive) {
-        setHasActiveSubscription(false);
-        setIsFreeUser(true);
-      } else {
-        setHasActiveSubscription(true);
-        setIsFreeUser(false);
+      // Update subscription state - only if status is valid
+      if (status && typeof status === 'object') {
+        if (status.isFreeUser || !status.isSubscriptionActive) {
+          setHasActiveSubscription(false);
+          setIsFreeUser(true);
+        } else {
+          setHasActiveSubscription(true);
+          setIsFreeUser(false);
+        }
       }
     } catch (error) {
       console.error('[Refresh Subscription] Error:', error);

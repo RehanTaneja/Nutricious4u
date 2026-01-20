@@ -239,13 +239,28 @@ def list_non_dietician_users():
                     user_data.get("firstName").strip() != ""
                 )
                 
-                # Only include users with paid plans (not free plan)
+                # Only include users with paid plans (not free plan) and exclude users with active free trials
                 subscription_plan = user_data.get("subscriptionPlan")
+                subscription_status = user_data.get("subscriptionStatus", "")
+                free_trial_end_date = user_data.get("freeTrialEndDate")
+                
+                # Check if user has an active free trial
+                has_active_trial = False
+                if free_trial_end_date and subscription_status == "trial":
+                    try:
+                        from datetime import datetime
+                        trial_end = datetime.fromisoformat(free_trial_end_date)
+                        if datetime.now() < trial_end:
+                            has_active_trial = True
+                    except:
+                        pass  # If date parsing fails, assume no active trial
+                
                 has_paid_plan = (
                     subscription_plan and 
                     subscription_plan != "free" and 
                     subscription_plan != "Not set" and 
-                    subscription_plan != ""
+                    subscription_plan != "" and
+                    not has_active_trial  # Exclude users with active free trials
                 )
                 
                 if not is_placeholder and not is_test_user and has_proper_name and has_paid_plan:

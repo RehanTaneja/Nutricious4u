@@ -2593,7 +2593,20 @@ async def get_all_user_profiles():
                 user_data.get("firstName").strip() != ""
             )
             
-            if not is_placeholder and not is_test_user and has_proper_name:
+            # Exclude users with active free trials
+            subscription_status = user_data.get("subscriptionStatus", "")
+            free_trial_end_date = user_data.get("freeTrialEndDate")
+            
+            has_active_trial = False
+            if free_trial_end_date and subscription_status == "trial":
+                try:
+                    trial_end = datetime.fromisoformat(free_trial_end_date)
+                    if datetime.now() < trial_end:
+                        has_active_trial = True
+                except:
+                    pass  # If date parsing fails, assume no active trial
+            
+            if not is_placeholder and not is_test_user and has_proper_name and not has_active_trial:
                 # Add the document ID as userId
                 user_data["userId"] = user_id
                 user_profiles.append(user_data)
@@ -3467,13 +3480,18 @@ async def check_subscription_reminders_job():
     try:
         check_firebase_availability()
         
-        # Get all users with active subscriptions
+        # Get all users with active subscriptions OR active trials
         users_ref = firestore_db.collection("user_profiles")
-        users = users_ref.where("isSubscriptionActive", "==", True).stream()
+        # Get users with active subscriptions
+        active_subscription_users = users_ref.where("isSubscriptionActive", "==", True).stream()
+        # Get users with active trials (have freeTrialEndDate and subscriptionStatus == "trial")
+        all_users = users_ref.stream()
         
         current_time = datetime.now()
+        processed_user_ids = set()
         
-        for user_doc in users:
+        # Process active subscription users
+        for user_doc in active_subscription_users:
             try:
                 user_data = user_doc.to_dict()
                 user_id = user_doc.id
@@ -3554,6 +3572,72 @@ async def check_subscription_reminders_job():
             except Exception as e:
                 logger.error(f"[SUBSCRIPTION REMINDER] Error processing user {user_doc.id}: {e}")
                 continue
+        
+        # Process trial users (users with freeTrialEndDate)
+        for user_doc in all_users:
+            try:
+                user_data = user_doc.to_dict()
+                user_id = user_doc.id
+                
+                # Skip if already processed or if user is a dietician
+                if user_id in processed_user_ids or user_data.get("isDietician", False):
+                    continue
+                
+                # Check if user has an active trial
+                trial_end_date = user_data.get("freeTrialEndDate")
+                subscription_status = user_data.get("subscriptionStatus", "")
+                
+                if trial_end_date and subscription_status == "trial":
+                    end_date = datetime.fromisoformat(trial_end_date)
+                    time_until_expiry = end_date - current_time
+                    
+                    # Check for trial reminders (30 mins, 15 mins, 5 mins before)
+                    # 30 minutes before (29-31 minutes remaining)
+                    if timedelta(minutes=29) <= time_until_expiry <= timedelta(minutes=31):
+                        last_reminders = user_data.get("lastPaymentReminderSent", {})
+                        if not last_reminders.get("oneWeek", False):
+                            await send_trial_reminder_notification(user_id, user_data, 30)
+                            firestore_db.collection("user_profiles").document(user_id).update({
+                                "lastPaymentReminderSent": {
+                                    **last_reminders,
+                                    "oneWeek": True
+                                }
+                            })
+                    
+                    # 15 minutes before (14-16 minutes remaining)
+                    elif timedelta(minutes=14) <= time_until_expiry <= timedelta(minutes=16):
+                        last_reminders = user_data.get("lastPaymentReminderSent", {})
+                        if not last_reminders.get("twoDays", False):
+                            await send_trial_reminder_notification(user_id, user_data, 15)
+                            firestore_db.collection("user_profiles").document(user_id).update({
+                                "lastPaymentReminderSent": {
+                                    **last_reminders,
+                                    "twoDays": True
+                                }
+                            })
+                    
+                    # 5 minutes before (4-6 minutes remaining)
+                    elif timedelta(minutes=4) <= time_until_expiry <= timedelta(minutes=6):
+                        last_reminders = user_data.get("lastPaymentReminderSent", {})
+                        if not last_reminders.get("oneDay", False):
+                            await send_trial_reminder_notification(user_id, user_data, 5)
+                            firestore_db.collection("user_profiles").document(user_id).update({
+                                "lastPaymentReminderSent": {
+                                    **last_reminders,
+                                    "oneDay": True
+                                }
+                            })
+                    
+                    # Check if trial has expired
+                    elif time_until_expiry <= timedelta(0):
+                        # Trial expired - send expiry notification
+                        await send_trial_expiry_notification(user_id, user_data)
+                    
+                    processed_user_ids.add(user_id)
+                    
+            except Exception as e:
+                logger.error(f"[TRIAL REMINDER] Error processing user {user_doc.id}: {e}")
+                continue
                 
     except Exception as e:
         logger.error(f"[SUBSCRIPTION REMINDERS JOB] Error: {e}")
@@ -3579,26 +3663,10 @@ async def add_payment_on_plan_end(user_id: str, user_data: dict):
         plan_name = get_plan_name(user_data.get("subscriptionPlan", "unknown"))
         logger.info(f"[PAYMENT ADD] Added ₹{current_amount:,.0f} to total for user {user_id} (plan: {plan_name}). New total: ₹{new_total:,.0f}")
         
-        # Send notification to user about payment
+        # Store payment info in user profile for inclusion in expiry notification
+        # Don't send separate payment_added notification - it will be included in subscription_expired notification
         user_name = user_data.get("name", "User")
-        notification_data = {
-            "userId": user_id,
-            "title": "Payment Added",
-            "body": f"Hi {user_name}, ₹{current_amount:,.0f} has been added to your total amount due for your {plan_name}.",
-            "type": "payment_added",
-            "timestamp": datetime.now().isoformat(),
-            "read": False
-        }
-        firestore_db.collection("notifications").add(notification_data)
-        
-        # Send push notification if FCM token exists
-        fcm_token = user_data.get("fcmToken")
-        if fcm_token:
-            await send_push_notification(
-                fcm_token,
-                "Payment Added",
-                f"Hi {user_name}, ₹{current_amount:,.0f} has been added to your total amount due."
-            )
+        logger.info(f"[PAYMENT ADD] Payment info stored for user {user_id}. Will be included in expiry notification.")
         
     except Exception as e:
         logger.error(f"[PAYMENT ADD] Error adding payment for user {user_id}: {e}")
@@ -3659,6 +3727,80 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
             
     except Exception as e:
         logger.error(f"[PAYMENT REMINDER NOTIFICATION] Error: {e}")
+
+async def send_trial_reminder_notification(user_id: str, user_data: dict, time_remaining: int):
+    """Send trial reminder notification to user
+    TESTING: time_remaining can be in minutes (30, 15, 5)
+    """
+    try:
+        user_name = user_data.get("name", "User")
+        
+        # TESTING: Handle minutes for testing mode
+        if time_remaining == 30:
+            message = f"Hi {user_name}, your free trial ends in 30 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+            title = "Trial Ending Soon"
+        elif time_remaining == 15:
+            message = f"Hi {user_name}, your free trial ends in 15 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+            title = "Trial Ending Soon"
+        elif time_remaining == 5:
+            message = f"Hi {user_name}, your free trial ends in 5 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+            title = "Trial Ending Very Soon"
+        else:
+            message = f"Hi {user_name}, your free trial ends in {time_remaining} minutes! Select a plan now to keep enjoying premium features."
+            title = "Trial Ending Soon"
+        
+        # Create notification data
+        notification_data = {
+            "userId": user_id,
+            "title": title,
+            "body": message,
+            "type": "trial_reminder",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        # Save notification to Firestore
+        firestore_db.collection("notifications").add(notification_data)
+        
+        # Send push notification if FCM token exists
+        fcm_token = user_data.get("fcmToken")
+        if fcm_token:
+            await send_push_notification(fcm_token, title, message)
+            
+    except Exception as e:
+        logger.error(f"[TRIAL REMINDER NOTIFICATION] Error: {e}")
+
+async def send_trial_expiry_notification(user_id: str, user_data: dict):
+    """Send trial expiry notification to user"""
+    try:
+        user_name = user_data.get("name", "User")
+        
+        # Send notification to user
+        user_notification = {
+            "userId": user_id,
+            "title": "Free Trial Ended",
+            "body": f"Hi {user_name}, your free trial has ended. Select a plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
+            "type": "trial_expired",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(user_notification)
+        
+        # Send push notification to user if FCM token exists
+        user_fcm_token = user_data.get("fcmToken")
+        if user_fcm_token:
+            await send_push_notification(
+                user_fcm_token,
+                "Free Trial Ended",
+                f"Hi {user_name}, your free trial has ended. Select a plan to continue!"
+            )
+        
+        # Send notification to dietician
+        await send_dietician_subscription_notification(user_id, user_data, "trial_expired")
+            
+    except Exception as e:
+        logger.error(f"[TRIAL EXPIRY NOTIFICATION] Error: {e}")
 
 async def send_subscription_reminder_notification(user_id: str, user_data: dict):
     """Send reminder notification to user about subscription expiry (legacy - kept for backward compatibility)"""
@@ -3780,6 +3922,13 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
                 f"Hi {user_name}, your {old_plan_name} has ended. Switched to {new_plan_name}. Your new plan is now active!"
             )
         
+        # Send notification to dietician
+        # Get updated user data to include current totalAmountPaid
+        updated_user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        if updated_user_doc.exists:
+            updated_user_data = updated_user_doc.to_dict()
+            await send_dietician_subscription_notification(user_id, updated_user_data, "plan_switched", new_plan_name, 0.0, old_plan_name)
+        
         logger.info(f"[PLAN SWITCH] Successfully activated {new_plan_id} plan for user {user_id}")
         return True
         
@@ -3858,6 +4007,64 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
     except Exception as e:
         logger.error(f"[AUTO RENEWAL] Error renewing subscription for user {user_id}: {e}")
 
+async def send_dietician_subscription_notification(user_id: str, user_data: dict, event_type: str, plan_name: str = "", amount: float = 0.0, old_plan_name: str = ""):
+    """Send subscription event notification to dietician
+    event_type: 'trial_started', 'plan_started', 'plan_renewed', 'plan_switched', 'plan_expired', 'trial_expired'
+    """
+    try:
+        user_name = user_data.get("name", "User")
+        current_total = user_data.get("totalAmountPaid", 0.0)
+        
+        # Build notification message based on event type
+        if event_type == "trial_started":
+            title = "User Started Free Trial"
+            body = f"User {user_name} ({user_id}) has started a free trial. Current amount due: ₹{current_total:,.0f}"
+        elif event_type == "plan_started":
+            title = "User Started Plan"
+            body = f"User {user_name} ({user_id}) has started {plan_name}. Current amount due: ₹{current_total:,.0f}"
+        elif event_type == "plan_renewed":
+            title = "User Plan Auto-Renewed"
+            body = f"User {user_name} ({user_id}) {plan_name} has ended and been automatically renewed. Current amount due: ₹{current_total:,.0f}"
+        elif event_type == "plan_switched":
+            title = "User Plan Switched"
+            body = f"User {user_name} ({user_id}) {old_plan_name} has ended and been switched to {plan_name}. Current amount due: ₹{current_total:,.0f}"
+        elif event_type == "plan_expired":
+            title = "User Plan Expired"
+            body = f"User {user_name} ({user_id}) {plan_name} has ended (no renewal/switch). Current amount due: ₹{current_total:,.0f}"
+        elif event_type == "trial_expired":
+            title = "User Trial Expired"
+            body = f"User {user_name} ({user_id}) free trial has ended. Current amount due: ₹{current_total:,.0f}"
+        else:
+            return  # Unknown event type
+        
+        # Send notification to dietician
+        dietician_notification = {
+            "userId": "dietician",  # Special ID for dietician
+            "title": title,
+            "body": body,
+            "type": f"user_{event_type}",
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        firestore_db.collection("notifications").add(dietician_notification)
+        
+        # Get dietician FCM token and send push notification
+        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
+        for dietician in dietician_doc:
+            dietician_data = dietician.to_dict()
+            dietician_fcm_token = dietician_data.get("fcmToken")
+            if dietician_fcm_token:
+                await send_push_notification(
+                    dietician_fcm_token,
+                    title,
+                    body
+                )
+            break
+            
+    except Exception as e:
+        logger.error(f"[DIETICIAN SUBSCRIPTION NOTIFICATION] Error: {e}")
+
 async def send_subscription_renewal_notifications(user_id: str, user_data: dict, plan_id: str, amount: float):
     """Send renewal notifications to both user and dietician"""
     try:
@@ -3893,29 +4100,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
             )
         
         # Send notification to dietician
-        dietician_notification = {
-            "userId": "dietician",  # Special ID for dietician
-            "title": "User Subscription Auto-Renewed",
-            "body": f"User {user_name} ({user_id}) {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}",
-            "type": "user_subscription_renewed",
-            "timestamp": datetime.now().isoformat(),
-            "read": False
-        }
-        
-        firestore_db.collection("notifications").add(dietician_notification)
-        
-        # Get dietician FCM token and send push notification
-        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
-        for dietician in dietician_doc:
-            dietician_data = dietician.to_dict()
-            dietician_fcm_token = dietician_data.get("fcmToken")
-            if dietician_fcm_token:
-                await send_push_notification(
-                    dietician_fcm_token,
-                    "User Subscription Auto-Renewed",
-                    f"User {user_name} ({user_id}) {plan_name} has been automatically renewed. Amount: ₹{amount:,.0f}"
-                )
-            break
+        await send_dietician_subscription_notification(user_id, user_data, "plan_renewed", plan_name, amount)
             
     except Exception as e:
         logger.error(f"[SUBSCRIPTION RENEWAL NOTIFICATIONS] Error: {e}")
@@ -3929,17 +4114,24 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         # Get plan name for better messaging
         plan_name = get_plan_name(subscription_plan) if subscription_plan else "subscription"
         
+        # Get payment amount that was added (if any)
+        current_amount = user_data.get("currentSubscriptionAmount", 0.0)
+        payment_info = ""
+        if current_amount > 0:
+            payment_info = f" ₹{current_amount:,.0f} has been added to your total amount due."
+        
         # Send notification to user
         user_notification = {
             "userId": user_id,
-            "title": "Subscription Expired",
-            "body": f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
+            "title": "Plan Ended",
+            "body": f"Hi {user_name}, your {plan_name} has ended.{payment_info} Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
             "type": "subscription_expired",
             "timestamp": datetime.now().isoformat(),
             "read": False,
             "data": {
                 "planId": subscription_plan,
-                "planName": plan_name
+                "planName": plan_name,
+                "paymentAmount": current_amount
             }
         }
         
@@ -3955,14 +4147,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
             )
         
         # Send notification to dietician
-        dietician_notification = {
-            "userId": "dietician",  # Special ID for dietician
-            "title": "User Subscription Expired",
-            "body": f"User {user_name} ({user_id}) subscription ({subscription_plan}) has expired.",
-            "type": "user_subscription_expired",
-            "timestamp": datetime.now().isoformat(),
-            "read": False
-        }
+        await send_dietician_subscription_notification(user_id, user_data, "plan_expired", plan_name)
         
         firestore_db.collection("notifications").add(dietician_notification)
         
@@ -4283,7 +4468,12 @@ async def select_subscription(request: SelectSubscriptionRequest):
         firestore_db.collection("user_profiles").document(request.userId).update(update_data)
         
         # Send notification to dietician about new subscription
-        await send_new_subscription_notification(request.userId, user_data, request.planId)
+        # Get updated user data to include current totalAmountPaid
+        updated_user_doc = firestore_db.collection("user_profiles").document(request.userId).get()
+        if updated_user_doc.exists:
+            updated_user_data = updated_user_doc.to_dict()
+            plan_name = get_plan_name(request.planId)
+            await send_dietician_subscription_notification(request.userId, updated_user_data, "plan_started", plan_name)
         
         message = f"Successfully subscribed to {get_plan_name(request.planId)}. Your plan is now active!"
         
@@ -4705,6 +4895,9 @@ async def activate_free_trial(userId: str):
         }
         
         firestore_db.collection("user_profiles").document(userId).update(update_data)
+        
+        # Send notification to dietician
+        await send_dietician_subscription_notification(userId, user_data, "trial_started")
         
         logger.info(f"[ACTIVATE TRIAL] Successfully activated free trial for user {userId}, ends at {end_date.isoformat()}")
         
