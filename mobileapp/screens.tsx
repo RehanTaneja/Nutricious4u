@@ -3523,6 +3523,15 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
 
   const handleLogout = async () => {
     try {
+      // Cancel all scheduled notifications before logout
+      try {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        console.log('[Logout] ✅ Cancelled all scheduled notifications');
+      } catch (notifError) {
+        console.warn('[Logout] Warning: Failed to cancel notifications:', notifError);
+        // Continue with logout even if notification cancellation fails
+      }
+      
       // Clear saved credentials BEFORE signing out
       await AsyncStorage.removeItem('savedEmail');
       await AsyncStorage.removeItem('savedPassword');
@@ -3918,6 +3927,15 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
 
             setDeletingAccount(true);
             try {
+              // Cancel all scheduled notifications before account deletion
+              try {
+                await Notifications.cancelAllScheduledNotificationsAsync();
+                console.log('[Delete Account] ✅ Cancelled all scheduled notifications');
+              } catch (notifError) {
+                console.warn('[Delete Account] Warning: Failed to cancel notifications:', notifError);
+                // Continue with account deletion even if notification cancellation fails
+              }
+              
               // Clear saved credentials
               await AsyncStorage.removeItem('savedEmail');
               await AsyncStorage.removeItem('savedPassword');
@@ -12193,7 +12211,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   // Add focus detection like user dashboard
   const isFocused = useIsFocused();
 
-  // Add notification listener for dietician
+  // Add notification listener for dietician (local notifications)
   React.useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -12242,7 +12260,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         );
       }
       
-      // Handle appointment notifications
+      // Handle appointment notifications (only in-app alerts for appointments)
       if (data?.type === 'appointment_notification') {
         console.log('[DieticianDashboard] Received appointment notification:', data.appointmentType);
         
@@ -12253,10 +12271,14 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           [{ text: 'OK', style: 'default' }]
         );
       }
+      
+      // Note: User subscription notifications (trial_started, plan_started, etc.) are handled via push notifications only
+      // No in-app alerts needed - dietician will see them in notification tray
     });
 
     return () => subscription.remove();
   }, [navigation]);
+
 
   React.useEffect(() => {
     // Generate week dates (7 days starting from today)

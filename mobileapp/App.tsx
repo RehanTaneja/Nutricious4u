@@ -1188,6 +1188,7 @@ function AppContent() {
   };
 
   // Schedule subscription reminder notifications
+  // EXACT MATCH to diet reminder implementation for reliability
   const scheduleSubscriptionReminders = async (endDate: string, planName: string, isTrial: boolean = false, planAmount?: number) => {
     try {
       const endDateTime = new Date(endDate);
@@ -1210,7 +1211,8 @@ function AppContent() {
       for (const reminder of reminders) {
         // Only schedule if the reminder time is in the future
         if (reminder.time > now) {
-          const secondsUntilTrigger = Math.floor((reminder.time.getTime() - now.getTime()) / 1000);
+          // EXACT MATCH: Use same calculation as diet reminders
+          const secondsUntilTrigger = Math.max(1, Math.floor((reminder.time.getTime() - now.getTime()) / 1000));
           
           if (secondsUntilTrigger > 0) {
             let message = '';
@@ -1228,18 +1230,32 @@ function AppContent() {
               }
             }
             
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: isTrial ? 'Trial Ending Soon' : 'Plan Ending Soon',
-                body: message,
-                sound: 'default',
-                data: {
-                  type: 'subscription_reminder',
-                  minutesRemaining: reminder.minutes,
-                  isTrial: isTrial,
-                  planName: planName
-                }
-              },
+            // EXACT MATCH: Use identical notification content structure as diet reminders
+            const notificationContent = {
+              title: isTrial ? 'Trial Ending Soon' : 'Plan Ending Soon',
+              body: message,
+              sound: 'default',
+              priority: 'high',
+              autoDismiss: false,
+              sticky: false,
+              data: {
+                type: 'subscription_reminder',
+                minutesRemaining: reminder.minutes,
+                isTrial: isTrial,
+                planName: planName,
+                scheduledFor: reminder.time.toISOString(),
+                platform: Platform.OS,
+                timestamp: new Date().toISOString()
+              }
+            };
+            
+            console.log('[Subscription Reminders] Scheduling notification for platform:', Platform.OS);
+            console.log('[Subscription Reminders] Notification content:', notificationContent);
+            console.log('[Subscription Reminders] Trigger seconds:', secondsUntilTrigger);
+            
+            // EXACT MATCH: Use identical trigger structure as diet reminders
+            const scheduledId = await Notifications.scheduleNotificationAsync({
+              content: notificationContent,
               trigger: {
                 type: 'timeInterval',
                 seconds: secondsUntilTrigger,
@@ -1247,7 +1263,13 @@ function AppContent() {
               } as any
             });
             
-            console.log(`[Subscription Reminders] Scheduled ${reminder.minutes}min reminder for ${reminder.time.toISOString()}`);
+            console.log('[Subscription Reminders] ✅ Notification scheduled successfully:', {
+              scheduledId,
+              minutes: reminder.minutes,
+              scheduledFor: reminder.time.toISOString(),
+              secondsUntilTrigger,
+              platform: Platform.OS
+            });
           }
         }
       }

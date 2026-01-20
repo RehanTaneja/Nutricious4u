@@ -4017,43 +4017,57 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
     """
     try:
         user_name = user_data.get("name", "User")
+        user_email = user_data.get("email", "")
         current_total = user_data.get("totalAmountPaid", 0.0)
         
-        # Build notification message based on event type
+        # Build clear notification messages with user info, old/new plans, and amount due
         if event_type == "trial_started":
             title = "User Started Free Trial"
-            body = f"User {user_name} ({user_id}) has started a free trial. Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) started a free trial.\n\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_started":
             title = "User Started Plan"
-            body = f"User {user_name} ({user_id}) has started {plan_name}. Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) started {plan_name}.\n\nPlan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_renewed":
             title = "User Plan Auto-Renewed"
-            body = f"User {user_name} ({user_id}) {plan_name} has ended and been automatically renewed. Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) plan auto-renewed.\n\nPlan: {plan_name}\nRenewal Amount: ₹{amount:,.0f}\nTotal Amount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_switched":
             title = "User Plan Switched"
-            body = f"User {user_name} ({user_id}) {old_plan_name} has ended and been switched to {plan_name}. Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) switched plans.\n\nOld Plan: {old_plan_name}\nNew Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_expired":
             title = "User Plan Expired"
-            body = f"User {user_name} ({user_id}) {plan_name} has ended (no renewal/switch). Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) plan expired.\n\nExpired Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "trial_expired":
             title = "User Trial Expired"
-            body = f"User {user_name} ({user_id}) free trial has ended. Current amount due: ₹{current_total:,.0f}"
+            body = f"{user_name} ({user_email}) free trial expired.\n\nAmount Due: ₹{current_total:,.0f}"
         else:
             return  # Unknown event type
         
-        # Send notification to dietician
+        # Prepare notification data for push notification
+        notification_data = {
+            "type": f"user_{event_type}",
+            "userId": user_id,
+            "userName": user_name,
+            "userEmail": user_email,
+            "planName": plan_name,
+            "oldPlanName": old_plan_name if old_plan_name else "",
+            "amount": amount,
+            "totalAmountDue": current_total
+        }
+        
+        # Send notification to dietician (Firestore)
         dietician_notification = {
             "userId": "dietician",  # Special ID for dietician
             "title": title,
             "body": body,
             "type": f"user_{event_type}",
             "timestamp": datetime.now().isoformat(),
-            "read": False
+            "read": False,
+            "data": notification_data
         }
         
         firestore_db.collection("notifications").add(dietician_notification)
         
-        # Get dietician FCM token and send push notification
+        # Get dietician FCM token and send push notification with data
         dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
         for dietician in dietician_doc:
             dietician_data = dietician.to_dict()
@@ -4062,7 +4076,8 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
                 await send_push_notification(
                     dietician_fcm_token,
                     title,
-                    body
+                    body,
+                    notification_data
                 )
             break
             
