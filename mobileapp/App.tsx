@@ -179,6 +179,7 @@ function AppContent() {
   const [isDietician, setIsDietician] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationTitle, setNotificationTitle] = useState('Notification');
   const [error, setError] = useState<string | null>(null);
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
@@ -602,7 +603,8 @@ function AppContent() {
             console.log('[Local Notification] Received:', { type: data?.type, title, body });
             
             if (data?.type === 'subscription_reminder') {
-              // Show reminder notification
+              // Show reminder notification with appropriate title
+              setNotificationTitle(title || 'Plan Ending Soon');
               setNotificationMessage(body);
               setShowNotification(true);
             }
@@ -751,6 +753,7 @@ function AppContent() {
                           
                           if (!hasPendingSwitch && isActuallyExpired) {
                             // Show custom expiry popup with plan selection
+                            setNotificationTitle('Subscription Expired');
                             setNotificationMessage(notificationBody);
                             setShowNotification(true);
                             
@@ -773,10 +776,14 @@ function AppContent() {
                       }
                     } else if (notificationType === 'payment_reminder' || notificationType === 'trial_reminder') {
                       // Show reminder notifications
+                      setNotificationTitle(notificationType === 'trial_reminder' ? 'Trial Reminder' : 'Payment Reminder');
                       setNotificationMessage(notificationBody);
                       setShowNotification(true);
                     } else {
                       // Show default notification popup for other types
+                      // Use notification title if available, otherwise use a generic title
+                      const notificationTitleText = notification.title || 'Notification';
+                      setNotificationTitle(notificationTitleText);
                       setNotificationMessage(notificationBody);
                       setShowNotification(true);
                     }
@@ -1471,7 +1478,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>Appointment Update</Text>
+            <Text style={styles.notificationTitle}>{notificationTitle}</Text>
             <Text style={styles.notificationMessage}>{notificationMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
