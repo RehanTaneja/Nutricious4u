@@ -737,20 +737,30 @@ function AppContent() {
                           refreshSubscriptionStatus();
                         });
                       }
+                      // Don't process any other notifications after plan switch
+                      return;
                     } else if (notificationType === 'subscription_expired' || notificationType === 'trial_expired') {
-                      // Show custom expiry popup with plan selection
-                      setNotificationMessage(notificationBody);
-                      setShowNotification(true);
-                      // Check if we need to show mandatory plan selection popup
+                      // Check if this is happening right after a plan switch - if so, skip the generic popup
+                      // The plan switch popup already handled the notification
                       if (firebaseUser?.uid) {
                         getSubscriptionStatus(firebaseUser.uid).then(status => {
-                          setSubscriptionStatus(status);
-                          if (status.requiresPlanSelection) {
-                            // Fetch plans and show mandatory popup
-                            getSubscriptionPlans().then(plans => {
-                              setAvailablePlans(plans);
-                              setShowMandatoryPlanPopup(true);
-                            });
+                          // Only show expiry popup if there's no pending plan switch and subscription is actually expired
+                          // If a plan switch just happened, the plan_switched notification already handled it
+                          const hasPendingSwitch = status.pendingPlanSwitch && status.pendingPlanSwitch.newPlanId;
+                          const isActuallyExpired = !status.isSubscriptionActive && !status.isFreeUser;
+                          
+                          if (!hasPendingSwitch && isActuallyExpired) {
+                            // Show custom expiry popup with plan selection
+                            setNotificationMessage(notificationBody);
+                            setShowNotification(true);
+                            
+                            if (status.requiresPlanSelection) {
+                              // Fetch plans and show mandatory popup
+                              getSubscriptionPlans().then(plans => {
+                                setAvailablePlans(plans);
+                                setShowMandatoryPlanPopup(true);
+                              });
+                            }
                           }
                           refreshSubscriptionStatus();
                         });

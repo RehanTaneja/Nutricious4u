@@ -20,6 +20,9 @@ try:
     from services.firebase_client import upload_diet_pdf, list_non_dietician_users
     # --- Simple Notification System ---
     from services.simple_notification_service import get_notification_service
+    # Import Firebase Admin Auth for user deletion
+    import firebase_admin
+    from firebase_admin import auth as firebase_auth
     FIREBASE_AVAILABLE = True
     print("✅ Firebase client imported successfully")
     
@@ -46,6 +49,7 @@ except Exception as e:
     get_user_notification_token = None
     send_push_notification = None
     check_users_with_one_day_remaining = None
+    firebase_auth = None
     FIREBASE_AVAILABLE = False
 
 # Add import for PDF RAG service
@@ -4842,6 +4846,178 @@ async def add_subscription_amount(userId: str, planId: str):
     except Exception as e:
         logger.error(f"[ADD SUBSCRIPTION AMOUNT] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to add subscription amount")
+
+@api_router.delete("/users/{userId}/account")
+async def delete_user_account(userId: str):
+    """Delete a user account completely. Dietician accounts cannot be deleted."""
+    try:
+        check_firebase_availability()
+        loop = asyncio.get_event_loop()
+        
+        # Get user profile to check if dietician
+        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        user_email = user_data.get("email", "")
+        
+        # Check if user is dietician - prevent deletion
+        is_dietician = (
+            user_data.get("isDietician", False) or 
+            user_email == "nutricious4u@gmail.com"
+        )
+        
+        if is_dietician:
+            logger.warning(f"[DELETE ACCOUNT] Attempted to delete dietician account: {userId}")
+            raise HTTPException(status_code=403, detail="Dietician accounts cannot be deleted")
+        
+        logger.info(f"[DELETE ACCOUNT] Starting account deletion for user: {userId}")
+        
+        # Delete all user data from Firestore collections
+        deleted_items = {}
+        
+        # 1. Delete user profile
+        try:
+            await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(userId).delete())
+            deleted_items["user_profile"] = True
+            logger.info(f"[DELETE ACCOUNT] Deleted user profile for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting user profile: {e}")
+            deleted_items["user_profile"] = False
+        
+        # 2. Delete food logs subcollection
+        try:
+            food_logs_ref = firestore_db.collection(f"users/{userId}/food_logs")
+            food_logs = await loop.run_in_executor(executor, lambda: list(food_logs_ref.stream()))
+            count = 0
+            for doc in food_logs:
+                await loop.run_in_executor(executor, doc.reference.delete)
+                count += 1
+            deleted_items["food_logs"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} food logs for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting food logs: {e}")
+            deleted_items["food_logs"] = 0
+        
+        # 3. Delete routines subcollection
+        try:
+            routines_ref = firestore_db.collection(f"users/{userId}/routines")
+            routines = await loop.run_in_executor(executor, lambda: list(routines_ref.stream()))
+            count = 0
+            for doc in routines:
+                await loop.run_in_executor(executor, doc.reference.delete)
+                count += 1
+            deleted_items["routines"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} routines for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting routines: {e}")
+            deleted_items["routines"] = 0
+        
+        # 4. Delete workout logs (where userId matches)
+        try:
+            workout_logs_ref = firestore_db.collection("workout_logs")
+            workout_logs = await loop.run_in_executor(
+                executor, 
+                lambda: list(workout_logs_ref.where("userId", "==", userId).stream())
+            )
+            count = 0
+            for doc in workout_logs:
+                await loop.run_in_executor(executor, doc.reference.delete)
+                count += 1
+            deleted_items["workout_logs"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} workout logs for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting workout logs: {e}")
+            deleted_items["workout_logs"] = 0
+        
+        # 5. Delete notifications (where userId matches)
+        try:
+            notifications_ref = firestore_db.collection("notifications")
+            notifications = await loop.run_in_executor(
+                executor,
+                lambda: list(notifications_ref.where("userId", "==", userId).stream())
+            )
+            count = 0
+            for doc in notifications:
+                await loop.run_in_executor(executor, doc.reference.delete)
+                count += 1
+            deleted_items["notifications"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} notifications for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting notifications: {e}")
+            deleted_items["notifications"] = 0
+        
+        # 6. Delete chat messages
+        try:
+            chats_ref = firestore_db.collection("chats").document(userId)
+            chat_doc = await loop.run_in_executor(executor, chats_ref.get)
+            if chat_doc.exists:
+                # Delete messages subcollection
+                messages_ref = chats_ref.collection("messages")
+                messages = await loop.run_in_executor(executor, lambda: list(messages_ref.stream()))
+                count = 0
+                for doc in messages:
+                    await loop.run_in_executor(executor, doc.reference.delete)
+                    count += 1
+                # Delete chat document
+                await loop.run_in_executor(executor, chats_ref.delete)
+                deleted_items["chat_messages"] = count
+                deleted_items["chat_document"] = True
+                logger.info(f"[DELETE ACCOUNT] Deleted chat document and {count} messages for {userId}")
+            else:
+                deleted_items["chat_messages"] = 0
+                deleted_items["chat_document"] = False
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting chat messages: {e}")
+            deleted_items["chat_messages"] = 0
+        
+        # 7. Delete appointments (where userId matches)
+        try:
+            appointments_ref = firestore_db.collection("appointments")
+            appointments = await loop.run_in_executor(
+                executor,
+                lambda: list(appointments_ref.where("userId", "==", userId).stream())
+            )
+            count = 0
+            for doc in appointments:
+                await loop.run_in_executor(executor, doc.reference.delete)
+                count += 1
+            deleted_items["appointments"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} appointments for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting appointments: {e}")
+            deleted_items["appointments"] = 0
+        
+        # 8. Delete Firebase Auth user
+        try:
+            if firebase_auth is None:
+                logger.warning(f"[DELETE ACCOUNT] Firebase Auth not available, skipping auth user deletion for {userId}")
+                deleted_items["auth_user"] = False
+            else:
+                await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
+                deleted_items["auth_user"] = True
+                logger.info(f"[DELETE ACCOUNT] Deleted Firebase Auth user for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting Firebase Auth user: {e}")
+            deleted_items["auth_user"] = False
+            # Don't fail completely if auth deletion fails - data is already deleted
+        
+        logger.info(f"[DELETE ACCOUNT] Account deletion completed for user: {userId}. Deleted items: {deleted_items}")
+        
+        return {
+            "success": True,
+            "message": "Account deleted successfully",
+            "deleted_items": deleted_items
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[DELETE ACCOUNT] Error deleting account: {e}")
+        import traceback
+        logger.error(f"[DELETE ACCOUNT] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to delete account")
 
 # --- Free Trial Endpoints ---
 

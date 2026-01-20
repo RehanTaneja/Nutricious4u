@@ -1191,6 +1191,11 @@ export const resetDailyData = async (userId: string) => {
   return response.data;
 };
 
+export const deleteUserAccount = async (userId: string): Promise<{ success: boolean; message: string; deleted_items?: any }> => {
+  const response = await enhancedApi.delete(`/users/${userId}/account`);
+  return response.data;
+};
+
 export const sendAppointmentNotification = async (
   type: 'scheduled' | 'cancelled',
   userName: string,

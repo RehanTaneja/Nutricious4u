@@ -52,7 +52,7 @@ import { dashboardCache } from './services/cache';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -3814,6 +3814,8 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [error, setError] = useState('');
   const [targets, setTargets] = useState({ calories: 0, protein: 0, fat: 0 });
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [isDietician, setIsDietician] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     // Add delay to prevent conflict with login sequence API calls
@@ -3822,6 +3824,12 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
         try {
           const userId = auth.currentUser?.uid;
           if (!userId) return;
+          
+          // Check if user is dietician
+          const userEmail = auth.currentUser?.email;
+          const isDieticianAccount = userEmail === 'nutricious4u@gmail.com';
+          setIsDietician(isDieticianAccount);
+          
           const profile = await getUserProfileSafe(userId);
           if (profile) {
             setUserProfile(profile);
@@ -3887,6 +3895,65 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone. All your data will be permanently deleted.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const userId = auth.currentUser?.uid;
+            if (!userId) {
+              Alert.alert('Error', 'User ID not found');
+              return;
+            }
+
+            setDeletingAccount(true);
+            try {
+              // Clear saved credentials
+              await AsyncStorage.removeItem('savedEmail');
+              await AsyncStorage.removeItem('savedPassword');
+              
+              // Clear profile cache
+              clearProfileCache(userId);
+              
+              // Delete account via API
+              await deleteUserAccount(userId);
+              
+              // Sign out (even if account deletion partially failed)
+              await auth.signOut();
+              
+              // Navigate to login screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+              
+              Alert.alert('Success', 'Your account has been deleted successfully.');
+            } catch (error: any) {
+              console.error('Error deleting account:', error);
+              const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to delete account';
+              
+              if (errorMessage.includes('Dietician') || errorMessage.includes('cannot be deleted')) {
+                Alert.alert('Cannot Delete Account', 'Dietician accounts cannot be deleted.');
+              } else {
+                Alert.alert('Error', errorMessage);
+              }
+            } finally {
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -4042,6 +4109,37 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
           </View>
           <StyledButton title="Save" onPress={handleSave} disabled={!hasUnsavedChanges || loading} />
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          
+          {/* Delete Account Section - Only show for non-dietician users */}
+          {!isDietician && (
+            <View style={{ marginTop: 32, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#e0e0e0' }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#d32f2f', marginBottom: 8 }}>
+                Danger Zone
+              </Text>
+              <Text style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+                Once you delete your account, there is no going back. Please be certain.
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#d32f2f',
+                  padding: 16,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  opacity: deletingAccount ? 0.6 : 1,
+                }}
+                onPress={handleDeleteAccount}
+                disabled={deletingAccount}
+              >
+                {deletingAccount ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>
+                    Delete Account
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </ScrollView>
         {/* Success Popup: match LoginSettingsScreen style exactly */}
       <Modal
@@ -10680,29 +10778,23 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 
                 {/* Display pending plan switch info */}
                 {subscription.pendingPlanSwitch && subscription.pendingPlanSwitch.newPlanId && (
-                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30', flexWrap: 'wrap' }]}>
-                    <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600', width: '100%' }]}>
-                      Plan Switch Scheduled:
-                    </Text>
-                    <Text style={[styles.detailValue, { color: COLORS.primary, flexShrink: 1, flexWrap: 'wrap', textAlign: 'left', width: '100%' }]}>
+                  <View style={styles.renewalContainer}>
+                    <Text style={styles.renewalText}>Plan Switch Scheduled</Text>
+                    <Text style={[styles.renewalText, { fontSize: 14, color: COLORS.placeholder, marginBottom: 12, marginTop: 4 }]}>
                       {getPlanName(subscription.subscriptionPlan || '')} → {getPlanName(subscription.pendingPlanSwitch.newPlanId)}
                     </Text>
-                    <View style={{ flexDirection: 'row', marginTop: 8, gap: 8, width: '100%' }}>
-                      <TouchableOpacity
-                        style={[styles.renewalButton, { backgroundColor: COLORS.primary, flex: 1, paddingVertical: 8, minWidth: 0 }]}
+                    <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                      <StyledButton
+                        title="Change"
                         onPress={handlePlanSwitch}
-                      >
-                        <Text style={[styles.renewalButtonText, { color: COLORS.white }]}>Change</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.renewalButton, { backgroundColor: COLORS.error, flex: 1, paddingVertical: 8, minWidth: 0 }]}
+                        style={[styles.renewalButton, { flex: 1 }]}
+                      />
+                      <StyledButton
+                        title={cancellingSwitch ? 'Cancelling...' : 'Cancel Switch'}
                         onPress={handleCancelPlanSwitch}
                         disabled={cancellingSwitch}
-                      >
-                        <Text style={[styles.renewalButtonText, { color: COLORS.white }]}>
-                          {cancellingSwitch ? 'Cancelling...' : 'Cancel Switch'}
-                        </Text>
-                      </TouchableOpacity>
+                        style={[styles.renewalButton, { backgroundColor: '#ff4444', flex: 1 }]}
+                      />
                     </View>
                   </View>
                 )}
