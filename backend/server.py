@@ -3724,10 +3724,21 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         # Save notification to Firestore
         firestore_db.collection("notifications").add(notification_data)
         
-        # Send push notification if FCM token exists
-        fcm_token = user_data.get("fcmToken")
-        if fcm_token:
-            await send_push_notification(fcm_token, title, message)
+        # Send push notification using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title=title,
+            body=message,
+            data={
+                "type": "payment_reminder",
+                "time_remaining": time_remaining,
+                "subscription_plan": subscription_plan
+            }
+        )
+        
+        if not success:
+            logger.warning(f"[PAYMENT REMINDER NOTIFICATION] Failed to send push notification to user {user_id}")
             
     except Exception as e:
         logger.error(f"[PAYMENT REMINDER NOTIFICATION] Error: {e}")
@@ -3766,10 +3777,20 @@ async def send_trial_reminder_notification(user_id: str, user_data: dict, time_r
         # Save notification to Firestore
         firestore_db.collection("notifications").add(notification_data)
         
-        # Send push notification if FCM token exists
-        fcm_token = user_data.get("fcmToken")
-        if fcm_token:
-            await send_push_notification(fcm_token, title, message)
+        # Send push notification using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title=title,
+            body=message,
+            data={
+                "type": "trial_reminder",
+                "time_remaining": time_remaining
+            }
+        )
+        
+        if not success:
+            logger.warning(f"[TRIAL REMINDER NOTIFICATION] Failed to send push notification to user {user_id}")
             
     except Exception as e:
         logger.error(f"[TRIAL REMINDER NOTIFICATION] Error: {e}")

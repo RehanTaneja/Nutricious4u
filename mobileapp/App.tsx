@@ -744,8 +744,14 @@ function AppContent() {
                       // Show custom renewal popup
                       setRenewalMessage(notificationBody);
                       setShowRenewalPopup(true);
-                  // Fallback local notification to mirror push
-                  await showLocalBanner(notification.title || 'Subscription Renewed', notificationBody);
+                      // Fallback local notification to mirror push (fire and forget)
+                      (async () => {
+                        try {
+                          await showLocalBanner(notification.title || 'Subscription Renewed', notificationBody);
+                        } catch (e) {
+                          console.warn('[NOTIFICATIONS] Failed to show local banner for renewal:', e);
+                        }
+                      })();
                       // Refresh subscription status
                       if (firebaseUser?.uid) {
                         getSubscriptionStatus(firebaseUser.uid).then(status => {
@@ -757,8 +763,14 @@ function AppContent() {
                       // Show custom plan switch popup
                       setPlanSwitchMessage(notificationBody);
                       setShowPlanSwitchPopup(true);
-                  // Fallback local notification to mirror push
-                  await showLocalBanner(notification.title || 'Plan Switched', notificationBody);
+                      // Fallback local notification to mirror push (fire and forget)
+                      (async () => {
+                        try {
+                          await showLocalBanner(notification.title || 'Plan Switched', notificationBody);
+                        } catch (e) {
+                          console.warn('[NOTIFICATIONS] Failed to show local banner for plan switch:', e);
+                        }
+                      })();
                       // Refresh subscription status
                       if (firebaseUser?.uid) {
                         getSubscriptionStatus(firebaseUser.uid).then(status => {
