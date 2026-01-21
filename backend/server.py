@@ -3812,14 +3812,17 @@ async def send_trial_expiry_notification(user_id: str, user_data: dict):
         
         firestore_db.collection("notifications").add(user_notification)
         
-        # Send push notification to user if FCM token exists
-        user_fcm_token = user_data.get("fcmToken")
-        if user_fcm_token:
-            await send_push_notification(
-                user_fcm_token,
-                "Free Trial Ended",
-                f"Hi {user_name}, your free trial has ended. Select a plan to continue!"
-            )
+        # Send push notification to user using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title="Free Trial Ended",
+            body=f"Hi {user_name}, your free trial has ended. Select a plan to continue!",
+            data={"type": "trial_expired"}
+        )
+        
+        if not success:
+            logger.warning(f"[TRIAL EXPIRY NOTIFICATION] Failed to send push notification to user {user_id}")
         
         # Send notification to dietician
         await send_dietician_subscription_notification(user_id, user_data, "trial_expired")
@@ -3938,14 +3941,23 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         }
         firestore_db.collection("notifications").add(notification_data)
         
-        # Send push notification if FCM token exists
-        user_fcm_token = user_data.get("fcmToken")
-        if user_fcm_token:
-            await send_push_notification(
-                user_fcm_token,
-                "Plan Switched",
-                f"Hi {user_name}, your {old_plan_name} has ended. Switched to {new_plan_name}. Your new plan is now active!"
-            )
+        # Send push notification to user using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title="Plan Switched",
+            body=f"Hi {user_name}, your {old_plan_name} has ended. Switched to {new_plan_name}. Your new plan is now active!",
+            data={
+                "type": "plan_switched",
+                "oldPlan": user_data.get("subscriptionPlan"),
+                "newPlan": new_plan_id,
+                "oldPlanName": old_plan_name,
+                "newPlanName": new_plan_name
+            }
+        )
+        
+        if not success:
+            logger.warning(f"[PLAN SWITCH] Failed to send push notification to user {user_id}")
         
         # Send notification to dietician
         # Get updated user data to include current totalAmountPaid
@@ -4088,19 +4100,17 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
         
         firestore_db.collection("notifications").add(dietician_notification)
         
-        # Get dietician FCM token and send push notification with data
-        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
-        for dietician in dietician_doc:
-            dietician_data = dietician.to_dict()
-            dietician_fcm_token = dietician_data.get("fcmToken")
-            if dietician_fcm_token:
-                await send_push_notification(
-                    dietician_fcm_token,
-                    title,
-                    body,
-                    notification_data
-                )
-            break
+        # Send push notification to dietician using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id="dietician",  # Special ID for dietician
+            title=title,
+            body=body,
+            data=notification_data
+        )
+        
+        if not success:
+            logger.warning(f"[DIETICIAN SUBSCRIPTION NOTIFICATION] Failed to send push notification to dietician for event: {event_type}")
             
     except Exception as e:
         logger.error(f"[DIETICIAN SUBSCRIPTION NOTIFICATION] Error: {e}")
@@ -4130,14 +4140,22 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
         
         firestore_db.collection("notifications").add(user_notification)
         
-        # Send push notification to user if FCM token exists
-        user_fcm_token = user_data.get("fcmToken")
-        if user_fcm_token:
-            await send_push_notification(
-                user_fcm_token,
-                "Subscription Auto-Renewed",
-                f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly!"
-            )
+        # Send push notification to user using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id=user_id,
+            title="Subscription Auto-Renewed",
+            body=f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly!",
+            data={
+                "type": "subscription_renewed",
+                "planId": plan_id,
+                "planName": plan_name,
+                "amount": amount
+            }
+        )
+        
+        if not success:
+            logger.warning(f"[SUBSCRIPTION RENEWAL] Failed to send push notification to user {user_id}")
         
         # Send notification to dietician
         await send_dietician_subscription_notification(user_id, user_data, "plan_renewed", plan_name, amount)
@@ -4177,32 +4195,25 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         
         firestore_db.collection("notifications").add(user_notification)
         
-        # Send push notification to user if FCM token exists
-        user_fcm_token = user_data.get("fcmToken")
-        if user_fcm_token:
-            await send_push_notification(
-                user_fcm_token,
-                "Subscription Expired",
-                f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue!"
-            )
+        # Send push notification to user using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        user_success = notification_service.send_notification(
+            recipient_id=user_id,
+            title="Subscription Expired",
+            body=f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue!",
+            data={
+                "type": "subscription_expired",
+                "planId": subscription_plan,
+                "planName": plan_name,
+                "paymentAmount": current_amount
+            }
+        )
+        
+        if not user_success:
+            logger.warning(f"[SUBSCRIPTION EXPIRY] Failed to send push notification to user {user_id}")
         
         # Send notification to dietician
         await send_dietician_subscription_notification(user_id, user_data, "plan_expired", plan_name)
-        
-        firestore_db.collection("notifications").add(dietician_notification)
-        
-        # Get dietician FCM token and send push notification
-        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
-        for dietician in dietician_doc:
-            dietician_data = dietician.to_dict()
-            dietician_fcm_token = dietician_data.get("fcmToken")
-            if dietician_fcm_token:
-                await send_push_notification(
-                    dietician_fcm_token,
-                    "User Subscription Expired",
-                    f"User {user_name} ({user_id}) subscription ({subscription_plan}) has expired."
-                )
-            break
             
     except Exception as e:
         logger.error(f"[SUBSCRIPTION EXPIRY NOTIFICATIONS] Error: {e}")
@@ -4225,18 +4236,22 @@ async def send_new_subscription_notification(user_id: str, user_data: dict, plan
         
         firestore_db.collection("notifications").add(dietician_notification)
         
-        # Get dietician FCM token and send push notification
-        dietician_doc = firestore_db.collection("user_profiles").where("isDietician", "==", True).limit(1).stream()
-        for dietician in dietician_doc:
-            dietician_data = dietician.to_dict()
-            dietician_fcm_token = dietician_data.get("fcmToken")
-            if dietician_fcm_token:
-                await send_push_notification(
-                    dietician_fcm_token,
-                    "New Subscription",
-                    f"User {user_name} ({user_id}) has subscribed to {plan_name}."
-                )
-            break
+        # Send push notification to dietician using SimpleNotificationService (same as messages/appointments)
+        notification_service = get_notification_service(firestore_db)
+        success = notification_service.send_notification(
+            recipient_id="dietician",  # Special ID for dietician
+            title="New Subscription",
+            body=f"User {user_name} ({user_id}) has subscribed to {plan_name}.",
+            data={
+                "type": "new_subscription",
+                "userId": user_id,
+                "userName": user_name,
+                "planName": plan_name
+            }
+        )
+        
+        if not success:
+            logger.warning(f"[NEW SUBSCRIPTION NOTIFICATION] Failed to send push notification to dietician")
             
     except Exception as e:
         logger.error(f"[NEW SUBSCRIPTION NOTIFICATION] Error: {e}")
