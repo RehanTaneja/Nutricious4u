@@ -812,6 +812,186 @@ class DietNotificationService:
         
         return None
     
+    def _group_consecutive_notifications(self, notifications: List[Dict], max_gap_minutes: int = 60) -> List[Dict]:
+        """
+        Group consecutive notifications within max_gap_minutes (default 1 hour).
+        
+        Uses forward-looking grouping: each notification includes tasks that occur
+        within max_gap_minutes AFTER its time. This ensures users see upcoming tasks
+        in advance while avoiding duplicate notifications.
+        
+        Example:
+        - 6:00, 6:30, 7:00, 8:00, 10:00
+        - Group 1 at 6:00: [6:00, 6:30] (6:30 is within 1hr of 6:00)
+        - Group 2 at 7:00: [7:00, 8:00] (8:00 is within 1hr of 7:00, but 7:00 is already in previous group's window)
+        - Group 3 at 10:00: [10:00] (10:00 is >1hr after 8:00)
+        
+        Args:
+            notifications: List of notification dicts with 'hour', 'minute', 'message', 'selectedDays'
+            max_gap_minutes: Maximum gap in minutes to consider consecutive (default 60)
+        
+        Returns:
+            List of grouped notification dicts
+        """
+        if not notifications:
+            return []
+        
+        if len(notifications) == 1:
+            return notifications
+        
+        # Sort by time (hour, minute)
+        sorted_notifications = sorted(
+            notifications, 
+            key=lambda x: (x.get('hour', 0), x.get('minute', 0))
+        )
+        
+        grouped = []
+        used_indices = set()  # Track which notifications have been included in a group
+        used_times = set()  # Track which times have been used (additional safeguard)
+        
+        for i, notification in enumerate(sorted_notifications):
+            if i in used_indices:
+                # This notification was already included in a previous group
+                logger.debug(f"[GROUPING] Skipping notification {i} (already used): {notification.get('time')} - {notification.get('message', '')[:30]}")
+                continue
+            
+            # Additional safeguard: check if this time was already used
+            notif_time_key = (notification.get('hour', 0), notification.get('minute', 0))
+            if notif_time_key in used_times:
+                logger.warning(f"[GROUPING] ⚠️ Time {notification.get('time')} already used, skipping notification {i}")
+                continue
+            
+            # Start a new group with this notification
+            current_group = [notification]
+            used_indices.add(i)
+            used_times.add(notif_time_key)
+            group_start_time = notification.get('hour', 0) * 60 + notification.get('minute', 0)
+            window_end = group_start_time + max_gap_minutes
+            last_added_time = group_start_time
+            
+            logger.debug(f"[GROUPING] Starting new group at {notification.get('time')} (index {i}), window ends at {window_end // 60:02d}:{window_end % 60:02d}")
+            
+            # Look ahead to find consecutive notifications where gap <= max_gap_minutes
+            # Group consecutive reminders with gaps <= 1 hour
+            for j in range(i + 1, len(sorted_notifications)):
+                if j in used_indices:
+                    # Already used, skip
+                    logger.debug(f"[GROUPING] Skipping notification {j} (already used)")
+                    continue
+                
+                next_notif = sorted_notifications[j]
+                next_time = next_notif.get('hour', 0) * 60 + next_notif.get('minute', 0)
+                next_time_key = (next_notif.get('hour', 0), next_notif.get('minute', 0))
+                
+                # Additional safeguard: check if this time was already used
+                if next_time_key in used_times:
+                    logger.warning(f"[GROUPING] ⚠️ Time {next_notif.get('time')} already used, skipping notification {j}")
+                    continue
+                
+                gap_from_last = next_time - last_added_time
+                
+                # Add if gap from last added notification is <= max_gap_minutes
+                # AND within 1 hour from group start (to prevent very long groups)
+                if gap_from_last <= max_gap_minutes and next_time <= window_end:
+                    current_group.append(next_notif)
+                    used_indices.add(j)
+                    used_times.add(next_time_key)
+                    last_added_time = next_time
+                    logger.debug(f"[GROUPING] Added {next_notif.get('time')} to group (gap: {gap_from_last}min)")
+                else:
+                    # Gap > max_gap_minutes or beyond group window, start new group
+                    logger.debug(f"[GROUPING] Stopping group at {next_notif.get('time')} (gap: {gap_from_last}min, window_end: {window_end // 60:02d}:{window_end % 60:02d})")
+                    break
+            
+            # Create grouped notification
+            grouped_notif = self._create_grouped_notification(current_group)
+            grouped.append(grouped_notif)
+            logger.info(f"[GROUPING] Created group with {len(current_group)} notifications, fires at {grouped_notif.get('time')}")
+        
+        # Verify no duplicates
+        all_times = []
+        for g in grouped:
+            if g.get('grouped'):
+                # Extract all times from grouped notification
+                for orig_notif in g.get('originalNotifications', []):
+                    all_times.append((orig_notif.get('hour', 0), orig_notif.get('minute', 0)))
+            else:
+                all_times.append((g.get('hour', 0), g.get('minute', 0)))
+        
+        if len(all_times) != len(set(all_times)):
+            logger.error(f"[GROUPING] ⚠️ DUPLICATE DETECTED! Found {len(all_times) - len(set(all_times))} duplicate times")
+            logger.error(f"[GROUPING] All times: {all_times}")
+        else:
+            logger.info(f"[GROUPING] ✅ No duplicates detected. Grouped {len(sorted_notifications)} notifications into {len(grouped)} groups")
+        
+        return grouped
+    
+    def _create_grouped_notification(self, group: List[Dict]) -> Dict:
+        """
+        Create a grouped notification from a list of notifications.
+        
+        If group has only one notification, returns it as-is.
+        Otherwise, creates a combined notification with all tasks.
+        
+        IMPORTANT: This function should only be called with notifications that haven't
+        been used in other groups. The caller is responsible for tracking used notifications.
+        """
+        if len(group) == 1:
+            # Single notification, return as-is (no grouping needed)
+            single_notif = group[0].copy()
+            # Ensure it doesn't have grouped flag if it's a single notification
+            single_notif.pop('grouped', None)
+            single_notif.pop('groupedCount', None)
+            single_notif.pop('originalNotifications', None)
+            return single_notif
+        
+        # Get earliest time in the group
+        earliest = min(group, key=lambda x: (x.get('hour', 0), x.get('minute', 0)))
+        
+        # Combine messages with timestamps
+        messages = []
+        for notif in group:
+            hour = notif.get('hour', 0)
+            minute = notif.get('minute', 0)
+            time_str = f"{hour:02d}:{minute:02d}"
+            message = notif.get('message', '')
+            messages.append(f"• {time_str} - {message}")
+        
+        combined_message = "Diet Reminder:\n" + "\n".join(messages)
+        
+        # Intersection of selectedDays (only days where ALL notifications apply)
+        # This ensures grouped notifications only fire on days where all individual notifications would fire
+        selected_days_sets = [set(notif.get('selectedDays', [])) for notif in group if notif.get('selectedDays')]
+        
+        if selected_days_sets:
+            # Find intersection (common days)
+            selected_days = set(selected_days_sets[0])
+            for days_set in selected_days_sets[1:]:
+                selected_days &= days_set
+            selected_days = list(selected_days)
+        else:
+            # If no selectedDays in any notification, use empty list
+            selected_days = []
+        
+        # Create grouped notification
+        grouped_notification = {
+            'id': f"grouped_{earliest.get('hour', 0)}_{earliest.get('minute', 0)}_{hash(combined_message) % 1000000}",
+            'message': combined_message,
+            'time': earliest.get('time', f"{earliest.get('hour', 0):02d}:{earliest.get('minute', 0):02d}"),
+            'hour': earliest.get('hour', 0),
+            'minute': earliest.get('minute', 0),
+            'scheduledId': None,  # Will be set when scheduled
+            'source': 'diet_pdf',
+            'selectedDays': selected_days,
+            'isActive': True,
+            'grouped': True,  # Flag to indicate this is a grouped notification
+            'groupedCount': len(group),  # Number of notifications grouped
+            'originalNotifications': group  # Keep original for reference/debugging
+        }
+        
+        logger.info(f"[GROUPING] Created grouped notification at {grouped_notification['time']} with {len(group)} tasks")
+        return grouped_notification
+    
     def create_notification_from_activity(self, activity: Dict) -> Dict:
         """
         Create a notification object from an activity.
@@ -890,7 +1070,55 @@ class DietNotificationService:
                 notifications.append(notification)
             
             logger.info(f"Extracted {len(notifications)} timed activities from diet PDF for user {user_id}")
-            return notifications
+            
+            # Group consecutive notifications within 1 hour for each day
+            # This reduces notification count while maintaining all tasks
+            grouped_notifications = []
+            
+            # Get all unique days from notifications
+            all_days = set()
+            for notif in notifications:
+                all_days.update(notif.get('selectedDays', []))
+            
+            # If no specific days, use all days (fallback)
+            if not all_days:
+                all_days = diet_days if diet_days else []
+            
+            # Group notifications by day, then group consecutive within each day
+            for day in all_days:
+                # Filter notifications for this specific day
+                day_notifications = [
+                    n for n in notifications 
+                    if day in n.get('selectedDays', [])
+                ]
+                
+                if day_notifications:
+                    # Group consecutive notifications for this day (max gap: 60 minutes)
+                    day_grouped = self._group_consecutive_notifications(day_notifications, max_gap_minutes=60)
+                    
+                    # Ensure all grouped notifications are set to only this day
+                    # (since grouping happens per day, each notification should only fire on that day)
+                    for grouped_notif in day_grouped:
+                        # Set selectedDays to only this day for all notifications in this day's group
+                        grouped_notif['selectedDays'] = [day]
+                        # Update ID to include day for uniqueness if it's a grouped notification
+                        if grouped_notif.get('grouped'):
+                            grouped_notif['id'] = f"{grouped_notif.get('id', '')}_day{day}"
+                    
+                    grouped_notifications.extend(day_grouped)
+                    logger.info(f"[GROUPING] Day {day}: {len(day_notifications)} notifications grouped into {len(day_grouped)} groups")
+            
+            # Also handle notifications without selectedDays (shouldn't happen after our fixes, but safety check)
+            notifications_without_days = [
+                n for n in notifications 
+                if not n.get('selectedDays')
+            ]
+            if notifications_without_days:
+                logger.warning(f"[GROUPING] Found {len(notifications_without_days)} notifications without selectedDays, skipping grouping")
+                grouped_notifications.extend(notifications_without_days)
+            
+            logger.info(f"[GROUPING] Final: {len(notifications)} individual notifications grouped into {len(grouped_notifications)} notifications")
+            return grouped_notifications
             
         except Exception as e:
             logger.error(f"Error extracting notifications from diet PDF for user {user_id}: {e}")
