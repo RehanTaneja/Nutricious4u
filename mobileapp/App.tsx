@@ -716,11 +716,36 @@ function AppContent() {
                     // Handle different notification types with specific popups
                     const notificationType = notification.type;
                     const notificationBody = notification.body || notification.message || '';
+                const showLocalBanner = async (title: string, body: string) => {
+                  try {
+                    const hasPerm = await ensureLocalNotificationPermission();
+                    if (!hasPerm) return;
+                    await Notifications.scheduleNotificationAsync({
+                      content: {
+                        title: title,
+                        body: body,
+                        sound: 'default',
+                        priority: 'high',
+                        autoDismiss: false,
+                        sticky: false,
+                        data: {
+                          type: notificationType,
+                          source: 'firestore_fallback',
+                        }
+                      },
+                      trigger: null as any // immediate
+                    });
+                  } catch (e) {
+                    console.warn('[NOTIFICATIONS] Failed to present local banner fallback:', e);
+                  }
+                };
                     
                     if (notificationType === 'subscription_renewed') {
                       // Show custom renewal popup
                       setRenewalMessage(notificationBody);
                       setShowRenewalPopup(true);
+                  // Fallback local notification to mirror push
+                  await showLocalBanner(notification.title || 'Subscription Renewed', notificationBody);
                       // Refresh subscription status
                       if (firebaseUser?.uid) {
                         getSubscriptionStatus(firebaseUser.uid).then(status => {
@@ -732,6 +757,8 @@ function AppContent() {
                       // Show custom plan switch popup
                       setPlanSwitchMessage(notificationBody);
                       setShowPlanSwitchPopup(true);
+                  // Fallback local notification to mirror push
+                  await showLocalBanner(notification.title || 'Plan Switched', notificationBody);
                       // Refresh subscription status
                       if (firebaseUser?.uid) {
                         getSubscriptionStatus(firebaseUser.uid).then(status => {
@@ -1187,10 +1214,30 @@ function AppContent() {
     }
   };
 
+  // Helper: ensure notification permissions for local scheduling (Android/iOS)
+  const ensureLocalNotificationPermission = async (): Promise<boolean> => {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status === 'granted') return true;
+      const req = await Notifications.requestPermissionsAsync();
+      return req.status === 'granted';
+    } catch (err) {
+      console.warn('[Subscription Reminders] Permission check failed:', err);
+      return false;
+    }
+  };
+
   // Schedule subscription reminder notifications
   // EXACT MATCH to diet reminder implementation for reliability
   const scheduleSubscriptionReminders = async (endDate: string, planName: string, isTrial: boolean = false, planAmount?: number) => {
     try {
+      // Ensure local notification permission before scheduling
+      const hasPermission = await ensureLocalNotificationPermission();
+      if (!hasPermission) {
+        console.warn('[Subscription Reminders] Skipping scheduling because notification permission is not granted');
+        return;
+      }
+      
       const endDateTime = new Date(endDate);
       const now = new Date();
       
