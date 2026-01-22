@@ -340,10 +340,12 @@ async def ios_connection_middleware(request, call_next):
         # Add timeout handling for long-running requests
         import asyncio
         try:
-            # Set a reasonable timeout for all requests (30 seconds)
-            response = await asyncio.wait_for(call_next(request), timeout=30.0)
+            # Account deletion needs more time (90 seconds), other requests 30 seconds
+            timeout = 90.0 if request.url.path.endswith("/account") and request.method == "DELETE" else 30.0
+            response = await asyncio.wait_for(call_next(request), timeout=timeout)
         except asyncio.TimeoutError:
-            logger.error(f"[TIMEOUT] {request.method} {request.url.path} - Request timed out after 30 seconds")
+            timeout_duration = 90.0 if request.url.path.endswith("/account") and request.method == "DELETE" else 30.0
+            logger.error(f"[TIMEOUT] {request.method} {request.url.path} - Request timed out after {timeout_duration} seconds")
             return JSONResponse(
                 status_code=408,
                 content={"detail": "Request timeout. Please try again."}
@@ -3706,13 +3708,13 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         # Handle days-based reminders
         if time_remaining == 7:
             message = f"Hi {user_name}, your {plan_name} will end in 7 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
-            title = "Plan Ending Soon"
+                title = "Plan Ending Soon"
         elif time_remaining == 1:
             message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new plan to continue."
-            title = "Plan Ending Tomorrow"
-        else:
-            message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-            title = "Plan Ending Soon"
+                title = "Plan Ending Tomorrow"
+            else:
+                message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+                title = "Plan Ending Soon"
         
         # Create notification data
         notification_data = {
@@ -4903,13 +4905,14 @@ async def delete_user_account(userId: str):
         check_firebase_availability()
         loop = asyncio.get_event_loop()
         
-        # Get user profile to check if dietician
+        # Get user profile to check if dietician and get diet PDF info
         user_doc = firestore_db.collection("user_profiles").document(userId).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
         user_data = user_doc.to_dict()
         user_email = user_data.get("email", "")
+        diet_pdf_filename = user_data.get("dietPdfUrl")  # Get filename before deletion
         
         # Check if user is dietician - prevent deletion
         is_dietician = (
@@ -4925,80 +4928,201 @@ async def delete_user_account(userId: str):
         
         # Delete all user data from Firestore collections
         deleted_items = {}
+        OPERATION_TIMEOUT = 10.0  # 10 seconds per operation
         
-        # 1. Delete user profile
-        try:
-            await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(userId).delete())
-            deleted_items["user_profile"] = True
-            logger.info(f"[DELETE ACCOUNT] Deleted user profile for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting user profile: {e}")
-            deleted_items["user_profile"] = False
+        # Helper function to delete with timeout
+        async def delete_with_timeout(operation_name, operation_func):
+            try:
+                logger.info(f"[DELETE ACCOUNT] Starting: {operation_name} for {userId}")
+                result = await asyncio.wait_for(operation_func(), timeout=OPERATION_TIMEOUT)
+                logger.info(f"[DELETE ACCOUNT] Completed: {operation_name} for {userId}")
+                return result
+            except asyncio.TimeoutError:
+                logger.warning(f"[DELETE ACCOUNT] Timeout ({OPERATION_TIMEOUT}s) for {operation_name} for {userId}")
+                return None
+            except Exception as e:
+                logger.error(f"[DELETE ACCOUNT] Error in {operation_name} for {userId}: {e}")
+                return None
         
-        # 2. Delete food logs subcollection
-        try:
+        # Helper function to delete collection with batch operations
+        async def delete_collection_batch(collection_ref, batch_size=500):
+            try:
+                docs = await loop.run_in_executor(executor, lambda: list(collection_ref.stream()))
+                count = 0
+                # Use batch operations for efficiency
+                batch = firestore_db.batch()
+                batch_count = 0
+                for doc in docs:
+                    batch.delete(doc.reference)
+                    batch_count += 1
+                    if batch_count >= batch_size:
+                        await loop.run_in_executor(executor, batch.commit)
+                        count += batch_count
+                        batch = firestore_db.batch()
+                        batch_count = 0
+                if batch_count > 0:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
+                return count
+            except Exception as e:
+                logger.error(f"[DELETE ACCOUNT] Error in batch delete: {e}")
+                return 0
+        
+        # 1. Delete food logs subcollection (parallel with routines)
+        async def delete_food_logs():
             food_logs_ref = firestore_db.collection(f"users/{userId}/food_logs")
-            food_logs = await loop.run_in_executor(executor, lambda: list(food_logs_ref.stream()))
-            count = 0
-            for doc in food_logs:
-                await loop.run_in_executor(executor, doc.reference.delete)
-                count += 1
+            count = await delete_collection_batch(food_logs_ref)
             deleted_items["food_logs"] = count
             logger.info(f"[DELETE ACCOUNT] Deleted {count} food logs for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting food logs: {e}")
-            deleted_items["food_logs"] = 0
+            return count
         
-        # 3. Delete routines subcollection
-        try:
+        # 2. Delete routines subcollection (parallel with food logs)
+        async def delete_routines():
             routines_ref = firestore_db.collection(f"users/{userId}/routines")
-            routines = await loop.run_in_executor(executor, lambda: list(routines_ref.stream()))
-            count = 0
-            for doc in routines:
-                await loop.run_in_executor(executor, doc.reference.delete)
-                count += 1
+            count = await delete_collection_batch(routines_ref)
             deleted_items["routines"] = count
             logger.info(f"[DELETE ACCOUNT] Deleted {count} routines for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting routines: {e}")
-            deleted_items["routines"] = 0
+            return count
         
-        # 4. Delete workout logs (where userId matches)
-        try:
+        # 3. Delete workout logs (parallel with notifications and appointments)
+        async def delete_workout_logs():
             workout_logs_ref = firestore_db.collection("workout_logs")
             workout_logs = await loop.run_in_executor(
                 executor, 
                 lambda: list(workout_logs_ref.where("userId", "==", userId).stream())
             )
             count = 0
+            batch = firestore_db.batch()
+            batch_count = 0
             for doc in workout_logs:
-                await loop.run_in_executor(executor, doc.reference.delete)
-                count += 1
+                batch.delete(doc.reference)
+                batch_count += 1
+                if batch_count >= 500:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
+                    batch = firestore_db.batch()
+                    batch_count = 0
+            if batch_count > 0:
+                await loop.run_in_executor(executor, batch.commit)
+                count += batch_count
             deleted_items["workout_logs"] = count
             logger.info(f"[DELETE ACCOUNT] Deleted {count} workout logs for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting workout logs: {e}")
-            deleted_items["workout_logs"] = 0
+            return count
         
-        # 5. Delete notifications (where userId matches)
-        try:
+        # 4. Delete notifications (parallel with workout logs and appointments)
+        async def delete_notifications():
             notifications_ref = firestore_db.collection("notifications")
             notifications = await loop.run_in_executor(
                 executor,
                 lambda: list(notifications_ref.where("userId", "==", userId).stream())
             )
             count = 0
+            batch = firestore_db.batch()
+            batch_count = 0
             for doc in notifications:
-                await loop.run_in_executor(executor, doc.reference.delete)
-                count += 1
+                batch.delete(doc.reference)
+                batch_count += 1
+                if batch_count >= 500:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
+                    batch = firestore_db.batch()
+                    batch_count = 0
+            if batch_count > 0:
+                await loop.run_in_executor(executor, batch.commit)
+                count += batch_count
             deleted_items["notifications"] = count
             logger.info(f"[DELETE ACCOUNT] Deleted {count} notifications for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting notifications: {e}")
-            deleted_items["notifications"] = 0
+            return count
         
-        # 6. Delete chat messages
-        try:
+        # 5. Delete appointments (parallel with workout logs and notifications)
+        async def delete_appointments():
+            appointments_ref = firestore_db.collection("appointments")
+            appointments = await loop.run_in_executor(
+                executor,
+                lambda: list(appointments_ref.where("userId", "==", userId).stream())
+            )
+            count = 0
+            batch = firestore_db.batch()
+            batch_count = 0
+            for doc in appointments:
+                batch.delete(doc.reference)
+                batch_count += 1
+                if batch_count >= 500:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
+                    batch = firestore_db.batch()
+                    batch_count = 0
+            if batch_count > 0:
+                await loop.run_in_executor(executor, batch.commit)
+                count += batch_count
+            deleted_items["appointments"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} appointments for {userId}")
+            return count
+        
+        # 6. Delete user_notifications collection (diet notifications)
+        async def delete_user_notifications():
+            user_notifications_ref = firestore_db.collection("user_notifications").document(userId)
+            doc = await loop.run_in_executor(executor, user_notifications_ref.get)
+            if doc.exists:
+                await loop.run_in_executor(executor, user_notifications_ref.delete)
+                deleted_items["user_notifications"] = True
+                logger.info(f"[DELETE ACCOUNT] Deleted user_notifications for {userId}")
+                return True
+            else:
+                deleted_items["user_notifications"] = False
+                logger.info(f"[DELETE ACCOUNT] No user_notifications found for {userId}")
+                return False
+        
+        # 7. Delete scheduled_notifications (where userId matches)
+        async def delete_scheduled_notifications():
+            scheduled_ref = firestore_db.collection("scheduled_notifications")
+            scheduled = await loop.run_in_executor(
+                executor,
+                lambda: list(scheduled_ref.where("userId", "==", userId).stream())
+            )
+            count = 0
+            batch = firestore_db.batch()
+            batch_count = 0
+            for doc in scheduled:
+                batch.delete(doc.reference)
+                batch_count += 1
+                if batch_count >= 500:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
+                    batch = firestore_db.batch()
+                    batch_count = 0
+            if batch_count > 0:
+                await loop.run_in_executor(executor, batch.commit)
+                count += batch_count
+            deleted_items["scheduled_notifications"] = count
+            logger.info(f"[DELETE ACCOUNT] Deleted {count} scheduled notifications for {userId}")
+            return count
+        
+        # 8. Delete diet PDF from Firebase Storage
+        async def delete_diet_pdf():
+            if diet_pdf_filename and bucket:
+                try:
+                    blob_path = f"diets/{userId}/{diet_pdf_filename}"
+                    blob = bucket.blob(blob_path)
+                    if blob.exists():
+                        await loop.run_in_executor(executor, blob.delete)
+                        deleted_items["diet_pdf_storage"] = True
+                        logger.info(f"[DELETE ACCOUNT] Deleted diet PDF from Storage for {userId}: {blob_path}")
+                        return True
+                    else:
+                        deleted_items["diet_pdf_storage"] = False
+                        logger.info(f"[DELETE ACCOUNT] Diet PDF not found in Storage for {userId}: {blob_path}")
+                        return False
+                except Exception as e:
+                    logger.warning(f"[DELETE ACCOUNT] Error deleting diet PDF from Storage for {userId}: {e}")
+                    deleted_items["diet_pdf_storage"] = False
+                    return False
+            else:
+                deleted_items["diet_pdf_storage"] = False
+                return False
+        
+        # 9. Delete chat messages
+        async def delete_chat_messages():
             chats_ref = firestore_db.collection("chats").document(userId)
             chat_doc = await loop.run_in_executor(executor, chats_ref.get)
             if chat_doc.exists:
@@ -5006,51 +5130,92 @@ async def delete_user_account(userId: str):
                 messages_ref = chats_ref.collection("messages")
                 messages = await loop.run_in_executor(executor, lambda: list(messages_ref.stream()))
                 count = 0
+                batch = firestore_db.batch()
+                batch_count = 0
                 for doc in messages:
-                    await loop.run_in_executor(executor, doc.reference.delete)
-                    count += 1
+                    batch.delete(doc.reference)
+                    batch_count += 1
+                    if batch_count >= 500:
+                        await loop.run_in_executor(executor, batch.commit)
+                        count += batch_count
+                        batch = firestore_db.batch()
+                        batch_count = 0
+                if batch_count > 0:
+                    await loop.run_in_executor(executor, batch.commit)
+                    count += batch_count
                 # Delete chat document
                 await loop.run_in_executor(executor, chats_ref.delete)
                 deleted_items["chat_messages"] = count
                 deleted_items["chat_document"] = True
                 logger.info(f"[DELETE ACCOUNT] Deleted chat document and {count} messages for {userId}")
+                return count
             else:
                 deleted_items["chat_messages"] = 0
                 deleted_items["chat_document"] = False
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting chat messages: {e}")
-            deleted_items["chat_messages"] = 0
+                return 0
         
-        # 7. Delete appointments (where userId matches)
-        try:
-            appointments_ref = firestore_db.collection("appointments")
-            appointments = await loop.run_in_executor(
-                executor,
-                lambda: list(appointments_ref.where("userId", "==", userId).stream())
-            )
-            count = 0
-            for doc in appointments:
-                await loop.run_in_executor(executor, doc.reference.delete)
-                count += 1
-            deleted_items["appointments"] = count
-            logger.info(f"[DELETE ACCOUNT] Deleted {count} appointments for {userId}")
-        except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting appointments: {e}")
-            deleted_items["appointments"] = 0
+        # Execute deletions in parallel groups for efficiency
+        # Group 1: Subcollections (can run in parallel)
+        logger.info(f"[DELETE ACCOUNT] Starting parallel deletion of subcollections for {userId}")
+        await asyncio.gather(
+            delete_with_timeout("food_logs", delete_food_logs),
+            delete_with_timeout("routines", delete_routines),
+            return_exceptions=True
+        )
         
-        # 8. Delete Firebase Auth user
+        # Group 2: Global collections (can run in parallel)
+        logger.info(f"[DELETE ACCOUNT] Starting parallel deletion of global collections for {userId}")
+        await asyncio.gather(
+            delete_with_timeout("workout_logs", delete_workout_logs),
+            delete_with_timeout("notifications", delete_notifications),
+            delete_with_timeout("appointments", delete_appointments),
+            return_exceptions=True
+        )
+        
+        # Group 3: Notification-related data (can run in parallel)
+        logger.info(f"[DELETE ACCOUNT] Starting parallel deletion of notification data for {userId}")
+        await asyncio.gather(
+            delete_with_timeout("user_notifications", delete_user_notifications),
+            delete_with_timeout("scheduled_notifications", delete_scheduled_notifications),
+            return_exceptions=True
+        )
+        
+        # Group 4: Chat and storage (can run in parallel)
+        logger.info(f"[DELETE ACCOUNT] Starting parallel deletion of chat and storage for {userId}")
+        await asyncio.gather(
+            delete_with_timeout("chat_messages", delete_chat_messages),
+            delete_with_timeout("diet_pdf_storage", delete_diet_pdf),
+            return_exceptions=True
+        )
+        
+        # 10. Delete Firebase Auth user (before profile deletion)
+        logger.info(f"[DELETE ACCOUNT] Starting Firebase Auth user deletion for {userId}")
         try:
             if firebase_auth is None:
                 logger.warning(f"[DELETE ACCOUNT] Firebase Auth not available, skipping auth user deletion for {userId}")
                 deleted_items["auth_user"] = False
             else:
+                async def delete_auth():
                 await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
+                await delete_with_timeout("auth_user", delete_auth)
                 deleted_items["auth_user"] = True
                 logger.info(f"[DELETE ACCOUNT] Deleted Firebase Auth user for {userId}")
         except Exception as e:
-            logger.error(f"[DELETE ACCOUNT] Error deleting Firebase Auth user: {e}")
+            logger.error(f"[DELETE ACCOUNT] Error deleting Firebase Auth user for {userId}: {e}")
             deleted_items["auth_user"] = False
             # Don't fail completely if auth deletion fails - data is already deleted
+        
+        # 11. Delete user profile LAST (after all data is deleted)
+        logger.info(f"[DELETE ACCOUNT] Starting user profile deletion for {userId} (final step)")
+        try:
+            async def delete_profile():
+                await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(userId).delete())
+            await delete_with_timeout("user_profile", delete_profile)
+            deleted_items["user_profile"] = True
+            logger.info(f"[DELETE ACCOUNT] Deleted user profile for {userId}")
+        except Exception as e:
+            logger.error(f"[DELETE ACCOUNT] Error deleting user profile for {userId}: {e}")
+            deleted_items["user_profile"] = False
         
         logger.info(f"[DELETE ACCOUNT] Account deletion completed for user: {userId}. Deleted items: {deleted_items}")
         
@@ -5547,6 +5712,8 @@ async def get_user_lock_status(user_id: str):
             "amountDue": amount_due
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[GET LOCK STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user lock status")
