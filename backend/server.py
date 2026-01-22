@@ -78,6 +78,21 @@ def check_firebase_availability():
             detail="Firebase service is currently unavailable. Please try again later."
         )
 
+# Helper function to get user's first name from user_data
+def get_user_first_name(user_data: dict) -> str:
+    """Get user's first name from user_data, with fallback to 'User' if not available"""
+    first_name = user_data.get("firstName", "")
+    if first_name and first_name.strip() and first_name != "User":
+        return first_name.strip()
+    # Fallback: try to get from "name" field if it exists
+    name = user_data.get("name", "")
+    if name and name.strip() and name != "User":
+        # Extract first name from full name if it's a full name
+        name_parts = name.strip().split()
+        if name_parts:
+            return name_parts[0]
+    return "User"  # Final fallback
+
 # Define all required Pydantic models before any usage
 class StatusCheck(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -3512,12 +3527,11 @@ async def check_subscription_reminders_job():
                 time_until_expiry = end_date - current_time
                 
                 # Check for payment reminders and add payment before plan ends
-                # TESTING: Adjusted times for testing (30 mins, 15 mins, 5 mins)
-                # 30 minutes before (29-31 minutes remaining)
-                if timedelta(minutes=29) <= time_until_expiry <= timedelta(minutes=31):
+                # 1 week (7 days) before expiration (165-171 hours remaining)
+                if timedelta(hours=165) <= time_until_expiry <= timedelta(hours=171):
                     last_reminders = user_data.get("lastPaymentReminderSent", {})
-                    if not last_reminders.get("oneWeek", False):  # Using oneWeek flag for 30 min reminder
-                        await send_payment_reminder_notification(user_id, user_data, 30)  # 30 minutes
+                    if not last_reminders.get("oneWeek", False):
+                        await send_payment_reminder_notification(user_id, user_data, 7)  # 7 days
                         firestore_db.collection("user_profiles").document(user_id).update({
                             "lastPaymentReminderSent": {
                                 **last_reminders,
@@ -3525,20 +3539,8 @@ async def check_subscription_reminders_job():
                             }
                         })
                 
-                # 15 minutes before (14-16 minutes remaining)
-                elif timedelta(minutes=14) <= time_until_expiry <= timedelta(minutes=16):
-                    last_reminders = user_data.get("lastPaymentReminderSent", {})
-                    if not last_reminders.get("twoDays", False):  # Using twoDays flag for 15 min reminder
-                        await send_payment_reminder_notification(user_id, user_data, 15)  # 15 minutes
-                        firestore_db.collection("user_profiles").document(user_id).update({
-                            "lastPaymentReminderSent": {
-                                **last_reminders,
-                                "twoDays": True
-                            }
-                        })
-                
-                # 5 minutes before (4-6 minutes remaining) - Add payment here
-                elif timedelta(minutes=4) <= time_until_expiry <= timedelta(minutes=6):
+                # 1 day before expiration (23-25 hours remaining) - Add payment here
+                elif timedelta(hours=23) <= time_until_expiry <= timedelta(hours=25):
                     # Add payment to totalAmountPaid (only once)
                     last_reminders = user_data.get("lastPaymentReminderSent", {})
                     if not last_reminders.get("oneDay", False):
@@ -3550,8 +3552,8 @@ async def check_subscription_reminders_job():
                                 "oneDay": True
                             }
                         })
-                    # Send 5 minute reminder notification
-                    await send_payment_reminder_notification(user_id, user_data, 5)  # 5 minutes
+                    # Send 1 day reminder notification
+                    await send_payment_reminder_notification(user_id, user_data, 1)  # 1 day
                 
                 # Check if subscription has expired
                 elif time_until_expiry <= timedelta(0):
@@ -3595,12 +3597,12 @@ async def check_subscription_reminders_job():
                     end_date = datetime.fromisoformat(trial_end_date)
                     time_until_expiry = end_date - current_time
                     
-                    # Check for trial reminders (30 mins, 15 mins, 5 mins before)
-                    # 30 minutes before (29-31 minutes remaining)
-                    if timedelta(minutes=29) <= time_until_expiry <= timedelta(minutes=31):
+                    # Check for trial reminders (1 week and 1 day before)
+                    # 1 week (7 days) before expiration (165-171 hours remaining)
+                    if timedelta(hours=165) <= time_until_expiry <= timedelta(hours=171):
                         last_reminders = user_data.get("lastPaymentReminderSent", {})
                         if not last_reminders.get("oneWeek", False):
-                            await send_trial_reminder_notification(user_id, user_data, 30)
+                            await send_trial_reminder_notification(user_id, user_data, 7)  # 7 days
                             firestore_db.collection("user_profiles").document(user_id).update({
                                 "lastPaymentReminderSent": {
                                     **last_reminders,
@@ -3608,23 +3610,11 @@ async def check_subscription_reminders_job():
                                 }
                             })
                     
-                    # 15 minutes before (14-16 minutes remaining)
-                    elif timedelta(minutes=14) <= time_until_expiry <= timedelta(minutes=16):
-                        last_reminders = user_data.get("lastPaymentReminderSent", {})
-                        if not last_reminders.get("twoDays", False):
-                            await send_trial_reminder_notification(user_id, user_data, 15)
-                            firestore_db.collection("user_profiles").document(user_id).update({
-                                "lastPaymentReminderSent": {
-                                    **last_reminders,
-                                    "twoDays": True
-                                }
-                            })
-                    
-                    # 5 minutes before (4-6 minutes remaining)
-                    elif timedelta(minutes=4) <= time_until_expiry <= timedelta(minutes=6):
+                    # 1 day before expiration (23-25 hours remaining)
+                    elif timedelta(hours=23) <= time_until_expiry <= timedelta(hours=25):
                         last_reminders = user_data.get("lastPaymentReminderSent", {})
                         if not last_reminders.get("oneDay", False):
-                            await send_trial_reminder_notification(user_id, user_data, 5)
+                            await send_trial_reminder_notification(user_id, user_data, 1)  # 1 day
                             firestore_db.collection("user_profiles").document(user_id).update({
                                 "lastPaymentReminderSent": {
                                     **last_reminders,
@@ -3647,7 +3637,7 @@ async def check_subscription_reminders_job():
         logger.error(f"[SUBSCRIPTION REMINDERS JOB] Error: {e}")
 
 async def add_payment_on_plan_end(user_id: str, user_data: dict):
-    """Add payment to totalAmountPaid before plan ends (TESTING: 5 minutes before, normally 1 day before)"""
+    """Add payment to totalAmountPaid before plan ends (1 day before expiration)"""
     try:
         current_amount = user_data.get("currentSubscriptionAmount", 0.0)
         current_total = user_data.get("totalAmountPaid", 0.0)
@@ -3669,7 +3659,7 @@ async def add_payment_on_plan_end(user_id: str, user_data: dict):
         
         # Store payment info in user profile for inclusion in expiry notification
         # Don't send separate payment_added notification - it will be included in subscription_expired notification
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         logger.info(f"[PAYMENT ADD] Payment info stored for user {user_id}. Will be included in expiry notification.")
         
     except Exception as e:
@@ -3677,39 +3667,24 @@ async def add_payment_on_plan_end(user_id: str, user_data: dict):
 
 async def send_payment_reminder_notification(user_id: str, user_data: dict, time_remaining: int):
     """Send payment reminder notification to user
-    TESTING: time_remaining can be in minutes (30, 15, 5) or days (1, 2, 7) for backward compatibility
+    time_remaining is in days (1 or 7)
     """
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
         plan_name = get_plan_name(subscription_plan)
         current_amount = user_data.get("currentSubscriptionAmount", 0.0)
         
-        # TESTING: Handle minutes for testing mode
-        if time_remaining <= 60:  # If less than 60, treat as minutes
-            if time_remaining == 30:
-                message = f"Hi {user_name}, your {plan_name} ends in 30 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
-                title = "Plan Ending Soon"
-            elif time_remaining == 15:
-                message = f"Hi {user_name}, your {plan_name} ends in 15 minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Ensure auto-renewal is enabled to continue seamlessly."
-                title = "Plan Ending Soon"
-            elif time_remaining == 5:
-                message = f"Hi {user_name}, your {plan_name} ends in 5 minutes! Payment of ₹{current_amount:,.0f} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue."
-                title = "Plan Ending Very Soon"
-            else:
-                message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} minutes. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-                title = "Plan Ending Soon"
+        # Handle days-based reminders
+        if time_remaining == 7:
+            message = f"Hi {user_name}, your {plan_name} will end in 7 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
+            title = "Plan Ending Soon"
+        elif time_remaining == 1:
+            message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new plan to continue."
+            title = "Plan Ending Tomorrow"
         else:
-            # Original logic for days (backward compatibility)
-            if time_remaining == 1:
-                message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-                title = "Plan Ending Tomorrow"
-            elif time_remaining == 2:
-                message = f"Hi {user_name}, your {plan_name} will end in 2 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-                title = "Plan Ending Soon"
-            else:
-                message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-                title = "Plan Ending Soon"
+            message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Plan Ending Soon"
         
         # Create notification data
         notification_data = {
@@ -3745,23 +3720,20 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
 
 async def send_trial_reminder_notification(user_id: str, user_data: dict, time_remaining: int):
     """Send trial reminder notification to user
-    TESTING: time_remaining can be in minutes (30, 15, 5)
+    time_remaining is in days (1 or 7)
     """
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         
-        # TESTING: Handle minutes for testing mode
-        if time_remaining == 30:
-            message = f"Hi {user_name}, your free trial ends in 30 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+        # Handle days-based reminders
+        if time_remaining == 7:
+            message = f"Hi {user_name}, your free trial ends in 7 days! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
             title = "Trial Ending Soon"
-        elif time_remaining == 15:
-            message = f"Hi {user_name}, your free trial ends in 15 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
-            title = "Trial Ending Soon"
-        elif time_remaining == 5:
-            message = f"Hi {user_name}, your free trial ends in 5 minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
-            title = "Trial Ending Very Soon"
+        elif time_remaining == 1:
+            message = f"Hi {user_name}, your free trial ends in 1 day! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+            title = "Trial Ending Tomorrow"
         else:
-            message = f"Hi {user_name}, your free trial ends in {time_remaining} minutes! Select a plan now to keep enjoying premium features."
+            message = f"Hi {user_name}, your free trial ends in {time_remaining} days! Select a plan now to keep enjoying premium features."
             title = "Trial Ending Soon"
         
         # Create notification data
@@ -3798,7 +3770,7 @@ async def send_trial_reminder_notification(user_id: str, user_data: dict, time_r
 async def send_trial_expiry_notification(user_id: str, user_data: dict):
     """Send trial expiry notification to user"""
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         
         # Send notification to user
         user_notification = {
@@ -3833,7 +3805,7 @@ async def send_trial_expiry_notification(user_id: str, user_data: dict):
 async def send_subscription_reminder_notification(user_id: str, user_data: dict):
     """Send reminder notification to user about subscription expiry (legacy - kept for backward compatibility)"""
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
         
         # Create notification data
@@ -3886,13 +3858,13 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         
         # Calculate new plan dates starting from switch date
         if new_plan_id == "1month":
-            new_end_date = switch_date + timedelta(hours=1)  # TESTING: 1 hour instead of 30 days
+            new_end_date = switch_date + timedelta(days=30)  # 1 month = 30 days
         elif new_plan_id == "2months":
-            new_end_date = switch_date + timedelta(hours=2)  # TESTING: 2 hours instead of 60 days
+            new_end_date = switch_date + timedelta(days=60)  # 2 months = 60 days
         elif new_plan_id == "3months":
-            new_end_date = switch_date + timedelta(hours=3)  # TESTING: 3 hours instead of 90 days
+            new_end_date = switch_date + timedelta(days=90)  # 3 months = 90 days
         elif new_plan_id == "6months":
-            new_end_date = switch_date + timedelta(hours=6)  # TESTING: 6 hours instead of 180 days
+            new_end_date = switch_date + timedelta(days=180)  # 6 months = 180 days
         else:
             logger.error(f"[PLAN SWITCH] Invalid plan ID {new_plan_id} for user {user_id}")
             return False
@@ -3921,7 +3893,7 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         firestore_db.collection("user_profiles").document(user_id).update(update_data)
         
         # Send notification about plan switch
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         old_plan_name = get_plan_name(user_data.get("subscriptionPlan", "Unknown Plan"))
         new_plan_name = get_plan_name(new_plan_id)
         
@@ -3982,7 +3954,7 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
             logger.info(f"[AUTO RENEWAL] Activated pending plan switch for user {user_id} instead of renewing")
             return
         
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         current_plan = user_data.get("subscriptionPlan")
         current_total = user_data.get("totalAmountPaid", 0.0)
         
@@ -4007,13 +3979,13 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         
         start_date = datetime.now()
         if current_plan == "1month":
-            end_date = start_date + timedelta(hours=1)  # TESTING: 1 hour instead of 30 days
+            end_date = start_date + timedelta(days=30)  # 1 month = 30 days
         elif current_plan == "2months":
-            end_date = start_date + timedelta(hours=2)  # TESTING: 2 hours instead of 60 days
+            end_date = start_date + timedelta(days=60)  # 2 months = 60 days
         elif current_plan == "3months":
-            end_date = start_date + timedelta(hours=3)  # TESTING: 3 hours instead of 90 days
+            end_date = start_date + timedelta(days=90)  # 3 months = 90 days
         elif current_plan == "6months":
-            end_date = start_date + timedelta(hours=6)  # TESTING: 6 hours instead of 180 days
+            end_date = start_date + timedelta(days=180)  # 6 months = 180 days
         
         # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
         # Keep existing total for now
@@ -4049,29 +4021,28 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
     event_type: 'trial_started', 'plan_started', 'plan_renewed', 'plan_switched', 'plan_expired', 'trial_expired'
     """
     try:
-        user_name = user_data.get("name", "User")
-        user_email = user_data.get("email", "")
+        user_name = get_user_first_name(user_data)
         current_total = user_data.get("totalAmountPaid", 0.0)
         
         # Build clear notification messages with user info, old/new plans, and amount due
         if event_type == "trial_started":
             title = "User Started Free Trial"
-            body = f"{user_name} ({user_email}) started a free trial.\n\nAmount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} started a free trial.\n\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_started":
             title = "User Started Plan"
-            body = f"{user_name} ({user_email}) started {plan_name}.\n\nPlan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} started {plan_name}.\n\nPlan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_renewed":
             title = "User Plan Auto-Renewed"
-            body = f"{user_name} ({user_email}) plan auto-renewed.\n\nPlan: {plan_name}\nRenewal Amount: ₹{amount:,.0f}\nTotal Amount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} plan auto-renewed.\n\nPlan: {plan_name}\nRenewal Amount: ₹{amount:,.0f}\nTotal Amount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_switched":
             title = "User Plan Switched"
-            body = f"{user_name} ({user_email}) switched plans.\n\nOld Plan: {old_plan_name}\nNew Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} switched plans.\n\nOld Plan: {old_plan_name}\nNew Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "plan_expired":
             title = "User Plan Expired"
-            body = f"{user_name} ({user_email}) plan expired.\n\nExpired Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} plan expired.\n\nExpired Plan: {plan_name}\nAmount Due: ₹{current_total:,.0f}"
         elif event_type == "trial_expired":
             title = "User Trial Expired"
-            body = f"{user_name} ({user_email}) free trial expired.\n\nAmount Due: ₹{current_total:,.0f}"
+            body = f"{user_name} free trial expired.\n\nAmount Due: ₹{current_total:,.0f}"
         else:
             return  # Unknown event type
         
@@ -4080,7 +4051,6 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
             "type": f"user_{event_type}",
             "userId": user_id,
             "userName": user_name,
-            "userEmail": user_email,
             "planName": plan_name,
             "oldPlanName": old_plan_name if old_plan_name else "",
             "amount": amount,
@@ -4118,7 +4088,7 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
 async def send_subscription_renewal_notifications(user_id: str, user_data: dict, plan_id: str, amount: float):
     """Send renewal notifications to both user and dietician"""
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         plan_name = get_plan_name(plan_id)
         
         # Send notification to user
@@ -4166,7 +4136,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
 async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
     """Send expiry notifications to both user and dietician"""
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
         
         # Get plan name for better messaging
@@ -4221,7 +4191,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
 async def send_new_subscription_notification(user_id: str, user_data: dict, plan_id: str):
     """Send notification to dietician about new subscription"""
     try:
-        user_name = user_data.get("name", "User")
+        user_name = get_user_first_name(user_data)
         plan_name = get_plan_name(plan_id)
         
         # Send notification to dietician
@@ -4424,13 +4394,13 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         start_date = datetime.now()
         if request.planId == "1month":
-            end_date = start_date + timedelta(hours=1)  # TESTING: 1 hour instead of 30 days
+            end_date = start_date + timedelta(days=30)  # 1 month = 30 days
         elif request.planId == "2months":
-            end_date = start_date + timedelta(hours=2)  # TESTING: 2 hours instead of 60 days
+            end_date = start_date + timedelta(days=60)  # 2 months = 60 days
         elif request.planId == "3months":
-            end_date = start_date + timedelta(hours=3)  # TESTING: 3 hours instead of 90 days
+            end_date = start_date + timedelta(days=90)  # 3 months = 90 days
         elif request.planId == "6months":
-            end_date = start_date + timedelta(hours=6)  # TESTING: 6 hours instead of 180 days
+            end_date = start_date + timedelta(days=180)  # 6 months = 180 days
         
         # Check if user already has an active subscription
         has_active_subscription = user_data.get("isSubscriptionActive", False)
@@ -4467,13 +4437,13 @@ async def select_subscription(request: SelectSubscriptionRequest):
             
             # Calculate new plan dates starting from current plan end
             if request.planId == "1month":
-                new_end_date = current_end_date + timedelta(hours=1)  # TESTING: 1 hour instead of 30 days
+                new_end_date = current_end_date + timedelta(days=30)  # 1 month = 30 days
             elif request.planId == "2months":
-                new_end_date = current_end_date + timedelta(hours=2)  # TESTING: 2 hours instead of 60 days
+                new_end_date = current_end_date + timedelta(days=60)  # 2 months = 60 days
             elif request.planId == "3months":
-                new_end_date = current_end_date + timedelta(hours=3)  # TESTING: 3 hours instead of 90 days
+                new_end_date = current_end_date + timedelta(days=90)  # 3 months = 90 days
             elif request.planId == "6months":
-                new_end_date = current_end_date + timedelta(hours=6)  # TESTING: 6 hours instead of 180 days
+                new_end_date = current_end_date + timedelta(days=180)  # 6 months = 180 days
             else:
                 new_end_date = current_end_date
             
@@ -5100,10 +5070,10 @@ async def activate_free_trial(userId: str):
         if is_subscription_active and subscription_plan and subscription_plan not in ["free", "trial"]:
             raise HTTPException(status_code=400, detail="You already have an active paid subscription. Free trial is only available for free plan users.")
         
-        # Calculate trial dates (1 hour for testing)
+        # Calculate trial dates (3 days)
         from datetime import datetime, timedelta
         start_date = datetime.now()
-        end_date = start_date + timedelta(hours=1)  # TESTING: 1 hour instead of 1 day
+        end_date = start_date + timedelta(days=3)  # 3 days trial period
         
         # Assign default diet to user
         default_diet_assigned = await assign_default_diet_to_user(userId, user_data)
@@ -5130,7 +5100,7 @@ async def activate_free_trial(userId: str):
         
         return {
             "success": True,
-            "message": "Free trial activated successfully! You now have access to all premium features for 1 hour.",  # TESTING: Changed from 1 day to 1 hour
+            "message": "Free trial activated successfully! You now have access to all premium features for 3 days.",
             "trial": {
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
@@ -5285,12 +5255,10 @@ async def delete_notification(notificationId: str):
 
 def run_scheduled_jobs():
     """Run scheduled jobs in a separate thread
-    TESTING: Runs every 1 minute to catch narrow reminder windows (30min, 15min, 5min)
-    PRODUCTION: Can be changed to 6 hours (21600 seconds) when testing is complete
+    Runs every 6 hours to check for subscription reminders (1 week and 1 day before expiration)
     """
-    # TESTING: Run every 1 minute for testing with scaled-down time frames
-    # PRODUCTION: Change to 6 * 60 * 60 = 21600 seconds (6 hours) when ready
-    JOB_INTERVAL_SECONDS = 60  # TESTING: 1 minute | PRODUCTION: 21600 (6 hours)
+    # Run every 6 hours (21600 seconds) to check for reminders
+    JOB_INTERVAL_SECONDS = 21600  # 6 hours
     
     while True:
         try:
@@ -5327,8 +5295,7 @@ def run_notification_scheduler():
         time.sleep(60)
 
 # Start the scheduled job threads
-# Subscription reminders need to run frequently for testing (every 1 minute)
-# Can be scaled back to 6 hours in production by changing JOB_INTERVAL_SECONDS in run_scheduled_jobs()
+# Subscription reminders run every 6 hours to check for 1 week and 1 day reminders
 scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
 scheduler_thread.start()
 

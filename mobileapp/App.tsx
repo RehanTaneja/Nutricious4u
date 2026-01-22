@@ -1253,15 +1253,13 @@ function AppContent() {
       const endDateTime = new Date(endDate);
       const now = new Date();
       
-      // Calculate reminder times (30 mins, 15 mins, 5 mins before end)
-      const reminder30min = new Date(endDateTime.getTime() - 30 * 60 * 1000);
-      const reminder15min = new Date(endDateTime.getTime() - 15 * 60 * 1000);
-      const reminder5min = new Date(endDateTime.getTime() - 5 * 60 * 1000);
+      // Calculate reminder times (7 days and 1 day before end)
+      const reminder7days = new Date(endDateTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const reminder1day = new Date(endDateTime.getTime() - 1 * 24 * 60 * 60 * 1000);
       
       const reminders = [
-        { time: reminder30min, minutes: 30 },
-        { time: reminder15min, minutes: 15 },
-        { time: reminder5min, minutes: 5 }
+        { time: reminder7days, days: 7 },
+        { time: reminder1day, days: 1 }
       ];
       
       // Format amount for display
@@ -1276,22 +1274,22 @@ function AppContent() {
           if (secondsUntilTrigger > 0) {
             let message = '';
             if (isTrial) {
-              message = `Your free trial ends in ${reminder.minutes} minutes! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
-            } else {
-              if (reminder.minutes === 30) {
-                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total. Your premium features will continue if auto-renewal is enabled.`;
-              } else if (reminder.minutes === 15) {
-                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total. Ensure auto-renewal is enabled to continue seamlessly.`;
-              } else if (reminder.minutes === 5) {
-                message = `Your ${planName} ends in ${reminder.minutes} minutes! Payment of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue.`;
+              if (reminder.days === 7) {
+                message = `Your free trial ends in 7 days! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
               } else {
-                message = `Your ${planName} ends in ${reminder.minutes} minutes. Payment of ${amountText} will be added to your total amount due.`;
+                message = `Your free trial ends in 1 day! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
+              }
+            } else {
+              if (reminder.days === 7) {
+                message = `Your ${planName} ends in 7 days. Payment of ${amountText} will be added to your total. Your premium features will continue if auto-renewal is enabled.`;
+              } else {
+                message = `Your ${planName} ends in 1 day. Payment of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue.`;
               }
             }
             
             // EXACT MATCH: Use identical notification content structure as diet reminders
             const notificationContent = {
-              title: isTrial ? 'Trial Ending Soon' : 'Plan Ending Soon',
+              title: isTrial ? (reminder.days === 1 ? 'Trial Ending Tomorrow' : 'Trial Ending Soon') : (reminder.days === 1 ? 'Plan Ending Tomorrow' : 'Plan Ending Soon'),
               body: message,
               sound: 'default',
               priority: 'high',
@@ -1299,7 +1297,7 @@ function AppContent() {
               sticky: false,
               data: {
                 type: 'subscription_reminder',
-                minutesRemaining: reminder.minutes,
+                daysRemaining: reminder.days,
                 isTrial: isTrial,
                 planName: planName,
                 scheduledFor: reminder.time.toISOString(),
@@ -1324,7 +1322,7 @@ function AppContent() {
             
             console.log('[Subscription Reminders] ✅ Notification scheduled successfully:', {
               scheduledId,
-              minutes: reminder.minutes,
+              days: reminder.days,
               scheduledFor: reminder.time.toISOString(),
               secondsUntilTrigger,
               platform: Platform.OS
