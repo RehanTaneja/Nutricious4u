@@ -1967,7 +1967,8 @@ async def check_diet_reminders():
 @api_router.get("/users/{user_id}/diet")
 async def get_user_diet(user_id: str):
     """
-    Returns the user's diet PDF URL and days left until new diet (7-day countdown).
+    Returns the user's diet PDF URL and days left until new diet.
+    Countdown is 3 days for trial users, 7 days for regular subscriptions.
     """
     try:
         # Add timeout for Firestore operations
@@ -1991,6 +1992,14 @@ async def get_user_diet(user_id: str):
         days_left = None
         hours_left = None
         
+        # Check if user is on trial (3 days countdown) or regular subscription (7 days countdown)
+        subscription_status = data.get("subscriptionStatus", "")
+        subscription_plan = data.get("subscriptionPlan", "")
+        is_trial = subscription_status == "trial" or subscription_plan == "trial"
+        
+        # Set countdown duration: 3 days (72 hours) for trial, 7 days (168 hours) for regular
+        countdown_hours = 72 if is_trial else 168
+        
         if last_upload:
             try:
                 # Handle timezone-aware datetime strings
@@ -2009,12 +2018,12 @@ async def get_user_diet(user_id: str):
                 
                 time_diff = now - last_dt
                 
-                # Calculate total hours remaining (7 days = 168 hours)
-                total_hours_remaining = max(0, 168 - int(time_diff.total_seconds() / 3600))
+                # Calculate total hours remaining (3 days for trial, 7 days for regular)
+                total_hours_remaining = max(0, countdown_hours - int(time_diff.total_seconds() / 3600))
                 days_left = total_hours_remaining // 24
                 hours_left = total_hours_remaining % 24
                 
-                logger.info(f"[DIET] User {user_id}: days_left={days_left}, hours_left={hours_left}")
+                logger.info(f"[DIET] User {user_id}: is_trial={is_trial}, countdown_hours={countdown_hours}, days_left={days_left}, hours_left={hours_left}")
             except ValueError as e:
                 logger.error(f"Error parsing lastDietUpload date for user {user_id}: {e}")
                 days_left = None
@@ -3448,6 +3457,14 @@ async def check_diet_countdown_job():
             if not last_upload:
                 continue
             
+            # Check if user is on trial (3 days countdown) or regular subscription (7 days countdown)
+            subscription_status = user_data.get("subscriptionStatus", "")
+            subscription_plan = user_data.get("subscriptionPlan", "")
+            is_trial = subscription_status == "trial" or subscription_plan == "trial"
+            
+            # Set countdown duration: 3 days (72 hours) for trial, 7 days (168 hours) for regular
+            countdown_hours = 72 if is_trial else 168
+            
             # Parse date
             if last_upload.endswith('Z'):
                 last_upload = last_upload.replace('Z', '+00:00')
@@ -3459,7 +3476,7 @@ async def check_diet_countdown_job():
                 last_dt = last_dt.replace(tzinfo=timezone.utc)
             
             time_diff = now - last_dt
-            total_hours = max(0, 168 - int(time_diff.total_seconds() / 3600))
+            total_hours = max(0, countdown_hours - int(time_diff.total_seconds() / 3600))
             days_left = total_hours // 24
             
             # Check if exactly 1 day left (between 24-47 hours)
@@ -3624,7 +3641,18 @@ async def check_subscription_reminders_job():
                     
                     # Check if trial has expired
                     elif time_until_expiry <= timedelta(0):
-                        # Trial expired - send expiry notification
+                        # Trial expired - remove free trial diet and send expiry notification
+                        # Clear diet information (same as when regular diet expires)
+                        try:
+                            firestore_db.collection("user_profiles").document(user_id).update({
+                                "dietPdfUrl": None,
+                                "lastDietUpload": None
+                            })
+                            logger.info(f"[TRIAL EXPIRY] Cleared free trial diet for user {user_id}")
+                        except Exception as clear_error:
+                            logger.error(f"[TRIAL EXPIRY] Error clearing diet for user {user_id}: {clear_error}")
+                        
+                        # Send expiry notification
                         await send_trial_expiry_notification(user_id, user_data)
                     
                     processed_user_ids.add(user_id)
@@ -5157,40 +5185,87 @@ async def get_trial_status(userId: str):
         raise HTTPException(status_code=500, detail="Failed to get trial status")
 
 async def assign_default_diet_to_user(user_id: str, user_data: dict):
-    """Assign a default diet plan to a user during free trial"""
+    """Assign the free trial diet PDF to a user during free trial"""
     try:
         from datetime import datetime, timezone
+        import os
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
         
-        # Create a default diet filename
-        default_diet_filename = f"default_diet_{user_id}_{datetime.now(timezone.utc).timestamp()}.pdf"
+        # Path to free trial diet PDF (relative to backend directory)
+        # The PDF is in mobileapp/FREE TRIAL DIET.pdf
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(backend_dir)  # Go up one level from backend/
+        trial_diet_path = os.path.join(project_root, "mobileapp", "FREE TRIAL DIET.pdf")
         
-        # For now, we'll set the dietPdfUrl to indicate a default diet was assigned
-        # The actual PDF can be created/uploaded later if needed
-        # This triggers the new diet popup mechanism
+        if not os.path.exists(trial_diet_path):
+            logger.error(f"[DEFAULT DIET] Free trial diet PDF not found at {trial_diet_path}")
+            return False
+        
+        # Read the PDF file
+        logger.info(f"[DEFAULT DIET] Reading free trial diet PDF from {trial_diet_path}")
+        with open(trial_diet_path, 'rb') as f:
+            pdf_data = f.read()
+        
+        # Create filename for the uploaded diet
+        default_diet_filename = f"free_trial_diet_{user_id}_{datetime.now(timezone.utc).timestamp()}.pdf"
+        
+        # Upload PDF to Firebase Storage
+        logger.info(f"[DEFAULT DIET] Uploading free trial diet PDF to Firebase Storage for user {user_id}")
+        pdf_url = upload_diet_pdf(user_id, pdf_data, default_diet_filename)
+        
+        # Get current timestamp for lastDietUpload (trial start time)
+        trial_start_time = datetime.now(timezone.utc).isoformat()
+        
+        # Update user profile with diet information
         diet_info = {
-            "dietPdfUrl": default_diet_filename,
-            "lastDietUpload": datetime.now(timezone.utc).isoformat(),
+            "dietPdfUrl": default_diet_filename,  # Store filename, not signed URL (same as regular uploads)
+            "lastDietUpload": trial_start_time,  # Set to trial start time for 3-day countdown
             "dieticianId": "system",  # System-assigned default diet
             "dietCacheVersion": datetime.now(timezone.utc).timestamp(),
             "new_diet_received": True
         }
         
         firestore_db.collection("user_profiles").document(user_id).update(diet_info)
+        logger.info(f"[DEFAULT DIET] Updated user profile with diet info for user {user_id}")
         
-        logger.info(f"[DEFAULT DIET] Assigned default diet to user {user_id}")
+        # Extract notifications from the diet PDF (same as when dietician uploads)
+        try:
+            logger.info(f"[DEFAULT DIET] Extracting notifications from free trial diet PDF for user {user_id}")
+            notifications = diet_notification_service.extract_and_create_notifications(
+                user_id, default_diet_filename, firestore_db
+            )
+            
+            if notifications:
+                # Store notifications in Firestore
+                user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+                user_notifications_ref.set({
+                    "diet_notifications": notifications,
+                    "extracted_at": datetime.now(timezone.utc).isoformat(),
+                    "diet_pdf_url": default_diet_filename,
+                }, merge=True)
+                logger.info(f"[DEFAULT DIET] Extracted and stored {len(notifications)} notifications for user {user_id}")
+            else:
+                logger.warning(f"[DEFAULT DIET] No notifications found in free trial diet PDF for user {user_id}")
+        except Exception as extract_error:
+            logger.error(f"[DEFAULT DIET] Error extracting notifications: {extract_error}")
+            # Continue even if extraction fails - diet is still assigned
         
         # Send notification about new diet (same as when dietician uploads)
         try:
             from services.simple_notification_service import get_notification_service
-            notification_service = get_notification_service()
+            notification_service = get_notification_service(firestore_db)
             notification_service.send_new_diet_notification(user_id, "System")
         except Exception as notif_error:
             logger.warning(f"[DEFAULT DIET] Failed to send notification: {notif_error}")
         
+        logger.info(f"[DEFAULT DIET] Successfully assigned free trial diet to user {user_id}")
         return True
         
     except Exception as e:
         logger.error(f"[DEFAULT DIET] Error assigning default diet to user {user_id}: {e}")
+        import traceback
+        logger.error(f"[DEFAULT DIET] Traceback: {traceback.format_exc()}")
         return False
 
 @api_router.get("/notifications/{userId}")
