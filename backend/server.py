@@ -3708,13 +3708,13 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         # Handle days-based reminders
         if time_remaining == 7:
             message = f"Hi {user_name}, your {plan_name} will end in 7 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
-                title = "Plan Ending Soon"
+            title = "Plan Ending Soon"
         elif time_remaining == 1:
             message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new plan to continue."
-                title = "Plan Ending Tomorrow"
-            else:
-                message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-                title = "Plan Ending Soon"
+            title = "Plan Ending Tomorrow"
+        else:
+            message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Plan Ending Soon"
         
         # Create notification data
         notification_data = {
@@ -5196,7 +5196,7 @@ async def delete_user_account(userId: str):
                 deleted_items["auth_user"] = False
             else:
                 async def delete_auth():
-                await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
+                    await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
                 await delete_with_timeout("auth_user", delete_auth)
                 deleted_items["auth_user"] = True
                 logger.info(f"[DELETE ACCOUNT] Deleted Firebase Auth user for {userId}")
