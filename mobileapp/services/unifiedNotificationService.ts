@@ -337,11 +337,11 @@ export class UnifiedNotificationService {
         const occurrence = new Date(checkDate);
         occurrence.setHours(hours, minutes, 0, 0);
 
-        // If this is today and time hasn't passed, use today
-        if (dayOffset === 0 && occurrence > now) {
-          return occurrence;
+        // Skip today - always schedule for next occurrence of this day
+        if (dayOffset === 0) {
+          continue;
         }
-        // If this is today but time has passed, or it's a future day
+        // If it's a future day, use it
         if (dayOffset > 0) {
           return occurrence;
         }
