@@ -1069,7 +1069,7 @@ class DietNotificationService:
                 is_free_trial_day = True
                 trial_day = day_value
                 logger.info(f"Created free trial notification for DAY {trial_day}: {activity['activity'][:50]}...")
-        else:
+            else:
                 # Regular weekday (0-6)
                 selected_days = [day_value]
                 logger.info(f"Created day-specific notification for day {day_value}: {activity['activity'][:50]}...")
@@ -1143,14 +1143,14 @@ class DietNotificationService:
                 # For free trial diets, notifications already have trialDay set
                 # For regular diets, apply selectedDays if not set
                 if not is_free_trial_diet:
-                if not notification.get('selectedDays'):
-                    if diet_days:
-                        notification['selectedDays'] = diet_days
-                        logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
-                    else:
-                        # CONSERVATIVE FIX: If we can't determine days, DON'T default to any days
-                        # Let the user manually configure this to prevent wrong notifications
-                        notification['selectedDays'] = []  # Empty - user must configure
+                    if not notification.get('selectedDays'):
+                        if diet_days:
+                            notification['selectedDays'] = diet_days
+                            logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
+                        else:
+                            # CONSERVATIVE FIX: If we can't determine days, DON'T default to any days
+                            # Let the user manually configure this to prevent wrong notifications
+                            notification['selectedDays'] = []  # Empty - user must configure
                         notification['isActive'] = False  # Inactive until user configures
                         logger.warning(f"Could not determine days for notification: {notification['message'][:50]}... - marked as inactive")
                 

@@ -1283,10 +1283,10 @@ function AppContent() {
             if (isTrial) {
               if (reminder.days === 7) {
                 message = `Your free trial ends in 7 days! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
-              } else {
+            } else {
                 message = `Your free trial ends in 1 day! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
               }
-            } else {
+              } else {
               if (reminder.days === 7) {
                 message = `Your ${planName} ends in 7 days. Payment of ${amountText} will be added to your total. Your premium features will continue if auto-renewal is enabled.`;
               } else {
