@@ -642,18 +642,12 @@ function AppContent() {
               setPushRegisteredThisSession(false); // allow push registration once per session for this user
               
             // ✅ FIX: Register for push notifications AFTER user login with stable user ID
-            try {
-                // CRITICAL FIX: Wait for Firebase auth to fully propagate to Firestore
-                // This resolves the timing issue where Firestore security rules fail
-                // because request.auth is not yet synchronized with the new login
-                console.log('[NOTIFICATIONS] Waiting 3s for auth token to propagate to Firestore...');
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                console.log('[NOTIFICATIONS] Auth propagation delay complete, proceeding with registration');
-                
-                await registerPushWithLogging(firebaseUser.uid, 'auth_state_change');
-            } catch (error) {
+            // Note: pushTokenManager.ts already handles ID token refresh (getIdToken(true))
+            // so we don't need the 3-second delay. Make this non-blocking so login continues immediately.
+            registerPushWithLogging(firebaseUser.uid, 'auth_state_change').catch((error) => {
                 console.error('[NOTIFICATIONS] ❌ Push notification registration failed:', error);
-            }
+            });
+            // Continue immediately without waiting for push registration to complete
               
               try {
                 // Check if user is dietician by trying to get their profile from backend
@@ -895,6 +889,19 @@ function AppContent() {
                     console.log('[Profile Check] Error checking profile, assuming quiz not completed:', error);
                     setHasCompletedQuiz(false);
                     await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                  }
+                  
+                  // Early exit for new users without profile - skip unnecessary delays and API calls
+                  if (!isDieticianAccount && !profile) {
+                    console.log('[LOGIN SEQUENCE] New user without profile - exiting early to skip unnecessary checks');
+                    setHasCompletedQuiz(false);
+                    setHasActiveSubscription(false);
+                    setIsFreeUser(true);
+                    setCheckingProfile(false);
+                    isLoginInProgress = false;
+                    (global as any).isLoginInProgress = false;
+                    console.log('[LOGIN SEQUENCE] ✅ Early exit complete for new user');
+                    return; // Exit early - skip subscription check, daily reset, and lock status
                   }
                   
                   // Check subscription status for non-dietician users - SEQUENTIAL to prevent 499 errors
