@@ -1359,6 +1359,19 @@ function AppContent() {
           await scheduleSubscriptionReminders(result.trial.endDate, 'Free Trial', true);
         }
         
+        // CRITICAL: Refresh diet data after trial activation
+        // The diet is assigned asynchronously, so wait for backend to finish
+        // then trigger dashboard refresh by navigating to it (which triggers focus event)
+        if (result.trial?.defaultDietAssigned) {
+          setTimeout(() => {
+            console.log('[Trial Activation] Triggering dashboard refresh for diet data');
+            // Navigate to dashboard to trigger focus event and diet data refresh
+            if (navigationRef.current) {
+              navigationRef.current.navigate('Main', { screen: 'Dashboard' });
+            }
+          }, 3000); // Wait 3 seconds for backend diet assignment to complete
+        }
+        
         // Show custom success popup instead of Alert
         setTrialSuccessMessage(result.message);
         setShowTrialSuccessPopup(true);
@@ -1376,12 +1389,12 @@ function AppContent() {
     setSelectedPlanId(planId);
   };
 
-  const handleConfirmPlanSelection = async () => {
+  const handleConfirmPlanSelection = async (autoRenewalEnabled: boolean = true) => {
     if (!user?.uid || !selectedPlanId) return;
     
     try {
       setSelectingPlan(true);
-      const result = await selectSubscription(user.uid, selectedPlanId);
+      const result = await selectSubscription(user.uid, selectedPlanId, autoRenewalEnabled);
       
       if (result.success) {
         console.log('[Plan Selection] Success:', result.message);

@@ -1021,8 +1021,8 @@ export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
   return response.data.plans;
 };
 
-export const selectSubscription = async (userId: string, planId: string): Promise<SubscriptionResponse> => {
-  const response = await enhancedApi.post('/subscription/select', { userId, planId });
+export const selectSubscription = async (userId: string, planId: string, autoRenewalEnabled: boolean = true): Promise<SubscriptionResponse> => {
+  const response = await enhancedApi.post('/subscription/select', { userId, planId, autoRenewalEnabled });
   return response.data;
 };
 

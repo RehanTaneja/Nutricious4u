@@ -1232,7 +1232,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   // Fetch diet countdown data - DELAYED to prevent conflict with login sequence
   useEffect(() => {
     const userId = firebase.auth().currentUser?.uid;
-    if (userId) {
+    if (userId && isFocused) {
       // Add delay to prevent conflict with login sequence API calls
       const delayedFetch = setTimeout(async () => {
         const fetchDietCountdown = async () => {
@@ -1293,7 +1293,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         clearTimeout(delayedFetch);
       };
     }
-  }, []);
+  }, [userId, isFocused]);
 
       // Listen for new diet notifications and refresh diet data
     useEffect(() => {
@@ -2040,7 +2040,54 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       }
 
       setExtractionLoading(true);
-      console.log('[Auto Extraction] Starting extraction from backend API...');
+      
+      // Check notification permissions FIRST before backend extraction
+      console.log('[Auto Extraction] Checking notification permissions...');
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        console.log('[Auto Extraction] Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowDisplayInCarPlay: false,
+            allowCriticalAlerts: false,
+            provideAppNotificationSettings: false,
+            allowProvisional: false,
+            allowAnnouncements: false,
+          },
+        });
+        finalStatus = status;
+        console.log('[Auto Extraction] Permission request result:', status);
+      }
+      
+      if (finalStatus !== 'granted') {
+        // User denied permissions - show helpful message and don't proceed
+        setExtractionLoading(false);
+        setShowAutoExtractionPopup(false);
+        Alert.alert(
+          'Notifications Required',
+          'Diet reminders require notification permissions. Please enable notifications in your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Settings', 
+              onPress: () => {
+                Linking.openSettings().catch((err) => {
+                  console.warn('[Auto Extraction] Failed to open settings:', err);
+                });
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      console.log('[Auto Extraction] Notification permissions granted, starting extraction from backend API...');
       
       // Call backend API for extraction (same as manual extraction)
       const response = await extractDietNotifications(userId);
@@ -2050,8 +2097,11 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       if (response.notifications && response.notifications.length > 0) {
         try {
-          // Cancel existing diet notifications using comprehensive method
+          // Initialize unified notification service (permissions already granted at this point)
           const unifiedNotificationService = (await import('./services/unifiedNotificationService')).default;
+          await unifiedNotificationService.initialize();
+          
+          // Cancel existing diet notifications using comprehensive method
           const cancelledCount = await unifiedNotificationService.cancelAllDietNotifications();
           
           console.log(`[Auto Extraction] Cancelled ${cancelledCount} existing diet notifications`);
@@ -4963,7 +5013,53 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       }
 
       setLoadingDietNotifications(true);
-      console.log('[Diet Notifications] Starting extraction from backend API...');
+      
+      // Check notification permissions FIRST before backend extraction
+      console.log('[Diet Notifications] Checking notification permissions...');
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        console.log('[Diet Notifications] Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowDisplayInCarPlay: false,
+            allowCriticalAlerts: false,
+            provideAppNotificationSettings: false,
+            allowProvisional: false,
+            allowAnnouncements: false,
+          },
+        });
+        finalStatus = status;
+        console.log('[Diet Notifications] Permission request result:', status);
+      }
+      
+      if (finalStatus !== 'granted') {
+        // User denied permissions - show helpful message and don't proceed
+        setLoadingDietNotifications(false);
+        Alert.alert(
+          'Notifications Required',
+          'Diet reminders require notification permissions. Please enable notifications in your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Settings', 
+              onPress: () => {
+                Linking.openSettings().catch((err) => {
+                  console.warn('[Diet Notifications] Failed to open settings:', err);
+                });
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      console.log('[Diet Notifications] Notification permissions granted, starting extraction from backend API...');
       
       // Call backend API for extraction
       const response = await extractDietNotifications(userId);
@@ -4985,15 +5081,28 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           console.log(`[Diet Notifications] Cancelled ${cancelledCount} existing diet notifications`);
           
           // ENHANCED: Filter and validate notifications before scheduling
+          // Handle both regular diets (with selectedDays) and free trial diets (with trialDay)
           const validNotifications = response.notifications.filter((notif: any) => {
+            const isFreeTrial = notif.isFreeTrialDiet || notif.trialDay !== undefined;
             const hasValidDays = notif.selectedDays && notif.selectedDays.length > 0;
+            const hasValidTrialDay = isFreeTrial && notif.trialDay !== undefined && [1, 2, 3].includes(notif.trialDay);
             const isActive = notif.isActive !== false;
             const hasTime = notif.time && notif.message;
             
-            if (!hasValidDays) {
-              console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
-              return false;
+            if (isFreeTrial) {
+              // Free trial diet validation
+              if (!hasValidTrialDay) {
+                console.log(`[Diet Notifications] ⚠️ Skipping free trial notification without valid trialDay: ${notif.message?.substring(0, 30)}...`);
+                return false;
+              }
+            } else {
+              // Regular diet validation
+              if (!hasValidDays) {
+                console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
+                return false;
+              }
             }
+            
             if (!isActive) {
               console.log(`[Diet Notifications] ⚠️ Skipping inactive notification: ${notif.message?.substring(0, 30)}...`);
               return false;
@@ -5009,9 +5118,20 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           console.log(`[Diet Notifications] Valid notifications to schedule: ${validNotifications.length}/${response.notifications.length}`);
           
           if (validNotifications.length > 0) {
+            // Get user profile for free trial end date check
+            let userProfile = null;
+            try {
+              const { getUserProfile } = require('./services/api');
+              userProfile = await getUserProfile(userId);
+              console.log('[Diet Notifications] Fetched user profile for free trial check');
+            } catch (profileError) {
+              console.warn('[Diet Notifications] Could not fetch user profile:', profileError);
+              // Continue without profile - free trial scheduling will work but without end date check
+            }
+            
             // Schedule new diet notifications locally (works in EAS builds)
             console.log('[Diet Notifications] Starting local notification scheduling...');
-            const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(validNotifications);
+            const scheduledIds = await unifiedNotificationService.scheduleDietNotifications(validNotifications, userProfile);
             
             console.log(`[Diet Notifications] Successfully scheduled ${scheduledIds.length} notifications`);
             console.log('[Diet Notifications] Scheduled IDs:', scheduledIds);
@@ -5388,6 +5508,20 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleEditDietNotification = (notification: any) => {
+    // Check if this is a free trial notification
+    const isFreeTrial = notification.isFreeTrialDiet || notification.trialDay !== undefined;
+    
+    if (isFreeTrial) {
+      // Show popup that editing is not allowed during free trial
+      Alert.alert(
+        'Cannot Edit During Free Trial',
+        'Free trial diet notifications cannot be edited. They are automatically scheduled for DAY 1, DAY2, and DAY 3 of your trial period.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+    
+    // Regular diet notification - allow editing
     setEditingNotification(notification);
     setEditTime(notification.time);
     setEditMessage(notification.message);
@@ -5573,47 +5707,60 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     setShowModal(false);
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-          <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
-            {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
-          </Text>
+  const renderItem = ({ item }: { item: any }) => {
+    // Check if this is a free trial notification
+    const isFreeTrial = item.isFreeTrialDiet || item.trialDay !== undefined;
+    const trialDay = item.trialDay;
+    
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
+              {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
+            </Text>
+          </View>
+          {/* Show trial day info for free trial notifications */}
+          {isFreeTrial && trialDay && (
+            <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
+              DAY {trialDay}
+            </Text>
+          )}
+          {/* Show selected days for regular diet notifications */}
+          {!isFreeTrial && item.selectedDays && (
+            <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
+              {getSelectedDaysDisplay(item.selectedDays)}
+            </Text>
+          )}
         </View>
-        {item.selectedDays && (
-          <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
-            {getSelectedDaysDisplay(item.selectedDays)}
-          </Text>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {item.type === 'diet' ? (
+            <>
+              <TouchableOpacity 
+                onPress={() => handleEditDietNotification(item)}
+                style={{ marginRight: 12 }}
+              >
+                <Pencil color={COLORS.primary} size={18} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
+                <Trash2 color={COLORS.error} size={18} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
+                <Pencil color={COLORS.primary} size={22} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                <Trash2 color={COLORS.error} size={22} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {item.type === 'diet' ? (
-          <>
-            <TouchableOpacity 
-              onPress={() => handleEditDietNotification(item)}
-              style={{ marginRight: 12 }}
-            >
-              <Pencil color={COLORS.primary} size={18} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
-              <Trash2 color={COLORS.error} size={18} />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
-              <Pencil color={COLORS.primary} size={22} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(item.id)}>
-              <Trash2 color={COLORS.error} size={22} />
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}> 
@@ -10321,7 +10468,7 @@ interface MandatoryPlanSelectionPopupProps {
   plans: SubscriptionPlan[];
   selectedPlan: string | null;
   onSelectPlan: (planId: string) => void;
-  onConfirm: () => void;
+  onConfirm: (autoRenewalEnabled: boolean) => void;
   confirming: boolean;
   message?: string;
 }
@@ -10340,6 +10487,16 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
   
   // Check if this is a trial end popup
   const isTrialEnd = message?.includes('trial') || message?.includes('Trial') || !message;
+  
+  // Auto-renewal state (default to true)
+  const [autoRenewalEnabled, setAutoRenewalEnabled] = useState(true);
+  
+  // Reset auto-renewal to true when popup opens
+  useEffect(() => {
+    if (visible) {
+      setAutoRenewalEnabled(true);
+    }
+  }, [visible]);
 
   return (
     <Modal
@@ -10416,12 +10573,42 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
             ))}
           </ScrollView>
           
+          {/* Auto-Renewal Toggle - Only show for trial end popup */}
+          {isTrialEnd && (
+            <View style={{
+              marginTop: 16,
+              marginBottom: 12,
+              padding: 12,
+              backgroundColor: COLORS.lightGreen,
+              borderRadius: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[styles.popupPlanDescription, { fontWeight: '600', marginBottom: 4 }]}>
+                  Auto-Renewal
+                </Text>
+                <Text style={[styles.popupPlanDescription, { fontSize: 12, color: COLORS.placeholder }]}>
+                  Automatically renew your subscription when it expires
+                </Text>
+              </View>
+              <Switch
+                value={autoRenewalEnabled}
+                onValueChange={setAutoRenewalEnabled}
+                trackColor={{ false: COLORS.placeholder, true: COLORS.primary }}
+                thumbColor={COLORS.white}
+                ios_backgroundColor={COLORS.placeholder}
+              />
+            </View>
+          )}
+          
           <TouchableOpacity
             style={[
               styles.popupConfirmButton,
               (!selectedPlan || confirming) && styles.popupConfirmButtonDisabled
             ]}
-            onPress={onConfirm}
+            onPress={() => onConfirm(autoRenewalEnabled)}
             disabled={!selectedPlan || confirming}
             activeOpacity={0.8}
           >
@@ -10687,6 +10874,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       case '2months': return '2 Months Plan';
       case '3months': return '3 Months Plan';
       case '6months': return '6 Months Plan';
+      case 'trial': return 'Free Trial';
       default: return 'Unknown Plan';
     }
   };
@@ -10772,26 +10960,36 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Plan:</Text>
                   <Text style={styles.detailValue}>
-                    {subscription.isFreeUser ? 'Free Plan' : (subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan')}
+                    {subscription.isTrialActive ? 'Free Trial' : (subscription.isFreeUser ? 'Free Plan' : (subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan'))}
                   </Text>
                 </View>
                 
-                {!subscription.isFreeUser && (
+                {/* Show trial end date if trial is active */}
+                {subscription.isTrialActive && subscription.trialEndDate && (
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Start Date:</Text>
+                    <Text style={styles.detailLabel}>Trial End Date:</Text>
                     <Text style={styles.detailValue}>
-                      {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
+                      {formatDate(subscription.trialEndDate)}
                     </Text>
                   </View>
                 )}
                 
-                {!subscription.isFreeUser && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>End Date:</Text>
-                    <Text style={styles.detailValue}>
-                      {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
-                    </Text>
-                  </View>
+                {/* Show subscription dates if not trial and not free user */}
+                {!subscription.isTrialActive && !subscription.isFreeUser && (
+                  <>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Start Date:</Text>
+                      <Text style={styles.detailValue}>
+                        {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
+                      </Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>End Date:</Text>
+                      <Text style={styles.detailValue}>
+                        {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
+                      </Text>
+                    </View>
+                  </>
                 )}
                 
                 {/* Display pending plan switch info */}
@@ -11063,14 +11261,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         plans={plans}
         selectedPlan={selectedPlanForCancel}
         onSelectPlan={setSelectedPlanForCancel}
-        onConfirm={async () => {
+        onConfirm={async (autoRenewalEnabled: boolean = true) => {
           if (!selectedPlanForCancel) return;
           try {
             setAddingAmount(true);
             const userId = auth.currentUser?.uid;
             if (!userId) return;
 
-            const result = await selectSubscription(userId, selectedPlanForCancel);
+            const result = await selectSubscription(userId, selectedPlanForCancel, autoRenewalEnabled);
             if (result.success) {
               setShowMandatoryPlanPopupAfterCancel(false);
               setSelectedPlanForCancel(null);

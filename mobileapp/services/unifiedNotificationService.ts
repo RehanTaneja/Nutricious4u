@@ -356,8 +356,18 @@ export class UnifiedNotificationService {
   }
 
   // Schedule diet notifications using PROVEN CUSTOM NOTIFICATION APPROACH (simplified and reliable)
-  async scheduleDietNotifications(notifications: any[]): Promise<string[]> {
+  async scheduleDietNotifications(notifications: any[], userProfile?: any): Promise<string[]> {
     try {
+      // Check if this is a free trial diet
+      const isFreeTrialDiet = notifications.some((notif: any) => 
+        notif.isFreeTrialDiet || notif.trialDay !== undefined
+      );
+      
+      if (isFreeTrialDiet) {
+        console.log('[DIET NOTIFICATION] 🎯 Detected free trial diet (DAY 1, DAY2, DAY 3)');
+        return await this.scheduleFreeTrialDietNotifications(notifications, userProfile);
+      }
+      
       const scheduledIds: string[] = [];
       
       // STEP 1: Filter valid notifications (same validation as custom notifications)
@@ -386,7 +396,7 @@ export class UnifiedNotificationService {
             message: message,
             time: time,
             selectedDays: selectedDays,
-            type: 'diet' // Changed from 'custom' to 'diet' to maintain diet-specific behavior
+            type: 'custom' // Changed from 'custom' to 'diet' to maintain diet-specific behavior
           });
           
           scheduledIds.push(scheduledId);
@@ -413,6 +423,181 @@ export class UnifiedNotificationService {
       logger.error('[UnifiedNotificationService] Failed to schedule diet notifications:', error);
       throw error;
     }
+  }
+
+  // Schedule free trial diet notifications (DAY 1, DAY2, DAY 3) with date mapping
+  async scheduleFreeTrialDietNotifications(notifications: any[], userProfile?: any): Promise<string[]> {
+    try {
+      const scheduledIds: string[] = [];
+      const now = new Date();
+      
+      // Get trial end date from user profile
+      let trialEndDate: Date | null = null;
+      if (userProfile?.freeTrialEndDate) {
+        trialEndDate = new Date(userProfile.freeTrialEndDate);
+        console.log(`[FREE TRIAL] Trial ends at: ${trialEndDate.toISOString()}`);
+      }
+      
+      // Filter valid free trial notifications
+      const validNotifications = notifications.filter((notif: any) => {
+        const hasTrialDay = notif.trialDay !== undefined && [1, 2, 3].includes(notif.trialDay);
+        const isActive = notif.isActive !== false;
+        const hasTime = notif.time && notif.message;
+        
+        if (!hasTrialDay || !isActive || !hasTime) {
+          console.log(`[FREE TRIAL] ⏭️ Skipping invalid: ${notif.message?.substring(0, 30)}... (TrialDay: ${notif.trialDay}, Active: ${isActive})`);
+          return false;
+        }
+        return true;
+      });
+      
+      // Group notifications by trial day
+      const day1Notifs = validNotifications.filter((n: any) => n.trialDay === 1);
+      const day2Notifs = validNotifications.filter((n: any) => n.trialDay === 2);
+      const day3Notifs = validNotifications.filter((n: any) => n.trialDay === 3);
+      
+      console.log(`[FREE TRIAL] Grouped notifications: Day1=${day1Notifs.length}, Day2=${day2Notifs.length}, Day3=${day3Notifs.length}`);
+      
+      // Calculate target dates (always start from tomorrow, not today)
+      const day1Date = new Date(now);
+      day1Date.setDate(now.getDate() + 1);  // Tomorrow
+      day1Date.setHours(0, 0, 0, 0);
+      
+      const day2Date = new Date(now);
+      day2Date.setDate(now.getDate() + 2);  // Day after tomorrow
+      day2Date.setHours(0, 0, 0, 0);
+      
+      const day3Date = new Date(now);
+      day3Date.setDate(now.getDate() + 3);  // 3 days from now
+      day3Date.setHours(0, 0, 0, 0);
+      
+      // Schedule Day1 notifications
+      for (const notif of day1Notifs) {
+        try {
+          const [hours, minutes] = notif.time.split(':').map(Number);
+          const scheduleDate = new Date(day1Date);
+          scheduleDate.setHours(hours, minutes, 0, 0);
+          
+          const scheduledId = await this.scheduleFreeTrialNotification(notif, scheduleDate, 1);
+          scheduledIds.push(scheduledId);
+          
+          console.log(`[FREE TRIAL] ✅ Scheduled Day1 notification: ${notif.message?.substring(0, 30)}... at ${scheduleDate.toISOString()}`);
+        } catch (error) {
+          console.error(`[FREE TRIAL] ❌ Failed to schedule Day1 notification:`, error);
+        }
+      }
+      
+      // Schedule Day2 notifications
+      for (const notif of day2Notifs) {
+        try {
+          const [hours, minutes] = notif.time.split(':').map(Number);
+          const scheduleDate = new Date(day2Date);
+          scheduleDate.setHours(hours, minutes, 0, 0);
+          
+          const scheduledId = await this.scheduleFreeTrialNotification(notif, scheduleDate, 2);
+          scheduledIds.push(scheduledId);
+          
+          console.log(`[FREE TRIAL] ✅ Scheduled Day2 notification: ${notif.message?.substring(0, 30)}... at ${scheduleDate.toISOString()}`);
+        } catch (error) {
+          console.error(`[FREE TRIAL] ❌ Failed to schedule Day2 notification:`, error);
+        }
+      }
+      
+      // Schedule Day3 notifications with trial end time check
+      for (const notif of day3Notifs) {
+        try {
+          const [hours, minutes] = notif.time.split(':').map(Number);
+          let scheduleDate = new Date(day3Date);
+          scheduleDate.setHours(hours, minutes, 0, 0);
+          
+          // FIX: Check if Day3 notification is after trial ends
+          if (trialEndDate && scheduleDate > trialEndDate) {
+            // Schedule 1 hour before trial ends to ensure it's received during trial
+            scheduleDate = new Date(trialEndDate);
+            scheduleDate.setHours(scheduleDate.getHours() - 1);
+            console.log(`[FREE TRIAL] ⚠️ Day3 notification would be after trial ends, scheduling 1 hour before trial end: ${scheduleDate.toISOString()}`);
+          }
+          
+          const scheduledId = await this.scheduleFreeTrialNotification(notif, scheduleDate, 3);
+          scheduledIds.push(scheduledId);
+          
+          console.log(`[FREE TRIAL] ✅ Scheduled Day3 notification: ${notif.message?.substring(0, 30)}... at ${scheduleDate.toISOString()}`);
+        } catch (error) {
+          console.error(`[FREE TRIAL] ❌ Failed to schedule Day3 notification:`, error);
+        }
+      }
+      
+      console.log(`[FREE TRIAL] ✅ Successfully scheduled ${scheduledIds.length} free trial notifications`);
+      return scheduledIds;
+      
+    } catch (error) {
+      console.error('[FREE TRIAL] ❌ Failed to schedule free trial notifications:', error);
+      throw error;
+    }
+  }
+
+  // Helper method to schedule a single free trial notification with date trigger
+  private async scheduleFreeTrialNotification(notif: any, scheduleDate: Date, trialDay: number): Promise<string> {
+    // Ensure permissions are initialized
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    // Ensure scheduleDate is in the future
+    if (scheduleDate <= new Date()) {
+      // If in the past, schedule for 1 minute from now
+      scheduleDate = new Date(Date.now() + 60000);
+      console.log(`[FREE TRIAL] ⚠️ Schedule date was in past, rescheduling for 1 minute from now`);
+    }
+
+    // Use date trigger for free trial notifications (more reliable for specific future dates)
+    const notificationContent = {
+      title: 'Diet Reminder',
+      body: notif.message,
+      sound: Platform.OS === 'ios' ? 'default' : 'default',
+      priority: 'high' as const,
+      data: {
+        message: notif.message,
+        time: notif.time,
+        trialDay: trialDay,
+        isFreeTrialDiet: true,
+        type: 'diet',
+        userId: auth.currentUser?.uid,
+        scheduledFor: scheduleDate.toISOString(),
+        platform: Platform.OS,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Use date trigger for free trial (more reliable than timeInterval for future dates)
+    const trigger = {
+      type: 'date' as const,
+      date: scheduleDate
+    };
+
+    console.log(`[FREE TRIAL] Scheduling Day${trialDay} notification with date trigger: ${scheduleDate.toISOString()}`);
+
+    const scheduledId = await Notifications.scheduleNotificationAsync({
+      content: notificationContent,
+      trigger
+    });
+
+    // Verify notification was scheduled
+    try {
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const scheduledNotification = scheduledNotifications.find(n => n.identifier === scheduledId);
+      
+      if (!scheduledNotification) {
+        throw new Error(`Free trial notification was not actually scheduled. ScheduledId: ${scheduledId}`);
+      }
+      
+      console.log(`[FREE TRIAL] ✅ Day${trialDay} notification confirmed in system: ${scheduledId}`);
+    } catch (validationError) {
+      console.error(`[FREE TRIAL] ⚠️ Could not validate Day${trialDay} notification:`, validationError);
+      // Continue anyway - notification might still be scheduled
+    }
+
+    return scheduledId;
   }
 
   // Cancel ALL diet notifications (comprehensive cleanup - proven approach)
