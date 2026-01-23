@@ -230,6 +230,7 @@ class SubscriptionPlan(BaseModel):
 class SelectSubscriptionRequest(BaseModel):
     userId: str
     planId: str
+    autoRenewalEnabled: Optional[bool] = True  # Default to True if not provided
 
 class SubscriptionResponse(BaseModel):
     success: bool
@@ -4164,7 +4165,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
         logger.error(f"[SUBSCRIPTION RENEWAL NOTIFICATIONS] Error: {e}")
 
 async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
-    """Send expiry notifications to both user and dietician"""
+    """Send expiry notifications to both user and dietician and mark subscription as expired"""
     try:
         user_name = get_user_first_name(user_data)
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
@@ -4177,6 +4178,14 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         payment_info = ""
         if current_amount > 0:
             payment_info = f" ₹{current_amount:,.0f} has been added to your total amount due."
+        
+        # IMPORTANT: Mark subscription as expired and inactive when auto-renewal is disabled
+        # This ensures the subscription doesn't remain "active" after expiry
+        firestore_db.collection("user_profiles").document(user_id).update({
+            "isSubscriptionActive": False,
+            "subscriptionStatus": "expired"
+        })
+        logger.info(f"[SUBSCRIPTION EXPIRY] Marked subscription as expired for user {user_id} (auto-renewal disabled)")
         
         # Send notification to user
         user_notification = {
@@ -4478,6 +4487,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
                 new_end_date = current_end_date
             
             # Store as pending plan switch
+            # Use autoRenewalEnabled from request, default to True if not provided
+            auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
+            
             pending_switch = {
                 "newPlanId": request.planId,
                 "switchDate": current_end_date.isoformat(),  # When current plan ends
@@ -4487,7 +4499,8 @@ async def select_subscription(request: SelectSubscriptionRequest):
             update_data = {
                 "pendingPlanSwitch": pending_switch,
                 "nextPlanId": request.planId,
-                "subscriptionStatus": "pending_switch"
+                "subscriptionStatus": "pending_switch",
+                "autoRenewalEnabled": auto_renewal  # Set auto-renewal for the new plan
             }
             
             firestore_db.collection("user_profiles").document(request.userId).update(update_data)
@@ -4508,6 +4521,9 @@ async def select_subscription(request: SelectSubscriptionRequest):
         
         # User has NO active subscription - activate immediately
         # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
+        # Use autoRenewalEnabled from request, default to True if not provided
+        auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
+        
         update_data = {
             "subscriptionPlan": request.planId,
             "subscriptionStartDate": start_date.isoformat(),
@@ -4516,6 +4532,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             "totalAmountPaid": current_total,  # Keep existing total, don't add yet
             "isSubscriptionActive": True,
             "subscriptionStatus": "active",
+            "autoRenewalEnabled": auto_renewal,  # Set auto-renewal preference
             "pendingPlanSwitch": None,  # Clear any pending switch
             "nextPlanId": None
         }
