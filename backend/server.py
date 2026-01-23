@@ -2728,8 +2728,11 @@ async def extract_diet_notifications(user_id: str):
         
     except Exception as e:
         total_time = time.time() - start_time
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"[DIET EXTRACTION] Error extracting diet notifications for user {user_id} after {total_time:.2f}s: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {e}")
+        logger.error(f"[DIET EXTRACTION] Full traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {str(e)}")
 
 @api_router.get("/users/{user_id}/diet/notifications")
 async def get_diet_notifications(user_id: str):
@@ -5285,8 +5288,8 @@ async def activate_free_trial(userId: str):
         start_date = datetime.now()
         end_date = start_date + timedelta(days=3)  # 3 days trial period
         
-        # Assign default diet to user
-        default_diet_assigned = await assign_default_diet_to_user(userId, user_data)
+        # Assign default diet to user - pass start_date so countdown starts from trial start, not diet assignment
+        default_diet_assigned = await assign_default_diet_to_user(userId, user_data, start_date)
         
         # Update user profile with trial information
         # Note: Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
@@ -5368,8 +5371,10 @@ async def get_trial_status(userId: str):
         logger.error(f"[TRIAL STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get trial status")
 
-async def assign_default_diet_to_user(user_id: str, user_data: dict):
-    """Assign the free trial diet PDF to a user during free trial"""
+async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start_date: datetime = None):
+    """Assign the free trial diet PDF to a user during free trial
+    trial_start_date: Trial start time - used for lastDietUpload to ensure countdown starts from trial start
+    """
     try:
         from datetime import datetime, timezone
         import os
@@ -5398,8 +5403,14 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict):
         logger.info(f"[DEFAULT DIET] Uploading free trial diet PDF to Firebase Storage for user {user_id}")
         pdf_url = upload_diet_pdf(user_id, pdf_data, default_diet_filename)
         
-        # Get current timestamp for lastDietUpload (trial start time)
-        trial_start_time = datetime.now(timezone.utc).isoformat()
+        # Get trial start time for lastDietUpload - use passed trial_start_date if available
+        # This ensures countdown starts from trial start, not diet assignment time
+        if trial_start_date:
+            # Use trial start time for countdown (3 days from trial start)
+            trial_start_time = trial_start_date.isoformat()
+        else:
+            # Fallback for non-trial diets (shouldn't happen for trial assignment)
+            trial_start_time = datetime.now(timezone.utc).isoformat()
         
         # Update user profile with diet information
         diet_info = {

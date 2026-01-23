@@ -1462,27 +1462,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
     }, [userId]);
 
   const handleOpenDiet = async () => {
-    console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
-    
-    // Check if user is on trial - trial users should have access to diet
-    let isTrialUser = false;
-    if (userId) {
-      try {
-        const { getSubscriptionStatus } = require('./services/api');
-        const subscriptionStatus = await getSubscriptionStatus(userId);
-        isTrialUser = subscriptionStatus.isTrialActive === true;
-        console.log('[DashboardScreen] Trial check:', { isTrialUser, isTrialActive: subscriptionStatus.isTrialActive });
-      } catch (error) {
-        console.warn('[DashboardScreen] Could not check trial status:', error);
-      }
-    }
-    
-    // Block only if user is truly free (not on trial)
-    if (isFreeUser && !isTrialUser) {
-      console.log('[DashboardScreen] Showing upgrade modal for free user (not on trial)');
-      setShowUpgradeModal(true);
-      return;
-    }
+    console.log('[DashboardScreen] handleOpenDiet called');
     
     try {
       // Force refresh diet data before opening
@@ -1500,6 +1480,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setDietPdfUrl(dietData.dietPdfUrl || null);
       
       if (dietData.dietPdfUrl) {
+        // User has diet PDF (trial or paid) - open it
         console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
         
         // Generate PDF URL with cache busting
@@ -1520,7 +1501,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           Alert.alert('Error', 'No PDF URL available.');
         }
       } else {
-        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician.');
+        // No diet PDF - show appropriate message
+        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician or start a free trial.');
       }
     } catch (e) {
       console.error('Failed to open diet PDF:', e);
@@ -2135,18 +2117,23 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       if (finalStatus !== 'granted') {
         // User denied permissions - show helpful message and don't proceed
         setExtractionLoading(false);
-        setShowAutoExtractionPopup(false);
+        // Keep popup open so user can retry after enabling permissions
         Alert.alert(
           'Notifications Required',
-          'Diet reminders require notification permissions. Please enable notifications in your device settings.',
+          'Diet reminders require notification permissions. Please enable notifications in your device settings, then return and try again.',
           [
-            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Cancel', 
+              style: 'cancel', 
+              onPress: () => setShowAutoExtractionPopup(false) // Only close on cancel
+            },
             { 
               text: 'Open Settings', 
               onPress: () => {
                 Linking.openSettings().catch((err) => {
                   console.warn('[Auto Extraction] Failed to open settings:', err);
                 });
+                // Popup stays open - user can retry after returning
               }
             }
           ]
@@ -2281,14 +2268,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       <View style={{ marginBottom: 16 }}>
                                 <TouchableOpacity
                           style={{ 
-                            backgroundColor: dietPdfUrl ? COLORS.primary : COLORS.placeholder, 
+                            backgroundColor: COLORS.primary, 
                             padding: 12, 
                             borderRadius: 8, 
                             alignItems: 'center',
-                            opacity: dietPdfUrl ? 1 : 0.5
+                            opacity: 1  // Always fully visible
                           }}
                           onPress={handleOpenDiet}
-                          disabled={!dietPdfUrl}
+                          // Remove disabled prop - button is always clickable
                         >
                           <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 18 }}>My Diet</Text>
                         </TouchableOpacity>
