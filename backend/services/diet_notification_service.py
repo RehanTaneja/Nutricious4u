@@ -314,7 +314,15 @@ class DietNotificationService:
                 if not line:
                     continue
                 
-                # Check if this is a day header
+                # FIRST: Check for free trial day headers (DAY 1, DAY2, DAY 3)
+                trial_day_match = re.search(r'^DAY\s*([123])\b', line, re.IGNORECASE)
+                if trial_day_match:
+                    trial_day_num = int(trial_day_match.group(1))
+                    current_day = trial_day_num  # Store as 1, 2, or 3 for free trial
+                    logger.info(f"Found free trial day header: DAY {trial_day_num}")
+                    continue
+                
+                # SECOND: Check if this is a regular day header
                 day_match = re.search(r'^([A-Z]+)\s*[-:]\s*\d+', line, re.IGNORECASE)
                 if day_match:
                     day_name = day_match.group(1).lower()
@@ -405,6 +413,11 @@ class DietNotificationService:
         THURSDAY- 14th AUG
         5:30 AM- 1 glass JEERA water
         6 AM- 5 almonds, 2 walnuts, 5 black raisins {soaked}
+        Also handles free trial format:
+        DAY 1
+        5:30 AM- 1 glass JEERA water
+        DAY2
+        6 AM- 5 almonds
         """
         if not diet_text:
             return []
@@ -412,6 +425,7 @@ class DietNotificationService:
         activities = []
         lines = diet_text.split('\n')
         current_day = None
+        is_free_trial = False
         
         # Day mapping for structured diets
         day_mapping = {
@@ -429,12 +443,22 @@ class DietNotificationService:
             if not line:
                 continue
             
-            # Check if this is a day header (improved pattern)
+            # FIRST: Check for free trial day headers (DAY 1, DAY2, DAY 3)
+            trial_day_match = re.search(r'^DAY\s*([123])\b', line, re.IGNORECASE)
+            if trial_day_match:
+                trial_day_num = int(trial_day_match.group(1))
+                current_day = trial_day_num  # Store as 1, 2, or 3 for free trial
+                is_free_trial = True
+                logger.info(f"  📅 Found free trial day: DAY {trial_day_num}")
+                continue
+            
+            # SECOND: Check if this is a regular day header (improved pattern)
             day_match = re.search(r'^([A-Z]+)\s*-\s*\d+', line, re.IGNORECASE)
             if day_match:
                 day_name = day_match.group(1).lower()
                 if day_name in day_mapping:
                     current_day = day_mapping[day_name]
+                    is_free_trial = False
                     print(f"  📅 Found day: {day_name.upper()} (day {current_day})")
                     continue
             
@@ -710,6 +734,7 @@ class DietNotificationService:
         """
         Determine the diet days from the overall structure of activities and diet text.
         This helps prevent notifications from being sent on non-diet days.
+        Returns list of day numbers (0-6 for weekdays, or empty list if free trial diet detected).
         """
         try:
             # First, check if we have activities with specific days
@@ -719,7 +744,14 @@ class DietNotificationService:
                     days_with_activities.add(activity['day'])
             
             if days_with_activities:
-                # If we have day-specific activities, use those days
+                # Check if these are free trial days (1, 2, 3) or regular weekdays (0-6)
+                trial_days = {1, 2, 3}
+                if days_with_activities.issubset(trial_days):
+                    # This is a free trial diet - return empty list to signal free trial
+                    logger.info(f"Detected free trial diet with days: {sorted(days_with_activities)}")
+                    return []  # Empty list signals free trial diet
+                
+                # Regular weekday diet
                 diet_days = sorted(list(days_with_activities))
                 logger.info(f"Found day-specific activities for days: {diet_days}")
                 return diet_days
@@ -741,6 +773,8 @@ class DietNotificationService:
     def _detect_days_from_text_structure(self, diet_text: str) -> List[int]:
         """
         Detect diet days from the text structure by looking for day headers.
+        Returns list of day numbers, or empty list if not found.
+        Also checks for free trial diet format (DAY 1, DAY2, DAY 3).
         """
         try:
             day_mapping = {
@@ -754,11 +788,27 @@ class DietNotificationService:
             }
             
             found_days = set()
+            found_trial_days = set()
             lines = diet_text.split('\n')
             
             for line in lines:
                 line = line.strip()
-                # Look for day headers in various formats
+                
+                # FIRST: Check for free trial diet format (DAY 1, DAY2, DAY 3)
+                # Note: DAY2 has no space, DAY 1 and DAY 3 have spaces
+                trial_day_patterns = [
+                    r'^DAY\s*1\b',  # DAY 1 or DAY1
+                    r'^DAY\s*2\b',  # DAY 2 or DAY2
+                    r'^DAY\s*3\b',  # DAY 3 or DAY3
+                ]
+                
+                for i, pattern in enumerate(trial_day_patterns, start=1):
+                    if re.search(pattern, line, re.IGNORECASE):
+                        found_trial_days.add(i)
+                        logger.info(f"Found free trial day header: DAY {i}")
+                        break
+                
+                # SECOND: Look for regular day headers in various formats
                 day_patterns = [
                     r'^([A-Z]+)\s*-\s*\d+',  # MONDAY- 1st JAN
                     r'^([A-Z]+)\s*:',  # MONDAY:
@@ -773,6 +823,11 @@ class DietNotificationService:
                         if day_name in day_mapping:
                             found_days.add(day_mapping[day_name])
                             break
+            
+            # If we found trial days, return empty list (will be handled separately)
+            if found_trial_days:
+                logger.info(f"Detected free trial diet with days: {sorted(found_trial_days)}")
+                return []  # Return empty to signal free trial diet
             
             if found_days:
                 return sorted(list(found_days))
@@ -995,26 +1050,35 @@ class DietNotificationService:
     def create_notification_from_activity(self, activity: Dict) -> Dict:
         """
         Create a notification object from an activity.
+        Handles both regular diets (with weekdays) and free trial diets (with DAY 1, DAY2, DAY 3).
         """
         time_obj = time(activity['hour'], activity['minute'])
         # Use the unique_id if available, otherwise generate one
         unique_id = activity.get('unique_id', f"{activity['hour']:02d}:{activity['minute']:02d}_{hash(activity['activity']) % 1000000}")
         notification_id = f"diet_{activity['hour']}_{activity['minute']}_{hash(unique_id) % 1000000}"
         
-        # CRITICAL FIX: Handle day-specific notifications properly
+        # Check if this is a free trial day (1, 2, or 3)
+        is_free_trial_day = False
+        trial_day = None
+        selected_days = []
+        
         if 'day' in activity and activity['day'] is not None:
-            # If the activity has a specific day, create notifications for that day only
-            selected_days = [activity['day']]
-            logger.info(f"Created day-specific notification for day {activity['day']}: {activity['activity'][:50]}...")
+            day_value = activity['day']
+            # Check if it's a free trial day (1, 2, or 3)
+            if day_value in [1, 2, 3]:
+                is_free_trial_day = True
+                trial_day = day_value
+                logger.info(f"Created free trial notification for DAY {trial_day}: {activity['activity'][:50]}...")
+            else:
+                # Regular weekday (0-6)
+                selected_days = [day_value]
+                logger.info(f"Created day-specific notification for day {day_value}: {activity['activity'][:50]}...")
         else:
-            # CRITICAL FIX: For activities without day headers, we need to determine the diet days
-            # This should be based on the overall diet structure, not default to all days
-            # For now, we'll use a more conservative approach and let the user configure
-            # This prevents notifications from being sent on non-diet days like Friday
-            selected_days = []  # Empty - will be set by the user or diet analysis
+            # Activity without day header - will be determined later
+            selected_days = []
             logger.warning(f"Activity without day header found: {activity['activity'][:50]}... - selectedDays set to empty")
         
-        return {
+        notification = {
             'id': notification_id,
             'message': activity['activity'],
             'time': time_obj.strftime('%H:%M'),
@@ -1023,9 +1087,18 @@ class DietNotificationService:
             'scheduledId': None,  # Will be set when scheduled
             'source': 'diet_pdf',
             'original_text': activity['original_text'],
-            'selectedDays': selected_days,  # Use day-specific or empty for user configuration
             'isActive': True  # Track if notification is active
         }
+        
+        # Add free trial or regular day information
+        if is_free_trial_day:
+            notification['isFreeTrialDiet'] = True
+            notification['trialDay'] = trial_day
+            # Don't set selectedDays for free trial diets
+        else:
+            notification['selectedDays'] = selected_days
+        
+        return notification
     
     def extract_and_create_notifications(self, user_id: str, diet_pdf_url: str, db) -> List[Dict]:
         """
@@ -1050,28 +1123,47 @@ class DietNotificationService:
             diet_days = self._determine_diet_days_from_activities(activities, diet_text)
             logger.info(f"Determined diet days from structure: {diet_days}")
             
+            # Check if this is a free trial diet (empty diet_days means free trial was detected)
+            is_free_trial_diet = False
+            if not diet_days:
+                # Check if any activities have trial days (1, 2, 3)
+                trial_days_found = any(
+                    'day' in activity and activity['day'] in [1, 2, 3]
+                    for activity in activities
+                )
+                if trial_days_found:
+                    is_free_trial_diet = True
+                    logger.info(f"Detected free trial diet (DAY 1, DAY2, DAY 3 format)")
+            
             # Create notifications from activities
             notifications = []
             for activity in activities:
                 notification = self.create_notification_from_activity(activity)
                 
-                # CRITICAL FIX: If notification has no selectedDays, use the determined diet days
-                if not notification.get('selectedDays'):
-                    if diet_days:
-                        notification['selectedDays'] = diet_days
-                        logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
-                    else:
-                        # CONSERVATIVE FIX: If we can't determine days, DON'T default to any days
-                        # Let the user manually configure this to prevent wrong notifications
-                        notification['selectedDays'] = []  # Empty - user must configure
-                        notification['isActive'] = False  # Inactive until user configures
-                        logger.warning(f"Could not determine days for notification: {notification['message'][:50]}... - marked as inactive")
+                # For free trial diets, notifications already have trialDay set
+                # For regular diets, apply selectedDays if not set
+                if not is_free_trial_diet:
+                    if not notification.get('selectedDays'):
+                        if diet_days:
+                            notification['selectedDays'] = diet_days
+                            logger.info(f"Applied diet days {diet_days} to notification: {notification['message'][:50]}...")
+                        else:
+                            # CONSERVATIVE FIX: If we can't determine days, DON'T default to any days
+                            # Let the user manually configure this to prevent wrong notifications
+                            notification['selectedDays'] = []  # Empty - user must configure
+                            notification['isActive'] = False  # Inactive until user configures
+                            logger.warning(f"Could not determine days for notification: {notification['message'][:50]}... - marked as inactive")
                 
                 notifications.append(notification)
             
             logger.info(f"Extracted {len(notifications)} timed activities from diet PDF for user {user_id}")
             
-            # Group consecutive notifications within 1 hour for each day
+            # For free trial diets, skip grouping and return notifications as-is
+            if is_free_trial_diet:
+                logger.info(f"[FREE TRIAL] Returning {len(notifications)} free trial notifications without grouping")
+                return notifications
+            
+            # Group consecutive notifications within 1 hour for each day (regular diets only)
             # This reduces notification count while maintaining all tasks
             grouped_notifications = []
             

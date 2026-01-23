@@ -9,13 +9,16 @@ import asyncio
 import requests
 import json
 from datetime import datetime
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Try to load dotenv if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not available, use defaults
 
 # Configuration
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("API_BASE_URL", "https://nutricious4u-production.up.railway.app")
 API_PREFIX = "/api"
 
 def print_step(step_num, message):
