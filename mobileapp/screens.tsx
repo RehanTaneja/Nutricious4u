@@ -3770,6 +3770,25 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [targets, setTargets] = useState({ calories: 0, protein: 0, fat: 0 });
   const scrollRef = useRef<ScrollView>(null);
 
+  // Load age and gender from existing profile (created during signup)
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const profile = await getUserProfile(userId);
+        if (profile) {
+          // Load age and gender from existing profile
+          if (profile.age) setAge(profile.age.toString());
+          if (profile.gender) setGender(profile.gender);
+        }
+      } catch (error) {
+        console.log('[QnA Screen] Could not load profile:', error);
+        // If profile load fails, age/gender will remain empty
+        // This should not happen for new users, but handle gracefully
+      }
+    };
+    loadProfile();
+  }, [userId]);
+
   // Ensure ScrollView starts at top when screen is focused
   useEffect(() => {
     if (isFocused && scrollRef.current) {
@@ -3793,9 +3812,16 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
 
   const handleSubmit = async () => {
     console.log('[handleSubmit] Starting submission...');
-    if (!currentWeight || !goalWeight || !height || !dietaryPreference || !age || !gender) {
+    // Validate required fields (age/gender come from profile, not user input)
+    if (!currentWeight || !goalWeight || !height || !dietaryPreference) {
       console.log('[handleSubmit] Validation failed.');
       setError('Please fill in all required fields');
+      return;
+    }
+    // Validate age/gender were loaded from profile
+    if (!age || !gender) {
+      console.log('[handleSubmit] Age/gender not loaded from profile.');
+      setError('Profile information missing. Please contact support.');
       return;
     }
     console.log('[handleSubmit] Validation passed. Setting loading to true.');
@@ -3864,19 +3890,6 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
             
             <Text style={styles.inputLabel}>Height (cm)</Text>
             <StyledInput placeholder="Height (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" />
-            
-            <Text style={styles.inputLabel}>Age</Text>
-            <StyledInput placeholder="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
-            
-            <Text style={styles.inputLabel}>Gender</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker selectedValue={gender} onValueChange={setGender} style={styles.picker}>
-                <Picker.Item label="Select gender..." value="" />
-                <Picker.Item label="Male" value="male" />
-                <Picker.Item label="Female" value="female" />
-                <Picker.Item label="Other" value="other" />
-              </Picker>
-            </View>
             
             <Text style={styles.inputLabel}>Daily Activity Level</Text>
             <View style={styles.pickerWrapper}>
@@ -5165,10 +5178,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
               }
             } else {
               // Regular diet validation
-            if (!hasValidDays) {
-              console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
-              return false;
-            }
+              if (!hasValidDays) {
+                console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
+                return false;
+              }
             }
             
             if (!isActive) {
@@ -5781,14 +5794,14 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const trialDay = item.trialDay;
     
     return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-          <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
-            {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
-          </Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
+              {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
+            </Text>
+          </View>
           {/* Show trial day info for free trial notifications */}
           {isFreeTrial && trialDay && (
             <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
@@ -5797,37 +5810,37 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           )}
           {/* Show selected days for regular diet notifications */}
           {!isFreeTrial && item.selectedDays && (
-          <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
-            {getSelectedDaysDisplay(item.selectedDays)}
-          </Text>
-        )}
+            <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
+              {getSelectedDaysDisplay(item.selectedDays)}
+            </Text>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {item.type === 'diet' ? (
+            <>
+              <TouchableOpacity 
+                onPress={() => handleEditDietNotification(item)}
+                style={{ marginRight: 12 }}
+              >
+                <Pencil color={COLORS.primary} size={18} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
+                <Trash2 color={COLORS.error} size={18} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
+                <Pencil color={COLORS.primary} size={22} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                <Trash2 color={COLORS.error} size={22} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {item.type === 'diet' ? (
-          <>
-            <TouchableOpacity 
-              onPress={() => handleEditDietNotification(item)}
-              style={{ marginRight: 12 }}
-            >
-              <Pencil color={COLORS.primary} size={18} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
-              <Trash2 color={COLORS.error} size={18} />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
-              <Pencil color={COLORS.primary} size={22} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(item.id)}>
-              <Trash2 color={COLORS.error} size={22} />
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </View>
-  );
+    );
   };
 
   return (

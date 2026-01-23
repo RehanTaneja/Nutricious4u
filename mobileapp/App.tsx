@@ -122,7 +122,7 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
     ) : (
       <Tab.Screen name="Dietician" component={DieticianScreen} />
     )}
-    {!isDietician && !isFreeUser && <Tab.Screen name="Chatbot" component={ChatbotScreen} />}
+    {!isDietician && <Tab.Screen name="Chatbot" component={ChatbotScreen} />}
     <Tab.Screen name="Settings" component={SettingsScreen} />
   </Tab.Navigator>
 );
@@ -1203,7 +1203,8 @@ function AppContent() {
       }
     }
     // Priority 2: If on free plan and hasn't used trial, show trial activation popup
-    else if (isOnFreePlan && !subscriptionStatus.freeTrialUsed) {
+    // BUT ONLY if user has completed the info form
+    else if (isOnFreePlan && !subscriptionStatus.freeTrialUsed && hasCompletedQuiz) {
       console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
       setShowMandatoryTrialPopup(true);
     }
