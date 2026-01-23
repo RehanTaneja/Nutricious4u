@@ -32,7 +32,24 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const user = auth.currentUser;
       if (user) {
         const subscriptionStatus = await getSubscriptionStatus(user.uid);
-        setIsFreeUser(subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive);
+        // Trial users should NOT be treated as free users - they have premium access
+        // Logic:
+        // 1. If user is on trial (isTrialActive = true), they are NOT free
+        // 2. If subscription is active, user is NOT free (regardless of trial status)
+        // 3. Otherwise, use backend's isFreeUser flag
+        const isTrialActive = subscriptionStatus.isTrialActive === true;
+        const isSubscriptionActive = subscriptionStatus.isSubscriptionActive === true;
+        
+        // User is free only if: NOT on trial AND subscription not active AND backend says free
+        const shouldBeFreeUser = !isTrialActive && 
+                                  !isSubscriptionActive && 
+                                  (subscriptionStatus.isFreeUser !== false); // Default to free if undefined
+        setIsFreeUser(shouldBeFreeUser);
+        console.log('[SubscriptionContext] Updated isFreeUser:', shouldBeFreeUser, {
+          isTrialActive: subscriptionStatus.isTrialActive,
+          isFreeUser: subscriptionStatus.isFreeUser,
+          isSubscriptionActive: subscriptionStatus.isSubscriptionActive
+        });
       }
     } catch (error) {
       console.log('Error refreshing subscription status:', error);

@@ -3709,13 +3709,13 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         # Handle days-based reminders
         if time_remaining == 7:
             message = f"Hi {user_name}, your {plan_name} will end in 7 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
-            title = "Plan Ending Soon"
+                title = "Plan Ending Soon"
         elif time_remaining == 1:
             message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new plan to continue."
-            title = "Plan Ending Tomorrow"
-        else:
-            message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-            title = "Plan Ending Soon"
+                title = "Plan Ending Tomorrow"
+            else:
+                message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
+                title = "Plan Ending Soon"
         
         # Create notification data
         notification_data = {
@@ -3822,7 +3822,7 @@ async def send_trial_expiry_notification(user_id: str, user_data: dict):
             title="Free Trial Ended",
             body=f"Hi {user_name}, your free trial has ended. Select a plan to continue!",
             data={"type": "trial_expired"}
-        )
+            )
         
         if not success:
             logger.warning(f"[TRIAL EXPIRY NOTIFICATION] Failed to send push notification to user {user_id}")
@@ -4957,15 +4957,15 @@ async def delete_user_account(userId: str):
             except asyncio.TimeoutError:
                 logger.warning(f"[DELETE ACCOUNT] Timeout ({OPERATION_TIMEOUT}s) for {operation_name} for {userId}")
                 return None
-            except Exception as e:
+        except Exception as e:
                 logger.error(f"[DELETE ACCOUNT] Error in {operation_name} for {userId}: {e}")
                 return None
         
         # Helper function to delete collection with batch operations
         async def delete_collection_batch(collection_ref, batch_size=500):
-            try:
+        try:
                 docs = await loop.run_in_executor(executor, lambda: list(collection_ref.stream()))
-                count = 0
+            count = 0
                 # Use batch operations for efficiency
                 batch = firestore_db.batch()
                 batch_count = 0
@@ -5213,7 +5213,7 @@ async def delete_user_account(userId: str):
                 deleted_items["auth_user"] = False
             else:
                 async def delete_auth():
-                    await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
+                await loop.run_in_executor(executor, lambda: firebase_auth.delete_user(userId))
                 await delete_with_timeout("auth_user", delete_auth)
                 deleted_items["auth_user"] = True
                 logger.info(f"[DELETE ACCOUNT] Deleted Firebase Auth user for {userId}")
@@ -5289,6 +5289,8 @@ async def activate_free_trial(userId: str):
         default_diet_assigned = await assign_default_diet_to_user(userId, user_data)
         
         # Update user profile with trial information
+        # Note: Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
+        # Only set freeTrialStartDate and freeTrialEndDate
         update_data = {
             "freeTrialUsed": True,
             "freeTrialStartDate": start_date.isoformat(),
@@ -5296,8 +5298,8 @@ async def activate_free_trial(userId: str):
             "subscriptionPlan": "trial",
             "subscriptionStatus": "trial",
             "isSubscriptionActive": True,  # Active for feature access during trial
-            "subscriptionStartDate": start_date.isoformat(),
-            "subscriptionEndDate": end_date.isoformat(),
+            # Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
+            # These should only be set for paid subscriptions
             "new_diet_received": True  # Trigger new diet popup
         }
         

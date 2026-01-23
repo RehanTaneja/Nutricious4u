@@ -1186,6 +1186,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   const [dietPdfUrl, setDietPdfUrl] = useState<string | null>(null);
   const [daysLeft, setDaysLeft] = useState<{ days: number; hours: number } | null>(null);
+  const [trialCountdown, setTrialCountdown] = useState<{ days: number; hours: number } | null>(null);
   const [dietLoading, setDietLoading] = useState(false);
   const [dietError, setDietError] = useState('');
   const [showDietPdf, setShowDietPdf] = useState(false);
@@ -1291,6 +1292,57 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       return () => {
         clearTimeout(delayedFetch);
+      };
+    }
+  }, [userId, isFocused]);
+
+  // Fetch trial countdown data
+  useEffect(() => {
+    if (userId && isFocused) {
+      const fetchTrialCountdown = async () => {
+        try {
+          const subscriptionStatus = await getSubscriptionStatus(userId);
+          
+          if (subscriptionStatus.isTrialActive && subscriptionStatus.trialEndDate) {
+            const trialEndDate = new Date(subscriptionStatus.trialEndDate);
+            const now = new Date();
+            const diffMs = trialEndDate.getTime() - now.getTime();
+            
+            if (diffMs > 0) {
+              const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+              const hoursRemaining = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+              
+              setTrialCountdown({
+                days: Math.max(0, daysRemaining),
+                hours: Math.max(0, hoursRemaining)
+              });
+              console.log('[Dashboard] Trial countdown:', { days: daysRemaining, hours: hoursRemaining });
+            } else {
+              // Trial expired
+              setTrialCountdown(null);
+            }
+          } else {
+            setTrialCountdown(null);
+          }
+        } catch (error) {
+          console.error('[Dashboard] Error fetching trial countdown:', error);
+          setTrialCountdown(null);
+        }
+      };
+      
+      // Fetch immediately with delay to prevent conflict
+      const delayedFetch = setTimeout(() => {
+        fetchTrialCountdown();
+      }, 6000); // 6 second delay
+      
+      // Update every minute
+      const interval = setInterval(() => {
+        fetchTrialCountdown();
+      }, 60 * 1000);
+      
+      return () => {
+        clearTimeout(delayedFetch);
+        clearInterval(interval);
       };
     }
   }, [userId, isFocused]);
@@ -1411,8 +1463,23 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
   const handleOpenDiet = async () => {
     console.log('[DashboardScreen] handleOpenDiet called, isFreeUser:', isFreeUser);
-    if (isFreeUser) {
-      console.log('[DashboardScreen] Showing upgrade modal for free user');
+    
+    // Check if user is on trial - trial users should have access to diet
+    let isTrialUser = false;
+    if (userId) {
+      try {
+        const { getSubscriptionStatus } = require('./services/api');
+        const subscriptionStatus = await getSubscriptionStatus(userId);
+        isTrialUser = subscriptionStatus.isTrialActive === true;
+        console.log('[DashboardScreen] Trial check:', { isTrialUser, isTrialActive: subscriptionStatus.isTrialActive });
+      } catch (error) {
+        console.warn('[DashboardScreen] Could not check trial status:', error);
+      }
+    }
+    
+    // Block only if user is truly free (not on trial)
+    if (isFreeUser && !isTrialUser) {
+      console.log('[DashboardScreen] Showing upgrade modal for free user (not on trial)');
       setShowUpgradeModal(true);
       return;
     }
@@ -2231,12 +2298,26 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>{dietError}</Text>
         ) : (
           <>
+            {/* Show trial countdown if on trial */}
+            {trialCountdown ? (
+              <>
+                <Text style={{ color: COLORS.text, marginTop: 12, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
+                  Free Trial Remaining
+                </Text>
+                <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
+                  {trialCountdown.days} days {trialCountdown.hours} hours
+                </Text>
+              </>
+        ) : (
+          <>
             <Text style={{ color: COLORS.text, marginTop: 12, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
               Time Until next diet
             </Text>
             <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
               {daysLeft ? `${daysLeft.days} days ${daysLeft.hours} hours` : '-'}
             </Text>
+              </>
+            )}
           </>
         )}
       </View>
@@ -5097,10 +5178,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
               }
             } else {
               // Regular diet validation
-              if (!hasValidDays) {
-                console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
-                return false;
-              }
+            if (!hasValidDays) {
+              console.log(`[Diet Notifications] ⚠️ Skipping notification without valid days: ${notif.message?.substring(0, 30)}...`);
+              return false;
+            }
             }
             
             if (!isActive) {
@@ -5713,14 +5794,14 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const trialDay = item.trialDay;
     
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
-              {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
-            </Text>
-          </View>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+          <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
+            {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
+          </Text>
+        </View>
           {/* Show trial day info for free trial notifications */}
           {isFreeTrial && trialDay && (
             <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
@@ -5729,37 +5810,37 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
           )}
           {/* Show selected days for regular diet notifications */}
           {!isFreeTrial && item.selectedDays && (
-            <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
-              {getSelectedDaysDisplay(item.selectedDays)}
-            </Text>
-          )}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {item.type === 'diet' ? (
-            <>
-              <TouchableOpacity 
-                onPress={() => handleEditDietNotification(item)}
-                style={{ marginRight: 12 }}
-              >
-                <Pencil color={COLORS.primary} size={18} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
-                <Trash2 color={COLORS.error} size={18} />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
-                <Pencil color={COLORS.primary} size={22} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Trash2 color={COLORS.error} size={22} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+          <Text style={{ color: COLORS.primary, fontSize: 12, marginTop: 2 }}>
+            {getSelectedDaysDisplay(item.selectedDays)}
+          </Text>
+        )}
       </View>
-    );
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {item.type === 'diet' ? (
+          <>
+            <TouchableOpacity 
+              onPress={() => handleEditDietNotification(item)}
+              style={{ marginRight: 12 }}
+            >
+              <Pencil color={COLORS.primary} size={18} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDeleteDietNotification(item.id)}>
+              <Trash2 color={COLORS.error} size={18} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 16 }}>
+              <Pencil color={COLORS.primary} size={22} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDelete(item.id)}>
+              <Trash2 color={COLORS.error} size={22} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    </View>
+  );
   };
 
   return (
@@ -10960,7 +11041,15 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Plan:</Text>
                   <Text style={styles.detailValue}>
-                    {subscription.isTrialActive ? 'Free Trial' : (subscription.isFreeUser ? 'Free Plan' : (subscription.subscriptionPlan ? getPlanName(subscription.subscriptionPlan) : 'No Plan'))}
+                    {subscription.isTrialActive 
+                      ? 'Free Trial' 
+                      : (subscription.isFreeUser 
+                        ? 'Free Plan' 
+                        : (subscription.subscriptionPlan 
+                          ? getPlanName(subscription.subscriptionPlan) 
+                          : (subscription.subscriptionStatus === 'trial' 
+                            ? 'Free Trial' 
+                            : 'No Plan')))}
                   </Text>
                 </View>
                 
@@ -10983,12 +11072,12 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                         {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
                       </Text>
                     </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>End Date:</Text>
-                      <Text style={styles.detailValue}>
-                        {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
-                      </Text>
-                    </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>End Date:</Text>
+                    <Text style={styles.detailValue}>
+                      {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
+                    </Text>
+                  </View>
                   </>
                 )}
                 
