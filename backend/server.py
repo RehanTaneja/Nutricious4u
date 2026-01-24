@@ -1995,6 +1995,9 @@ async def get_user_diet(user_id: str):
         days_left = None
         hours_left = None
         
+        # Log diet information for debugging
+        logger.info(f"[DIET] User {user_id}: pdf_url={pdf_url}, last_upload={last_upload}")
+        
         # Check if user is on trial (3 days countdown) or regular subscription (7 days countdown)
         subscription_status = data.get("subscriptionStatus", "")
         subscription_plan = data.get("subscriptionPlan", "")
@@ -2028,9 +2031,14 @@ async def get_user_diet(user_id: str):
                 
                 logger.info(f"[DIET] User {user_id}: is_trial={is_trial}, countdown_hours={countdown_hours}, days_left={days_left}, hours_left={hours_left}")
             except ValueError as e:
-                logger.error(f"Error parsing lastDietUpload date for user {user_id}: {e}")
+                logger.error(f"[DIET] Error parsing lastDietUpload date for user {user_id}: {e}")
+                logger.error(f"[DIET] lastDietUpload value was: {last_upload}")
                 days_left = None
                 hours_left = None
+        else:
+            logger.warning(f"[DIET] User {user_id}: lastDietUpload is missing, cannot calculate countdown")
+            if pdf_url:
+                logger.warning(f"[DIET] User {user_id}: Has dietPdfUrl ({pdf_url}) but no lastDietUpload - this is unexpected")
         
         return {
             "dietPdfUrl": pdf_url, 
@@ -5389,6 +5397,7 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         
         if not os.path.exists(trial_diet_path):
             logger.error(f"[DEFAULT DIET] Free trial diet PDF not found at {trial_diet_path}")
+            logger.error(f"[DEFAULT DIET] Backend dir: {backend_dir}, Project root: {project_root}")
             return False
         
         # Read the PDF file
@@ -5402,6 +5411,10 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         # Upload PDF to Firebase Storage
         logger.info(f"[DEFAULT DIET] Uploading free trial diet PDF to Firebase Storage for user {user_id}")
         pdf_url = upload_diet_pdf(user_id, pdf_data, default_diet_filename)
+        if not pdf_url:
+            logger.error(f"[DEFAULT DIET] Upload failed for user {user_id} - upload_diet_pdf returned None or empty")
+            return False
+        logger.info(f"[DEFAULT DIET] Upload succeeded for user {user_id}, URL: {pdf_url}")
         
         # Get trial start time for lastDietUpload - use passed trial_start_date if available
         # This ensures countdown starts from trial start, not diet assignment time
@@ -5421,8 +5434,28 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
             "new_diet_received": True
         }
         
-        firestore_db.collection("user_profiles").document(user_id).update(diet_info)
-        logger.info(f"[DEFAULT DIET] Updated user profile with diet info for user {user_id}")
+        # Update Firestore and verify the update
+        try:
+            firestore_db.collection("user_profiles").document(user_id).update(diet_info)
+            logger.info(f"[DEFAULT DIET] Firestore update initiated for user {user_id}")
+            
+            # Verify the update succeeded
+            verify_doc = firestore_db.collection("user_profiles").document(user_id).get()
+            if verify_doc.exists:
+                verify_data = verify_doc.to_dict()
+                if verify_data.get("dietPdfUrl") == default_diet_filename:
+                    logger.info(f"[DEFAULT DIET] Verified dietPdfUrl is set correctly for user {user_id}")
+                else:
+                    logger.error(f"[DEFAULT DIET] dietPdfUrl not set correctly for user {user_id}. Expected: {default_diet_filename}, Got: {verify_data.get('dietPdfUrl')}")
+                    return False
+            else:
+                logger.error(f"[DEFAULT DIET] User profile not found after update for user {user_id}")
+                return False
+        except Exception as update_error:
+            logger.error(f"[DEFAULT DIET] Firestore update failed for user {user_id}: {update_error}")
+            import traceback
+            logger.error(f"[DEFAULT DIET] Traceback: {traceback.format_exc()}")
+            return False
         
         # Extract notifications from the diet PDF (same as when dietician uploads)
         try:

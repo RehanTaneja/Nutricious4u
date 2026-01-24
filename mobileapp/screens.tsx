@@ -673,7 +673,8 @@ const LoginSignupScreen = () => {
       const user = userCredential.user;
 
       if (user) {
-        // Create user profile
+        // Create user profile with only signup fields
+        // All other fields (currentWeight, goalWeight, height, etc.) will be collected in QnA screen
         await createUserProfile({
           id: user.uid,
           userId: user.uid, // For backward compatibility
@@ -681,20 +682,7 @@ const LoginSignupScreen = () => {
           lastName,
           age: parseInt(age),
           gender,
-          email,
-          currentWeight: 70,
-          goalWeight: 70,
-          height: 170,
-          dietaryPreference: 'vegetarian',
-          favouriteCuisine: '',
-          allergies: '',
-          medicalConditions: '',
-          targetCalories: 2000,
-          targetProtein: 150,
-          targetFat: 65,
-          activityLevel: 'moderate',
-
-          caloriesBurnedGoal: 500
+          email
         });
 
         // Save credentials if remember me is checked

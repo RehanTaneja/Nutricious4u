@@ -846,14 +846,28 @@ function AppContent() {
                     // Add EAS build-specific error handling
                     try {
                       profile = await getUserProfile(firebaseUser.uid);
-                      if (profile && profile.firstName && profile.firstName !== 'User') {
+                      // Check if profile has complete data (not just firstName)
+                      // Profile is complete if it has currentWeight, goalWeight, height, dietaryPreference, activityLevel
+                      const hasCompleteProfile = profile && 
+                        profile.firstName && 
+                        profile.firstName !== 'User' &&
+                        profile.currentWeight !== null && 
+                        profile.currentWeight !== undefined &&
+                        profile.goalWeight !== null && 
+                        profile.goalWeight !== undefined &&
+                        profile.height !== null && 
+                        profile.height !== undefined &&
+                        profile.dietaryPreference &&
+                        profile.activityLevel;
+
+                      if (hasCompleteProfile) {
                         setHasCompletedQuiz(true);
                         await AsyncStorage.setItem('hasCompletedQuiz', 'true');
                         console.log('[Profile Check] User has completed profile, quiz status: true');
                       } else {
                         setHasCompletedQuiz(false);
                         await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-                        console.log('[Profile Check] User has no profile or placeholder profile, quiz status: false');
+                        console.log('[Profile Check] User profile incomplete, quiz status: false');
                       }
                     } catch (profileError: any) {
                       console.log('[Profile Check] Error checking profile:', profileError);
