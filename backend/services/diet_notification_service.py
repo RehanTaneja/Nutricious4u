@@ -1158,10 +1158,41 @@ class DietNotificationService:
             
             logger.info(f"Extracted {len(notifications)} timed activities from diet PDF for user {user_id}")
             
-            # For free trial diets, skip grouping and return notifications as-is
+            # For free trial diets, group consecutive notifications within 1 hour per trial day
             if is_free_trial_diet:
-                logger.info(f"[FREE TRIAL] Returning {len(notifications)} free trial notifications without grouping")
-                return notifications
+                grouped_notifications = []
+                trial_days = sorted({n.get('trialDay') for n in notifications if n.get('trialDay') in [1, 2, 3]})
+                
+                for trial_day in trial_days:
+                    day_notifications = [
+                        n for n in notifications
+                        if n.get('trialDay') == trial_day
+                    ]
+                    
+                    if day_notifications:
+                        day_grouped = self._group_consecutive_notifications(day_notifications, max_gap_minutes=60)
+                        
+                        # Ensure grouped notifications retain trial metadata
+                        for grouped_notif in day_grouped:
+                            grouped_notif['isFreeTrialDiet'] = True
+                            grouped_notif['trialDay'] = trial_day
+                            if grouped_notif.get('grouped'):
+                                grouped_notif['id'] = f"{grouped_notif.get('id', '')}_trialday{trial_day}"
+                        
+                        grouped_notifications.extend(day_grouped)
+                        logger.info(f"[GROUPING] Trial Day {trial_day}: {len(day_notifications)} notifications grouped into {len(day_grouped)} groups")
+                
+                # Safety: preserve any notifications missing trialDay without grouping
+                notifications_without_trial_day = [
+                    n for n in notifications
+                    if n.get('trialDay') not in [1, 2, 3]
+                ]
+                if notifications_without_trial_day:
+                    logger.warning(f"[GROUPING] Found {len(notifications_without_trial_day)} free trial notifications without trialDay, skipping grouping")
+                    grouped_notifications.extend(notifications_without_trial_day)
+                
+                logger.info(f"[GROUPING] Final (free trial): {len(notifications)} individual notifications grouped into {len(grouped_notifications)} notifications")
+                return grouped_notifications
             
             # Group consecutive notifications within 1 hour for each day (regular diets only)
             # This reduces notification count while maintaining all tasks
