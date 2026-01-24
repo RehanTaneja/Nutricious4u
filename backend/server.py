@@ -5390,10 +5390,9 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         from concurrent.futures import ThreadPoolExecutor
         
         # Path to free trial diet PDF (relative to backend directory)
-        # The PDF is in mobileapp/FREE TRIAL DIET.pdf
+        # The PDF is now in backend/FREE TRIAL DIET.pdf
         backend_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(backend_dir)  # Go up one level from backend/
-        trial_diet_path = os.path.join(project_root, "mobileapp", "FREE TRIAL DIET.pdf")
+        trial_diet_path = os.path.join(backend_dir, "FREE TRIAL DIET.pdf")
         
         if not os.path.exists(trial_diet_path):
             logger.error(f"[DEFAULT DIET] Free trial diet PDF not found at {trial_diet_path}")
