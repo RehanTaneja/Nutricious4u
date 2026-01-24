@@ -386,6 +386,25 @@ function AppContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isDietician, checkingAuth, checkingProfile, loading]);
+
+  // Watch for quiz completion and trigger popup check immediately
+  useEffect(() => {
+    if (hasCompletedQuiz && user && !isDietician && !checkingAuth && !checkingProfile && !loading) {
+      console.log('[Quiz Completion] Quiz completed, checking for mandatory popups...');
+      const checkPopupsAfterQuiz = async () => {
+        try {
+          const status = await getSubscriptionStatus(user.uid);
+          await checkAndShowMandatoryPopups(status);
+        } catch (error) {
+          console.error('[Quiz Completion] Error checking popups:', error);
+        }
+      };
+      // Small delay to ensure navigation completes
+      setTimeout(checkPopupsAfterQuiz, 500);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCompletedQuiz, user, isDietician, checkingAuth, checkingProfile, loading]);
+
   const [lastResetDate, setLastResetDate] = useState<string | null>(null);
   
   // App lock state

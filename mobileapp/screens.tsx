@@ -1468,6 +1468,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       setDietPdfUrl(dietData.dietPdfUrl || null);
       
       if (dietData.dietPdfUrl) {
+        // Check subscription status to ensure user has access (trial or active subscription)
+        const subscriptionStatus = await getSubscriptionStatus(userId);
+        const canAccessDiet = subscriptionStatus.isTrialActive || 
+                              subscriptionStatus.isSubscriptionActive ||
+                              (dietData.dietPdfUrl && subscriptionStatus.subscriptionPlan === 'trial');
+        
+        if (!canAccessDiet) {
+          Alert.alert('Access Denied', 'Please activate your free trial or subscribe to access your diet plan.');
+          return;
+        }
+        
         // User has diet PDF (trial or paid) - open it
         console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
         
