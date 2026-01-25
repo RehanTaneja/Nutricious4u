@@ -65,6 +65,9 @@ const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = 
   { label: 'Extra Active', value: 'extra active', multiplier: 1.9 },
 ];
 
+const TERMS_URL = 'https://nutricious4u-63158.web.app/terms.html';
+const PRIVACY_URL = 'https://nutricious4u-63158.web.app/privacy.html';
+
 // Global helper function to get the correct PDF URL with cache busting
 const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
   if (!pdfUrl) return null;
@@ -4258,6 +4261,22 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
           <StyledButton title="Save" onPress={handleSave} disabled={!hasUnsavedChanges || loading} />
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           
+          <View style={styles.legalSection}>
+            <Text style={styles.legalSectionTitle}>Legal</Text>
+            <TouchableOpacity
+              style={styles.legalLinkButton}
+              onPress={() => Linking.openURL(TERMS_URL)}
+            >
+              <Text style={styles.legalLinkText}>Terms & Conditions</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.legalLinkButton}
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+            >
+              <Text style={styles.legalLinkText}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Delete Account Section - Only show for non-dietician users */}
           {!isDietician && (
             <View style={{ marginTop: 32, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#e0e0e0' }}>
@@ -8190,6 +8209,30 @@ const styles = StyleSheet.create({
   errorText: {
     color: COLORS.error,
     marginTop: 8,
+    textAlign: 'center',
+  },
+  legalSection: {
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  legalSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  legalLinkButton: {
+    backgroundColor: '#E6F0FF',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  legalLinkText: {
+    color: '#1D4ED8',
+    fontWeight: '600',
     textAlign: 'center',
   },
   daySelectorContainer: {
