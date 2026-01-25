@@ -1478,7 +1478,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                               (dietData.dietPdfUrl && subscriptionStatus.subscriptionPlan === 'trial');
         
         if (!canAccessDiet) {
-          Alert.alert('Access Denied', 'Please activate your free trial or subscribe to access your diet plan.');
+          Alert.alert('Access Denied', 'Please activate your free trial consultation or start a consultation period to access your diet plan.');
           return;
         }
         
@@ -1504,7 +1504,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         }
       } else {
         // No diet PDF - show appropriate message
-        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician or start a free trial.');
+        Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician or start a free trial consultation.');
       }
     } catch (e) {
       console.error('Failed to open diet PDF:', e);
@@ -3720,7 +3720,7 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 onPress={() => navigation.navigate('MySubscriptions')}
                 activeOpacity={0.85}
               >
-                <Text style={styles.mySubscriptionsButtonText}>My Subscriptions</Text>
+                <Text style={styles.mySubscriptionsButtonText}>My Consultation</Text>
               </TouchableOpacity>
             </View>
                           <View style={styles.settingsButtonRow}>
@@ -10421,8 +10421,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}>
       <View style={styles.settingsContainer}>
-        <Text style={styles.screenTitle}>Choose Your Plan</Text>
-        <Text style={styles.screenSubtitle}>Select a subscription plan to unlock premium features</Text>
+        <Text style={styles.screenTitle}>Choose Consultation Period</Text>
+        <Text style={styles.screenSubtitle}>Select your consultation commitment period. The app provides convenient access to your consultation tools.</Text>
         
         {error && (
           <View style={styles.subscriptionErrorContainer}>
@@ -10468,7 +10468,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
 
         <View style={styles.subscriptionButtonContainer}>
           <StyledButton
-            title={subscribing ? "Subscribing..." : "Subscribe Now"}
+            title={subscribing ? "Processing..." : "Confirm Consultation Period"}
             onPress={handleSelectPlan}
             disabled={!selectedPlan || subscribing}
             style={styles.subscriptionButton}
@@ -10498,7 +10498,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
-            <Text style={styles.successTitle}>Subscription Successful! 🎉</Text>
+            <Text style={styles.successTitle}>Consultation Period Confirmed! 🎉</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity
               style={[styles.successButton, { backgroundColor: COLORS.white }]}
@@ -10540,25 +10540,25 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
         <View style={styles.popupContainer}>
           <Text style={styles.popupTitle}>Welcome to Nutricious4u! 🎉</Text>
           <Text style={styles.popupSubtitle}>
-            Start your fitness journey with a free 1-day trial
+            Start with a free 1-day trial consultation period
           </Text>
           
           <View style={{ marginVertical: 20 }}>
             <Text style={[styles.popupSubtitle, { textAlign: 'left', marginBottom: 12, color: COLORS.text }]}>
-              Your free trial includes:
+              Your free trial consultation includes access to:
             </Text>
             <View style={{ marginLeft: 8 }}>
               <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
-                ✓ All premium features
+                ✓ All consultation tools
               </Text>
               <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
-                ✓ Personalized diet plan
+                ✓ Access to your dietician's personalized diet plan
               </Text>
               <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
-                ✓ AI Chatbot support
+                ✓ Emergency diet support chatbot
               </Text>
               <Text style={[styles.popupPlanDescription, { marginBottom: 8 }]}>
-                ✓ Advanced notifications
+                ✓ Diet reminder notifications
               </Text>
             </View>
           </View>
@@ -10576,7 +10576,7 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
               <ActivityIndicator color={COLORS.text} size="small" />
             ) : (
               <Text style={styles.popupConfirmButtonText}>
-                Activate Free Trial
+                Activate Free Trial Consultation
               </Text>
             )}
           </TouchableOpacity>
@@ -10630,33 +10630,33 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
     >
       <View style={styles.popupOverlay} pointerEvents="box-none">
         <View style={styles.popupContainer}>
-          <Text style={styles.popupTitle}>Select a Subscription Plan</Text>
+          <Text style={styles.popupTitle}>Select Consultation Period</Text>
           {isTrialEnd && (
             <>
               <Text style={[styles.popupSubtitle, { color: COLORS.primary, fontWeight: '600', marginBottom: 8, fontSize: 16 }]}>
-                ⏰ Your free trial has ended
+                ⏰ Your free trial consultation period has ended
               </Text>
               <View style={{ marginBottom: 16, padding: 12, backgroundColor: COLORS.lightGreen, borderRadius: 8 }}>
                 <Text style={[styles.popupPlanDescription, { marginBottom: 8, fontWeight: '600' }]}>
-                  To continue enjoying premium features:
+                  To continue accessing your consultation tools:
                 </Text>
                 <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
-                  ✓ Personalized diet plans
+                  ✓ Access to your dietician's personalized diet plans
                 </Text>
                 <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
-                  ✓ AI Chatbot support
+                  ✓ Emergency diet support chatbot (for consultation questions)
                 </Text>
                 <Text style={[styles.popupPlanDescription, { marginBottom: 4 }]}>
-                  ✓ Custom diet notifications
+                  ✓ Diet reminder notifications from your consultation
                 </Text>
                 <Text style={[styles.popupPlanDescription, { marginTop: 8, fontStyle: 'italic' }]}>
-                  Select a plan below to continue your fitness journey!
+                  Select a consultation period below to continue your consultation services!
                 </Text>
               </View>
             </>
           )}
           <Text style={styles.popupSubtitle}>
-            {message || (isTrialEnd ? "" : "Choose a plan to continue your fitness journey")}
+            {message || (isTrialEnd ? "" : "Choose a consultation period to continue your consultation services")}
           </Text>
           
           <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
@@ -10710,10 +10710,10 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
             }}>
               <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={[styles.popupPlanDescription, { fontWeight: '600', marginBottom: 4 }]}>
-                  Auto-Renewal
+                  Auto-Renew Consultation Period
                 </Text>
                 <Text style={[styles.popupPlanDescription, { fontSize: 12, color: COLORS.placeholder }]}>
-                  Automatically renew your subscription when it expires
+                  Automatically renew your consultation period when it expires
                 </Text>
               </View>
               <Switch
@@ -10739,7 +10739,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
               <ActivityIndicator color={COLORS.text} size="small" />
             ) : (
               <Text style={styles.popupConfirmButtonText}>
-                Confirm Selection
+                Confirm Consultation Period
               </Text>
             )}
           </TouchableOpacity>
@@ -10926,54 +10926,29 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      // Cancel diet notifications locally first using comprehensive method
-      console.log('[Subscription Cancellation] Cancelling local diet notifications...');
-      const unifiedNotificationService = require('./services/unifiedNotificationService').default;
-      const localCancelledCount = await unifiedNotificationService.cancelAllDietNotifications();
-      console.log(`[Subscription Cancellation] Cancelled ${localCancelledCount} local diet notifications`);
+      // Note: We no longer cancel notifications immediately - they continue until period ends
+      // This is consistent with consultation service model - user paid for the period
+      console.log('[Subscription Cancellation] Disabling auto-renewal (access continues until period ends)...');
 
       const result = await cancelSubscription(userId);
       if (result.success) {
         setShowCancelSubscriptionModal(false);
-        // Show custom green success popup with total notification count
-        let successMessage = result.message;
-        const totalCancelled = localCancelledCount + (result.cancelled_notifications || 0);
-        if (totalCancelled > 0) {
-          successMessage += `\n\n${totalCancelled} diet notifications have been cancelled.`;
-        }
-        setCancelSuccessMessage(successMessage);
+        // Show success message from backend (explains access continues until period ends)
+        setCancelSuccessMessage(result.message);
         setShowCancelSuccessModal(true);
         // Refresh subscription status
-        const updatedStatus = await fetchSubscriptionStatus();
+        await fetchSubscriptionStatus();
         // Refresh the subscription context
         refreshSubscriptionStatus();
         
-        // After cancellation, check if we need to show mandatory plan selection popup
-        // Check the updated status to see if plan selection is required
-        if (updatedStatus && (updatedStatus.requiresPlanSelection || updatedStatus.subscriptionStatus === "cancelled")) {
-          // Fetch plans and show mandatory popup
-          try {
-            const plans = await getSubscriptionPlans();
-            setPlans(plans);
-            // Close success modal and show mandatory popup
-            setTimeout(() => {
-              setShowCancelSuccessModal(false);
-              setShowMandatoryPlanPopupAfterCancel(true);
-            }, 2000); // Show success message for 2 seconds first
-          } catch (planError) {
-            console.error('[Cancellation] Failed to fetch plans:', planError);
-            // Still show popup
-            setTimeout(() => {
-              setShowCancelSuccessModal(false);
-              setShowMandatoryPlanPopupAfterCancel(true);
-            }, 2000);
-          }
-        }
+        // Note: We don't show mandatory plan selection popup immediately
+        // It will be shown automatically when the consultation period expires naturally
+        // The backend will handle expiry and trigger plan selection requirement
       } else {
-        Alert.alert('Error', result.message || 'Failed to cancel subscription');
+        Alert.alert('Error', result.message || 'Failed to cancel consultation period');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to cancel subscription');
+      Alert.alert('Error', e.message || 'Failed to cancel consultation period');
     }
   };
 
@@ -10993,11 +10968,11 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
 
   const getPlanName = (planId: string) => {
     switch (planId) {
-      case '1month': return '1 Month Plan';
-      case '2months': return '2 Months Plan';
-      case '3months': return '3 Months Plan';
-      case '6months': return '6 Months Plan';
-      case 'trial': return 'Free Trial';
+      case '1month': return '1 Month Consultation';
+      case '2months': return '2 Months Consultation';
+      case '3months': return '3 Months Consultation';
+      case '6months': return '6 Months Consultation';
+      case 'trial': return 'Free Trial Consultation';
       default: return 'Unknown Plan';
     }
   };
@@ -11007,31 +10982,31 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const availablePlans = [
     {
       planId: '1month',
-      name: '1 Month Plan',
+      name: '1 Month Consultation',
       duration: '1 month',
       price: 5000,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect for trying out premium features'
+      description: isFreeUser ? 'Start consultation to access your dietician\'s services and consultation tools' : 'Perfect for trying out consultation services'
     },
     {
       planId: '2months',
-      name: '2 Months Plan',
+      name: '2 Months Consultation',
       duration: '2 months',
       price: 9000,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Great value for consistent progress tracking'
+      description: isFreeUser ? 'Start consultation to access your dietician\'s services and consultation tools' : 'Great value for consistent consultation support'
     },
     {
       planId: '3months',
-      name: '3 Months Plan',
+      name: '3 Months Consultation',
       duration: '3 months',
       price: 12000,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Perfect balance of features and value'
+      description: isFreeUser ? 'Start consultation to access your dietician\'s services and consultation tools' : 'Perfect balance of consultation value'
     },
     {
       planId: '6months',
-      name: '6 Months Plan',
+      name: '6 Months Consultation',
       duration: '6 months',
       price: 20000,
-      description: isFreeUser ? 'Upgrade to get personalized diets, custom notification reminders and AI assistance' : 'Best value for long-term fitness goals'
+      description: isFreeUser ? 'Start consultation to access your dietician\'s services and consultation tools' : 'Best value for long-term consultation support'
     }
   ];
 
@@ -11055,7 +11030,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             >
               <ArrowLeft color={COLORS.primary} size={24} />
             </TouchableOpacity>
-            <Text style={styles.screenTitle}>My Subscriptions</Text>
+            <Text style={styles.screenTitle}>My Consultation</Text>
           </View>
         
         {error && (
@@ -11068,29 +11043,29 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.subscriptionContainer}>
             <View style={styles.subscriptionCard}>
               <View style={styles.subscriptionHeader}>
-                <Text style={styles.subscriptionTitle}>Current Plan</Text>
+                <Text style={styles.subscriptionTitle}>Current Consultation Period</Text>
                 <View style={[
                   styles.statusBadge,
                   subscription.isFreeUser ? styles.freeBadge : (subscription.isSubscriptionActive ? styles.activeBadge : styles.inactiveBadge)
                 ]}>
                   <Text style={styles.statusText}>
-                    {subscription.isFreeUser ? 'Free Plan' : (subscription.isSubscriptionActive ? 'Active' : 'Inactive')}
+                    {subscription.isFreeUser ? 'Free Access' : (subscription.isSubscriptionActive ? 'Active Consultation' : 'Inactive')}
                   </Text>
                 </View>
               </View>
               
               <View style={styles.subscriptionDetails}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Plan:</Text>
+                  <Text style={styles.detailLabel}>Consultation Period:</Text>
                   <Text style={styles.detailValue}>
                     {subscription.isTrialActive 
-                      ? 'Free Trial' 
+                      ? 'Free Trial Consultation' 
                       : (subscription.isFreeUser 
-                        ? 'Free Plan' 
+                        ? 'Free Access' 
                         : (subscription.subscriptionPlan 
                           ? getPlanName(subscription.subscriptionPlan) 
                           : (subscription.subscriptionStatus === 'trial' 
-                            ? 'Free Trial' 
+                            ? 'Free Trial Consultation' 
                             : 'No Plan')))}
                   </Text>
                 </View>
@@ -11126,7 +11101,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 {/* Display pending plan switch info */}
                 {subscription.pendingPlanSwitch && subscription.pendingPlanSwitch.newPlanId && (
                   <View style={styles.renewalContainer}>
-                    <Text style={styles.renewalText}>Plan Switch Scheduled</Text>
+                    <Text style={styles.renewalText}>Consultation Period Switch Scheduled</Text>
                     <Text style={[styles.renewalText, { fontSize: 14, color: COLORS.placeholder, marginBottom: 12, marginTop: 4 }]}>
                       {getPlanName(subscription.subscriptionPlan || '')} → {getPlanName(subscription.pendingPlanSwitch.newPlanId)}
                     </Text>
@@ -11150,10 +11125,10 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 {!subscription.pendingPlanSwitch && subscription.autoRenewalEnabled && subscription.isSubscriptionActive && !subscription.isFreeUser && (
                   <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
                     <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600' }]}>
-                      Auto-Renewal:
+                      Auto-Renew Consultation:
                     </Text>
                     <Text style={[styles.detailValue, { color: COLORS.primary }]}>
-                      Current {getPlanName(subscription.subscriptionPlan || '')} will be renewed
+                      Current {getPlanName(subscription.subscriptionPlan || '')} consultation period will be renewed
                     </Text>
                   </View>
                 )}
@@ -11168,9 +11143,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 {!subscription.isFreeUser && subscription.isSubscriptionActive && (
                   <View style={styles.detailRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.detailLabel}>Auto-Renewal</Text>
+                      <Text style={styles.detailLabel}>Auto-Renew Consultation Period</Text>
                       <Text style={[styles.detailLabel, { fontSize: 12, marginTop: 4, color: COLORS.placeholder }]}>
-                        Automatically renew your subscription when it expires
+                        Automatically renew your consultation period when it expires
                       </Text>
                     </View>
                     <Switch
@@ -11189,13 +11164,13 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             {!subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
                 <Text style={[styles.renewalText, { fontSize: 18, fontWeight: '600', marginBottom: 8 }]}>
-                  ⚠️ Your plan has ended
+                  ⚠️ Your consultation period has ended
                 </Text>
                 <Text style={[styles.renewalText, { fontSize: 14, color: COLORS.placeholder, marginBottom: 16, textAlign: 'center' }]}>
-                  Your plan has ended. Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.
+                  Your consultation period has ended. Select a new consultation period to continue accessing your consultation tools like diet plans, messaging with your dietician, and appointment scheduling.
                 </Text>
                 <StyledButton
-                  title="Select a Plan"
+                  title="Select Consultation Period"
                   onPress={() => navigation.navigate('SubscriptionSelection')}
                   style={styles.renewalButton}
                 />
@@ -11204,9 +11179,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             
             {subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
-                <Text style={styles.renewalText}>You are currently on the free plan</Text>
+                <Text style={styles.renewalText}>You are currently on free access</Text>
                 <StyledButton
-                  title="Upgrade to Premium"
+                  title="Start Consultation Period"
                   onPress={() => navigation.navigate('SubscriptionSelection')}
                   style={styles.renewalButton}
                 />
@@ -11215,15 +11190,15 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             
             {subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
-                <Text style={styles.renewalText}>Your subscription is active</Text>
+                <Text style={styles.renewalText}>Your consultation period is active</Text>
                 <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
                   <StyledButton
-                    title="Switch Plan"
+                    title="Change Consultation Period"
                     onPress={handlePlanSwitch}
                     style={[styles.renewalButton, { flex: 1 }]}
                   />
                   <StyledButton
-                    title="Cancel Subscription"
+                    title="Cancel Consultation Period"
                     onPress={() => handleCancelSubscription()}
                     style={[styles.renewalButton, { backgroundColor: '#ff4444', flex: 1 }]}
                   />
@@ -11233,7 +11208,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             
             {/* Our Plans Widget */}
             <View style={styles.ourPlansContainer}>
-              <Text style={styles.ourPlansTitle}>Our Plans</Text>
+              <Text style={styles.ourPlansTitle}>Available Consultation Periods</Text>
               <View style={styles.plansList}>
                 {availablePlans.map((plan) => (
                   <View key={plan.planId} style={styles.planItem}>
@@ -11252,9 +11227,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           </View>
         ) : (
           <View style={styles.noSubscriptionContainer}>
-            <Text style={styles.noSubscriptionText}>No subscription found</Text>
+            <Text style={styles.noSubscriptionText}>No active consultation period</Text>
             <StyledButton
-              title="Get a Subscription"
+              title="Start Consultation Period"
               onPress={() => navigation.navigate('SubscriptionSelection')}
               style={styles.getSubscriptionButton}
             />
@@ -11272,9 +11247,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.popupOverlay}>
           <View style={styles.popupContainer}>
-            <Text style={styles.popupTitle}>Select a Subscription Plan</Text>
+            <Text style={styles.popupTitle}>Select Consultation Period</Text>
             <Text style={styles.popupSubtitle}>
-              Choose a plan to continue your fitness journey
+              Choose a consultation period to continue your consultation services
             </Text>
             
             <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
@@ -11340,9 +11315,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#34D399', padding: 32, margin: 30 }]}>
-            <Text style={styles.successTitle}>Cancel Subscription</Text>
+            <Text style={styles.successTitle}>Cancel Consultation Period</Text>
             <Text style={styles.successMessage}>
-              Are you sure you want to cancel your subscription? You will need to select a new plan to continue using premium features.
+              Are you sure you want to cancel your consultation period? Auto-renewal will be disabled, but you will retain access to consultation tools until your current consultation period ends. After that, you'll need to select a new consultation period to continue.
             </Text>
             <View style={[styles.modalButtonRow, { marginTop: 24 }]}>
               <TouchableOpacity
@@ -11371,7 +11346,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
-            <Text style={styles.successTitle}>Subscription Cancelled! ✅</Text>
+            <Text style={styles.successTitle}>Consultation Period Cancelled! ✅</Text>
             <Text style={styles.successMessage}>{cancelSuccessMessage}</Text>
             <TouchableOpacity
               style={[styles.successButton, { backgroundColor: COLORS.white }]}
@@ -11414,7 +11389,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
           }
         }}
         confirming={addingAmount}
-        message="Your subscription has been cancelled. Please select a plan to continue your fitness journey."
+        message="Your consultation period cancellation has been confirmed. Please select a consultation period to continue your consultation services."
       />
 
       {/* Plan Switch Popup */}
@@ -11426,7 +11401,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.popupOverlay} pointerEvents="box-none">
           <View style={styles.popupContainer}>
-            <Text style={styles.popupTitle}>Switch Subscription Plan</Text>
+            <Text style={styles.popupTitle}>Change Consultation Period</Text>
             <Text style={styles.popupSubtitle}>
               Your new plan will activate after your current plan ends
             </Text>
@@ -11494,7 +11469,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
-            <Text style={styles.successTitle}>✅ Plan Switch Scheduled!</Text>
+            <Text style={styles.successTitle}>✅ Consultation Period Change Scheduled!</Text>
             <Text style={styles.successMessage}>{planSwitchSuccessMessage}</Text>
             <TouchableOpacity
               style={[styles.successButton, { backgroundColor: COLORS.white }]}
@@ -13871,7 +13846,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                   
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>Plan:</Text>
+                    <Text style={styles.userInfoLabel}>Consultation Period:</Text>
                     <Text style={styles.userInfoValue}>{selectedUserInfo.plan}</Text>
                   </View>
                   

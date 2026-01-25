@@ -3500,7 +3500,7 @@ async def check_subscription_reminders_job():
                     # Send 1 day reminder notification
                     await send_payment_reminder_notification(user_id, user_data, 1)  # 1 day
                 
-                # Check if subscription has expired
+                # Check if consultation period has expired
                 elif time_until_expiry <= timedelta(0):
                     # First check if there's a pending plan switch - activate it
                     pending_switch = user_data.get("pendingPlanSwitch")
@@ -3514,7 +3514,7 @@ async def check_subscription_reminders_job():
                     auto_renewal_enabled = user_data.get("autoRenewalEnabled", True)  # Default to True
                     
                     if auto_renewal_enabled:
-                        # Auto-renew the subscription
+                        # Auto-renew the consultation period
                         await auto_renew_subscription(user_id, user_data)
                     else:
                         # Send expiry notification to both user and dietician
@@ -3614,7 +3614,7 @@ async def add_payment_on_plan_end(user_id: str, user_data: dict):
         logger.info(f"[PAYMENT ADD] Added ₹{current_amount:,.0f} to total for user {user_id} (plan: {plan_name}). New total: ₹{new_total:,.0f}")
         
         # Store payment info in user profile for inclusion in expiry notification
-        # Don't send separate payment_added notification - it will be included in subscription_expired notification
+        # Don't send separate payment_added notification - it will be included in consultation period expired notification
         user_name = get_user_first_name(user_data)
         logger.info(f"[PAYMENT ADD] Payment info stored for user {user_id}. Will be included in expiry notification.")
         
@@ -3633,14 +3633,14 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         
         # Handle days-based reminders
         if time_remaining == 7:
-            message = f"Hi {user_name}, your {plan_name} will end in 7 days. Payment of ₹{current_amount:,.0f} will be added to your total amount due. Your premium features will continue if auto-renewal is enabled."
-            title = "Plan Ending Soon"
+            message = f"Hi {user_name}, your {plan_name} consultation period will end in 7 days. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due. Your consultation access will continue if auto-renewal is enabled."
+            title = "Consultation Period Ending Soon"
         elif time_remaining == 1:
-            message = f"Hi {user_name}, your {plan_name} will end in 1 day. Payment of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new plan to continue."
-            title = "Plan Ending Tomorrow"
+            message = f"Hi {user_name}, your {plan_name} consultation period will end in 1 day. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new consultation period to continue."
+            title = "Consultation Period Ending Tomorrow"
         else:
-            message = f"Hi {user_name}, your {plan_name} will end in {time_remaining} days. Payment of ₹{current_amount:,.0f} will be added to your total amount due."
-            title = "Plan Ending Soon"
+            message = f"Hi {user_name}, your {plan_name} consultation period will end in {time_remaining} days. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due."
+            title = "Consultation Period Ending Soon"
         
         # Create notification data
         notification_data = {
@@ -4090,7 +4090,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
         logger.error(f"[SUBSCRIPTION RENEWAL NOTIFICATIONS] Error: {e}")
 
 async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
-    """Send expiry notifications to both user and dietician and mark subscription as expired"""
+    """Send expiry notifications to both user and dietician and mark consultation period as expired"""
     try:
         user_name = get_user_first_name(user_data)
         subscription_plan = user_data.get("subscriptionPlan", "Unknown Plan")
@@ -4104,19 +4104,19 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         if current_amount > 0:
             payment_info = f" ₹{current_amount:,.0f} has been added to your total amount due."
         
-        # IMPORTANT: Mark subscription as expired and inactive when auto-renewal is disabled
-        # This ensures the subscription doesn't remain "active" after expiry
+        # IMPORTANT: Mark consultation period as expired and inactive when auto-renewal is disabled
+        # This ensures the consultation period doesn't remain "active" after expiry
         firestore_db.collection("user_profiles").document(user_id).update({
             "isSubscriptionActive": False,
             "subscriptionStatus": "expired"
         })
-        logger.info(f"[SUBSCRIPTION EXPIRY] Marked subscription as expired for user {user_id} (auto-renewal disabled)")
+        logger.info(f"[SUBSCRIPTION EXPIRY] Marked consultation period as expired for user {user_id} (auto-renewal disabled)")
         
         # Send notification to user
         user_notification = {
             "userId": user_id,
-            "title": "Plan Ended",
-            "body": f"Hi {user_name}, your {plan_name} has ended.{payment_info} Select a new plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
+            "title": "Consultation Period Ended",
+            "body": f"Hi {user_name}, your {plan_name} consultation period has ended.{payment_info} Select a new consultation period to continue accessing your consultation tools like diet plans, messaging with your dietician, and appointment scheduling.",
             "type": "subscription_expired",
             "timestamp": datetime.now().isoformat(),
             "read": False,
@@ -4133,8 +4133,8 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         notification_service = get_notification_service(firestore_db)
         user_success = notification_service.send_notification(
             recipient_id=user_id,
-            title="Subscription Expired",
-            body=f"Hi {user_name}, your {plan_name} has ended. Select a new plan to continue!",
+            title="Consultation Period Expired",
+            body=f"Hi {user_name}, your {plan_name} consultation period has ended. Select a new consultation period to continue!",
             data={
                 "type": "subscription_expired",
                 "planId": subscription_plan,
@@ -4153,7 +4153,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         logger.error(f"[SUBSCRIPTION EXPIRY NOTIFICATIONS] Error: {e}")
 
 async def send_new_subscription_notification(user_id: str, user_data: dict, plan_id: str):
-    """Send notification to dietician about new subscription"""
+    """Send notification to dietician about new consultation period"""
     try:
         user_name = get_user_first_name(user_data)
         plan_name = get_plan_name(plan_id)
@@ -4193,10 +4193,10 @@ async def send_new_subscription_notification(user_id: str, user_data: dict, plan
 def get_plan_name(plan_id: str) -> str:
     """Get plan name from plan ID"""
     plan_names = {
-        "1month": "1 Month Plan",
-        "2months": "2 Months Plan",
-        "3months": "3 Months Plan",
-        "6months": "6 Months Plan"
+        "1month": "1 Month Consultation",
+        "2months": "2 Months Consultation",
+        "3months": "3 Months Consultation",
+        "6months": "6 Months Consultation"
     }
     return plan_names.get(plan_id, "Unknown Plan")
 
@@ -4247,73 +4247,73 @@ async def get_subscription_plans():
             },
             {
                 "planId": "1month", 
-                "name": "1 Month Plan",
+                "name": "1 Month Consultation",
                 "duration": "1 month",
                 "price": 5000.0,
-                "description": "Access to premium features for 1 month",
+                "description": "1 month commitment to dietician consultation services. App provides convenient access to consultation tools.",
                 "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning",
-                    "Progress reports"
+                    "Access to your dietician's personalized diet plans",
+                    "Emergency diet support chatbot (for consultation questions)",
+                    "Diet reminder notifications from your consultation",
+                    "Direct messaging with your dietician",
+                    "Schedule consultation appointments",
+                    "Progress tracking to share with your dietician",
+                    "View consultation history"
                 ],
                 "isFree": False
             },
             {
                 "planId": "2months", 
-                "name": "2 Months Plan",
+                "name": "2 Months Consultation",
                 "duration": "2 months",
                 "price": 9000.0,
-                "description": "Access to premium features for 2 months",
+                "description": "2 months commitment to dietician consultation services. App provides convenient access to consultation tools.",
                 "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning",
-                    "Progress reports"
+                    "Access to your dietician's personalized diet plans",
+                    "Emergency diet support chatbot (for consultation questions)",
+                    "Diet reminder notifications from your consultation",
+                    "Direct messaging with your dietician",
+                    "Schedule consultation appointments",
+                    "Progress tracking to share with your dietician",
+                    "View consultation history"
                 ],
                 "isFree": False
             },
             {
                 "planId": "3months", 
-                "name": "3 Months Plan",
+                "name": "3 Months Consultation",
                 "duration": "3 months",
                 "price": 12000.0,
-                "description": "Access to premium features for 3 months",
+                "description": "3 months commitment to dietician consultation services. App provides convenient access to consultation tools.",
                 "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning",
-                    "Progress reports",
-                    "Nutritional counseling"
+                    "Access to your dietician's personalized diet plans",
+                    "Emergency diet support chatbot (for consultation questions)",
+                    "Diet reminder notifications from your consultation",
+                    "Direct messaging with your dietician",
+                    "Schedule consultation appointments",
+                    "Progress tracking to share with your dietician",
+                    "View consultation history",
+                    "Nutritional counseling support"
                 ],
                 "isFree": False
             },
             {
                 "planId": "6months", 
-                "name": "6 Months Plan",
+                "name": "6 Months Consultation",
                 "duration": "6 months",
                 "price": 20000.0,
-                "description": "Access to premium features for 6 months",
+                "description": "6 months commitment to dietician consultation services. App provides convenient access to consultation tools.",
                 "features": [
-                    "Personalized diet plans",
-                    "AI Chatbot support",
-                    "Advanced notifications",
-                    "Priority support",
-                    "Detailed analytics",
-                    "Custom meal planning",
-                    "Progress reports",
-                    "Nutritional counseling",
-                    "Monthly check-ins",
-                    "Priority customer support"
+                    "Access to your dietician's personalized diet plans",
+                    "Emergency diet support chatbot (for consultation questions)",
+                    "Diet reminder notifications from your consultation",
+                    "Direct messaging with your dietician",
+                    "Schedule consultation appointments",
+                    "Progress tracking to share with your dietician",
+                    "View consultation history",
+                    "Nutritional counseling support",
+                    "Monthly consultation check-ins",
+                    "Priority consultation support"
                 ],
                 "isFree": False
             }
@@ -4387,7 +4387,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
                 })
                 
                 plan_name = get_plan_name(request.planId)
-                message = f"Auto-renewal enabled! Your {plan_name} will automatically renew when it expires."
+                message = f"Auto-renewal enabled! Your {plan_name} consultation period will automatically renew when it expires."
                 
                 return SubscriptionResponse(
                     success=True,
@@ -4431,7 +4431,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             firestore_db.collection("user_profiles").document(request.userId).update(update_data)
             
             plan_name = get_plan_name(request.planId)
-            message = f"Plan switch scheduled! Your {plan_name} will activate after your current plan ends on {current_end_date.strftime('%B %d, %Y')}."
+            message = f"Consultation period change scheduled! Your {plan_name} consultation will activate after your current consultation period ends on {current_end_date.strftime('%B %d, %Y')}."
             
             return SubscriptionResponse(
                 success=True,
@@ -4472,7 +4472,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             plan_name = get_plan_name(request.planId)
             await send_dietician_subscription_notification(request.userId, updated_user_data, "plan_started", plan_name)
         
-        message = f"Successfully subscribed to {get_plan_name(request.planId)}. Your plan is now active!"
+        message = f"Successfully confirmed {get_plan_name(request.planId)} consultation period. Your consultation access is now active!"
         
         return SubscriptionResponse(
             success=True,
@@ -4586,7 +4586,7 @@ async def get_subscription_status(userId: str):
 
 @api_router.post("/subscription/cancel/{userId}")
 async def cancel_subscription(userId: str):
-    """Cancel a user's subscription and revert to free plan"""
+    """Cancel a user's consultation period by disabling auto-renewal (access continues until period ends)"""
     try:
         check_firebase_availability()
         
@@ -4598,65 +4598,36 @@ async def cancel_subscription(userId: str):
         
         # Check if user has an active subscription to cancel
         if not user_data.get("isSubscriptionActive", False):
-            raise HTTPException(status_code=400, detail="No active subscription to cancel")
+            raise HTTPException(status_code=400, detail="No active consultation period to cancel")
         
-        # Cancel diet notifications when subscription is cancelled
-        cancelled_notifications_count = 0
-        try:
-            logger.info(f"[CANCEL SUBSCRIPTION] Marking diet notifications as cancelled for user {userId}")
-            
-            # Since backend scheduler is disabled, mark notifications as cancelled in Firestore
-            user_notifications_ref = firestore_db.collection("user_notifications").document(userId)
-            user_notifications_doc = user_notifications_ref.get()
-            
-            if user_notifications_doc.exists:
-                notifications_data = user_notifications_doc.to_dict()
-                diet_notifications = notifications_data.get("diet_notifications", [])
-                
-                # Mark all notifications as cancelled
-                for notification in diet_notifications:
-                    notification["status"] = "cancelled"
-                    notification["cancelled_at"] = datetime.now().isoformat()
-                
-                # Update the document
-                user_notifications_ref.update({
-                    "diet_notifications": diet_notifications,
-                    "cancelled_at": datetime.now().isoformat()
-                })
-                
-                cancelled_notifications_count = len(diet_notifications)
-                logger.info(f"[CANCEL SUBSCRIPTION] Marked {cancelled_notifications_count} diet notifications as cancelled in Firestore for user {userId}")
-            else:
-                logger.info(f"[CANCEL SUBSCRIPTION] No diet notifications found for user {userId}")
-                
-        except Exception as e:
-            logger.error(f"[CANCEL SUBSCRIPTION] Error cancelling diet notifications for user {userId}: {e}")
-            # Don't fail the subscription cancellation if notification cancellation fails
+        # Get end date to include in message
+        subscription_end_date = user_data.get("subscriptionEndDate")
+        end_date_str = "your consultation period ends"
+        if subscription_end_date:
+            try:
+                end_date = datetime.fromisoformat(subscription_end_date.replace('Z', '+00:00'))
+                end_date_str = end_date.strftime('%B %d, %Y')
+            except:
+                pass
         
-        # Cancel subscription by setting it to inactive and clearing plan
-        # NOTE: Do NOT set subscriptionPlan to "free" - keep it as None so requiresPlanSelection is triggered
+        # Only disable auto-renewal - keep subscription active until period ends naturally
+        # This is consistent with consultation service model - user paid for the period
         cancel_data = {
-            "isSubscriptionActive": False,
-            "subscriptionPlan": None,  # Keep as None (not "free") to trigger plan selection popup
-            "subscriptionStartDate": None,
-            "subscriptionEndDate": None,
-            "currentSubscriptionAmount": 0.0,
-            "subscriptionStatus": "cancelled",  # Mark as cancelled to trigger mandatory popup
-            "pendingPlanSwitch": None,  # Clear any pending plan switch
-            "nextPlanId": None
+            "autoRenewalEnabled": False,  # Disable auto-renewal
+            "pendingPlanSwitch": None  # Clear any pending plan switch
         }
         
         firestore_db.collection("user_profiles").document(userId).update(cancel_data)
         
-        # Include notification count in success message
-        message = f"Subscription cancelled successfully. Please select a new plan to continue."
-        if cancelled_notifications_count > 0:
-            message += f" {cancelled_notifications_count} diet notifications have been cancelled."
+        logger.info(f"[CANCEL SUBSCRIPTION] Auto-renewal disabled for user {userId}. Consultation period will end on {subscription_end_date or 'period end date'}")
+        
+        # Success message - access continues until period ends
+        message = f"Consultation period cancellation confirmed. Auto-renewal has been disabled. You will retain access to consultation tools until {end_date_str}. After that, you'll need to select a new consultation period to continue."
         
         return {
             "success": True, 
             "message": message,
-            "cancelled_notifications": cancelled_notifications_count
+            "cancelled_notifications": 0  # No notifications cancelled - they continue until period ends
         }
         
     except HTTPException as he:

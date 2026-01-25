@@ -1316,21 +1316,21 @@ function AppContent() {
             let message = '';
             if (isTrial) {
               if (reminder.days === 7) {
-                message = `Your free trial ends in 7 days! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
+                message = `Your free trial consultation ends in 7 days! Select a consultation period now to continue accessing your consultation tools.`;
             } else {
-                message = `Your free trial ends in 1 day! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications.`;
+                message = `Your free trial consultation ends in 1 day! Select a consultation period now to continue accessing your consultation tools.`;
               }
               } else {
               if (reminder.days === 7) {
-                message = `Your ${planName} ends in 7 days. Payment of ${amountText} will be added to your total. Your premium features will continue if auto-renewal is enabled.`;
+                message = `Your ${planName} consultation period ends in 7 days. Consultation fee of ${amountText} will be added to your total. Your consultation access will continue if auto-renewal is enabled.`;
               } else {
-                message = `Your ${planName} ends in 1 day. Payment of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new plan to continue.`;
+                message = `Your ${planName} consultation period ends in 1 day. Consultation fee of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new consultation period to continue.`;
               }
             }
             
             // EXACT MATCH: Use identical notification content structure as diet reminders
             const notificationContent = {
-              title: isTrial ? (reminder.days === 1 ? 'Trial Ending Tomorrow' : 'Trial Ending Soon') : (reminder.days === 1 ? 'Plan Ending Tomorrow' : 'Plan Ending Soon'),
+              title: isTrial ? (reminder.days === 1 ? 'Trial Consultation Ending Tomorrow' : 'Trial Consultation Ending Soon') : (reminder.days === 1 ? 'Consultation Period Ending Tomorrow' : 'Consultation Period Ending Soon'),
               body: message,
               sound: 'default',
               priority: 'high',
@@ -1452,10 +1452,10 @@ function AppContent() {
         // Check both result.subscription.endDate and newStatus.subscriptionEndDate
         const endDate = result.subscription?.endDate || newStatus?.subscriptionEndDate;
         if (endDate) {
-          const planName = selectedPlanId === '1month' ? '1 Month Plan' :
-                          selectedPlanId === '2months' ? '2 Months Plan' :
-                          selectedPlanId === '3months' ? '3 Months Plan' :
-                          selectedPlanId === '6months' ? '6 Months Plan' : 'Plan';
+          const planName = selectedPlanId === '1month' ? '1 Month Consultation' :
+                          selectedPlanId === '2months' ? '2 Months Consultation' :
+                          selectedPlanId === '3months' ? '3 Months Consultation' :
+                          selectedPlanId === '6months' ? '6 Months Consultation' : 'Consultation';
           const planAmount = result.subscription?.amountPaid || newStatus?.currentSubscriptionAmount || 0;
           await scheduleSubscriptionReminders(endDate, planName, false, planAmount);
         }
@@ -1674,9 +1674,9 @@ function AppContent() {
       >
         <View style={styles.upgradeModalOverlay}>
           <View style={styles.upgradeModalContainer}>
-            <Text style={styles.upgradeModalTitle}>Upgrade to a Paid Plan</Text>
+            <Text style={styles.upgradeModalTitle}>Start Consultation Period</Text>
             <Text style={styles.upgradeModalSubtitle}>
-              Get custom diet plans, AI chatbot assistance and custom notifications for your diet
+              Access your dietician's consultation tools including diet plans, messaging, appointments, and progress tracking
             </Text>
             
             <View style={styles.upgradeModalButtons}>
@@ -1697,7 +1697,7 @@ function AppContent() {
                   }
                 }}
               >
-                <Text style={styles.upgradeModalUpgradeButtonText}>My Subscriptions</Text>
+                <Text style={styles.upgradeModalUpgradeButtonText}>My Consultation</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1720,8 +1720,8 @@ function AppContent() {
         onConfirm={handleConfirmPlanSelection}
         confirming={selectingPlan}
         message={subscriptionStatus?.subscriptionStatus === 'trial' || subscriptionStatus?.isTrialActive === false
-          ? "Select a plan below to continue enjoying personalized diet plans, AI chatbot support, and custom notifications."
-          : "Select a plan to continue your fitness journey"}
+          ? "Select a consultation period below to continue accessing your consultation tools like diet plans, messaging with your dietician, and appointment scheduling."
+          : "Select a consultation period to continue your consultation services"}
       />
 
       {/* Trial Success Popup */}
@@ -1733,7 +1733,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>🎉 Free Trial Activated!</Text>
+            <Text style={styles.notificationTitle}>🎉 Free Trial Consultation Activated!</Text>
             <Text style={styles.notificationMessage}>{trialSuccessMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
@@ -1754,7 +1754,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>✅ Subscription Renewed!</Text>
+            <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
@@ -1775,7 +1775,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>🔄 Plan Switched!</Text>
+            <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
@@ -1796,7 +1796,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>✅ Subscription Renewed!</Text>
+            <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
@@ -1817,7 +1817,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={styles.notificationPopup}>
-            <Text style={styles.notificationTitle}>🔄 Plan Switched!</Text>
+            <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 
               style={styles.notificationButton} 
@@ -1838,9 +1838,9 @@ function AppContent() {
       >
         <View style={styles.subscriptionPopupOverlay}>
           <View style={styles.subscriptionPopupContainer}>
-            <Text style={styles.subscriptionPopupTitle}>Select a Subscription Plan</Text>
+            <Text style={styles.subscriptionPopupTitle}>Select Consultation Period</Text>
             <Text style={styles.subscriptionPopupSubtitle}>
-              Choose a plan to continue your fitness journey
+              Choose a consultation period to continue your consultation services
             </Text>
             
             <ScrollView style={styles.subscriptionPlansScrollView} showsVerticalScrollIndicator={false}>
@@ -1889,7 +1889,7 @@ function AppContent() {
                 disabled={!selectedPlan || processingSubscription}
               >
                 <Text style={styles.subscriptionPopupConfirmButtonText}>
-                  {processingSubscription ? 'Processing...' : 'Confirm Selection'}
+                  {processingSubscription ? 'Processing...' : 'Confirm Consultation Period'}
                 </Text>
               </TouchableOpacity>
             </View>

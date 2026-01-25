@@ -3,6 +3,7 @@
     "name": "Nutricious4u",
     "slug": "mobileapp",
     "version": "1.0.0",
+    "description": "Nutricious4u - Companion app for dietician consultation services with Dt. Ekta Taneja. This app provides convenient tools to communicate with your dietician, schedule appointments, access your personalized diet plans, and track your progress between consultations. Access requires an active consultation commitment with Dt. Ekta Taneja. All consultation fees are handled separately as communicated by your dietician.",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "notification": {
