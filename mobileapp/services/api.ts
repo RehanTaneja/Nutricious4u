@@ -916,25 +916,6 @@ export const getWorkoutLogSummary = async (userId: string): Promise<WorkoutLogSu
   return response.data;
 };
 
-export async function scanFoodPhoto(imageUri: string, userId: string) {
-  const formData = new FormData();
-  formData.append('userId', userId);
-  formData.append('photo', {
-    uri: imageUri,
-    name: 'photo.jpg',
-    type: 'image/jpeg',
-  } as any);
-  const response = await fetch(`${API_URL}/food/scan-photo`, {
-    method: 'POST',
-    body: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  if (!response.ok) throw new Error('Failed to scan food photo');
-  return response.json();
-}
-
 // --- Diet PDF Upload (Dietician) ---
 export const uploadDietPdf = async (userId: string, dieticianId: string, file: any) => {
   const formData = new FormData();

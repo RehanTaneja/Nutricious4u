@@ -547,36 +547,6 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
         logger.error(f"[GEMINI WORKOUT ERROR] Exception: {e}", exc_info=True)
         return {'calories': 'Error'}
 
-async def call_gemini_vision(image_path: str):
-    # Use Gemini Vision API to extract calories, protein, fat from the image
-    model = GenerativeModel('gemini-2.5-flash')
-    prompt = (
-        "You are a bot that gives us 3 comma separated numbers representing the calories, protein and fat in the food shown in this photo. Under no circumstances include any other text or extra numbers nor ask any further questions. If you can't give an exact value then give an estimate but only give numbers in the desired format. Only if the food item doesn't exist or can't be recognized will you say the word 'Error' and that's it."
-    )
-    with open(image_path, 'rb') as img_file:
-        image_bytes = img_file.read()
-    try:
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: model.generate_content([
-                {"mime_type": "image/jpeg", "data": image_bytes},
-                prompt
-            ])
-        )
-        raw = response.text.strip()
-        if raw.strip().lower() == "error":
-            return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": raw}
-        try:
-            part1, rest = raw.split(',', 1)
-            calories = float(part1.strip())
-            part2, rest = rest.split(',', 1)
-            protein = float(part2.strip())
-            fat = float(rest.strip())
-            return {"calories": calories, "protein": protein, "fat": fat, "raw": raw}
-        except Exception as e:
-            return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": raw}
-    except Exception as e:
-        return {"calories": "Error", "protein": "Error", "fat": "Error", "raw": str(e)}
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
@@ -3385,62 +3355,6 @@ async def get_steps(platform: str, date: Optional[str] = None):
         return {"steps": steps, "date": start_date.strftime("%Y-%m-%d")}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/food/scan-photo")
-async def scan_food_photo(
-    userId: str = Form(...),
-    photo: UploadFile = File(...)
-):
-    if not userId:
-        raise HTTPException(status_code=400, detail="userId is required")
-    tmp_path = None
-    try:
-        # Limit file size (e.g., 5MB)
-        contents = await photo.read()
-        if len(contents) > 5 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Image too large. Please upload a photo under 5MB.")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-        try:
-            nutrition = await call_gemini_vision(tmp_path)
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=504, detail="Gemini API timed out. Please try again.")
-        except Exception as e:
-            logger.error(f"[GEMINI CALL ERROR] {e}", exc_info=True)
-            raise HTTPException(status_code=502, detail="Failed to process image with Gemini. Please try again.")
-        if any(nutrition[k] == "Error" for k in ("calories", "protein", "fat")):
-            raise HTTPException(status_code=400, detail="Could not recognize food in the photo. Please try another photo.")
-        food = FoodItem(
-            name="Photo Food",
-            calories=float(nutrition["calories"]),
-            protein=float(nutrition["protein"]),
-            fat=float(nutrition["fat"]),
-            per_100g=True
-        )
-        log_entry = FoodLog(
-            userId=userId,
-            food=food,
-            servingSize="100"
-        )
-        loop = asyncio.get_event_loop()
-        def log_food_in_db():
-            log_entry.timestamp = datetime.now()
-            firestore_db.collection(f"users/{userId}/food_logs").add(log_entry.dict())
-        await loop.run_in_executor(executor, log_food_in_db)
-        return log_entry.dict()
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[SCAN PHOTO] Unexpected error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while processing your request. Please try again.")
-    finally:
-        # Clean up temp file
-        try:
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception as cleanup_err:
-            logger.warning(f"[CLEANUP] Failed to remove temp file: {cleanup_err}")
 
 # --- NEW: Diet Countdown Scheduled Job ---
 async def check_diet_countdown_job():
