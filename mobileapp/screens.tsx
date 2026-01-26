@@ -7146,9 +7146,9 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
         <View style={styles.dieticianHeaderContainer}>
           <View style={styles.dieticianPhotoWrapper}>
             <Image
-              source={require('./assets/dp.jpeg')}
+              source={Platform.OS === 'ios' ? require('./assets/dp-copy.png') : require('./assets/dp.jpeg')}
               style={styles.dieticianPhoto}
-              resizeMode={Platform.OS === 'ios' ? 'cover' : 'center'}
+              resizeMode={Platform.OS === 'ios' ? 'contain' : 'center'}
             />
           </View>
           <Text style={styles.dieticianName}>Dt. Ekta Taneja</Text>
@@ -9184,9 +9184,9 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: COLORS.white,
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : COLORS.white,
     transform: Platform.OS === 'ios' 
-      ? [{ scale: 1.58 }, { translateY: 40 }]  // iOS: match Android to prevent top clipping
+      ? [{ scale: 1.0 }]  // No scaling, no translation - fit exactly as is
       : [{ scale: 1.58 }, { translateY: 28 }], // Android: keep as is
   },
   dieticianName: {
