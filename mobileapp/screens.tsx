@@ -9186,7 +9186,7 @@ const styles = StyleSheet.create({
     borderRadius: 90,
     backgroundColor: COLORS.white,
     transform: Platform.OS === 'ios' 
-      ? [{ scale: 1.58 }, { translateY: 28 }]  // iOS: match Android to prevent top clipping
+      ? [{ scale: 1.58 }, { translateY: 32 }]  // iOS: match Android to prevent top clipping
       : [{ scale: 1.58 }, { translateY: 28 }], // Android: keep as is
   },
   dieticianName: {
