@@ -7148,7 +7148,7 @@ const DieticianScreen = ({ navigation }: { navigation: any }) => {
             <Image
               source={require('./assets/dp.jpeg')}
               style={styles.dieticianPhoto}
-              resizeMode="cover"
+              resizeMode={Platform.OS === 'ios' ? 'cover' : 'center'}
             />
           </View>
           <Text style={styles.dieticianName}>Dt. Ekta Taneja</Text>
