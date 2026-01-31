@@ -505,7 +505,7 @@ async def get_nutrition_from_gemini(food_name, quantity):
 
 async def get_workout_nutrition_from_gemini(workout_name, duration):
     if not GEMINI_API_KEY:
-        return {'calories': 'Error'}
+        return {'calories': 0}
     workout_name = str(workout_name).strip()
     
     # Pass duration as-is to Gemini, regardless of whether it's numeric or not
@@ -513,7 +513,7 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
     
     prompt = (
         f"""
-        You are a bot that gives us a single number representing the calories burned in the following workout: name and duration: {workout_name}, {duration} minutes. Under no circumstances include any other text or extra numbers nor ask any further questions. If you can't give an exact value then give an estimate but only give a single number in the desired format. Only if the workout doesn't exist will you say the word "Error" and that's it.
+        You are a bot that gives us a single number representing the calories burned in the following workout: name and duration: {workout_name}, {duration}. Under no circumstances include any other text or extra numbers nor ask any further questions. Reply with only one number. If you can't give an exact value then give an estimate. Only if the workout doesn't exist will you say the word "Error" and that's it.
         """
     )
     
@@ -529,23 +529,23 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
         logger.info(f"[GEMINI WORKOUT RAW RESPONSE - UNCHANGED] {raw}")
         logger.info(f"[GEMINI WORKOUT RAW RESPONSE] {raw}")
         if raw.strip().lower() == "error":
-            return {'calories': 'Error'}
+            return {'calories': 0}
         parts = [p.strip() for p in raw.split(",")]
         if len(parts) != 1:
             logger.error(f"[GEMINI WORKOUT PARSE ERROR] Expected 1 value (calories), got: {raw}")
-            return {'calories': 'Error'}
+            return {'calories': 0}
         try:
             calories = float(parts[0])
-            return {'calories': calories}
+            return {'calories': float(calories)}
         except Exception as e:
             logger.error(f"[GEMINI WORKOUT PARSE ERROR] Could not convert to float: {parts}, error: {e}")
-            return {'calories': 'Error'}
+            return {'calories': 0}
     except asyncio.TimeoutError:
         logger.error(f"[GEMINI WORKOUT TIMEOUT] Gemini API call timed out for workout: {workout_name}")
-        return {'calories': 'Error'}
+        return {'calories': 0}
     except Exception as e:
         logger.error(f"[GEMINI WORKOUT ERROR] Exception: {e}", exc_info=True)
-        return {'calories': 'Error'}
+        return {'calories': 0}
 
 
 # Add your routes to the router instead of directly to app
@@ -4599,7 +4599,7 @@ async def cancel_subscription(userId: str):
         # Check if user has an active subscription to cancel
         if not user_data.get("isSubscriptionActive", False):
             raise HTTPException(status_code=400, detail="No active consultation period to cancel")
-        
+            
         # Get end date to include in message
         subscription_end_date = user_data.get("subscriptionEndDate")
         end_date_str = "your consultation period ends"

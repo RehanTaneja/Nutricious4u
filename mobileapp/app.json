@@ -19,10 +19,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.nutricious4u.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "UIDeviceFamily": [1],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSExceptionDomains": {
