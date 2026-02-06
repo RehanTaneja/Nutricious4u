@@ -3384,6 +3384,7 @@ async def check_diet_countdown_job():
             last_upload = user_data.get("lastDietUpload")
             if not last_upload:
                 continue
+            last_upload_raw = last_upload
             
             # Check if user is on trial (3 days countdown) or regular subscription (7 days countdown)
             subscription_status = user_data.get("subscriptionStatus", "")
@@ -3409,11 +3410,14 @@ async def check_diet_countdown_job():
             
             # Check if exactly 1 day left (between 24-47 hours)
             if 24 <= total_hours < 48:
+                if user_data.get("lastDietCountdownNotificationSentForUpload") == last_upload_raw:
+                    continue
                 user_name = f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip()
                 users_needing_diet.append({
                     "id": user_id,
                     "name": user_name or "User",
-                    "email": user_data.get("email", "")
+                    "email": user_data.get("email", ""),
+                    "last_upload": last_upload_raw
                 })
                 logger.info(f"[DIET COUNTDOWN] Found user with 1 day left: {user_name} ({user_id})")
         
@@ -3429,6 +3433,9 @@ async def check_diet_countdown_job():
                         data={"type": "diet_countdown", "userId": user["id"], "userName": user["name"]}
                     )
                     logger.info(f"[DIET COUNTDOWN] ✅ Sent notification for user: {user['name']}")
+                    firestore_db.collection("user_profiles").document(user["id"]).update({
+                        "lastDietCountdownNotificationSentForUpload": user["last_upload"]
+                    })
                 except Exception as notif_error:
                     logger.error(f"[DIET COUNTDOWN] ❌ Failed to send notification for {user['name']}: {notif_error}")
         else:
@@ -3497,8 +3504,8 @@ async def check_subscription_reminders_job():
                                 "oneDay": True
                             }
                         })
-                    # Send 1 day reminder notification
-                    await send_payment_reminder_notification(user_id, user_data, 1)  # 1 day
+                        # Send 1 day reminder notification (only once, same as payment add)
+                        await send_payment_reminder_notification(user_id, user_data, 1)  # 1 day
                 
                 # Check if consultation period has expired
                 elif time_until_expiry <= timedelta(0):
@@ -3569,6 +3576,12 @@ async def check_subscription_reminders_job():
                     
                     # Check if trial has expired
                     elif time_until_expiry <= timedelta(0):
+                        # Mark trial as expired so we only send notification once (user stays in this state until they select a plan)
+                        firestore_db.collection("user_profiles").document(user_id).update({
+                            "subscriptionStatus": "trial_expired",
+                            "isSubscriptionActive": False
+                        })
+                        logger.info(f"[TRIAL EXPIRY] Marked trial as expired for user {user_id} (notification will be sent once)")
                         # Trial expired - remove free trial diet and send expiry notification
                         # Clear diet information (same as when regular diet expires)
                         try:
