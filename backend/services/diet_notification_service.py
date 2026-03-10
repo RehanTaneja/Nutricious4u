@@ -323,7 +323,14 @@ class DietNotificationService:
                     continue
                 
                 # SECOND: Check if this is a regular day header
-                day_match = re.search(r'^([A-Z]+)\s*[-:]\s*\d+', line, re.IGNORECASE)
+                # Support both:
+                # - "TUESDAY- 10th MARCH" / "TUESDAY: 10th MARCH"
+                # - standalone "TUESDAY"
+                day_match = re.search(
+                    r'^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\b(?:\s*[-:]\s*.*)?$',
+                    line,
+                    re.IGNORECASE
+                )
                 if day_match:
                     day_name = day_match.group(1).lower()
                     if day_name in day_mapping:
@@ -452,8 +459,15 @@ class DietNotificationService:
                 logger.info(f"  📅 Found free trial day: DAY {trial_day_num}")
                 continue
             
-            # SECOND: Check if this is a regular day header (improved pattern)
-            day_match = re.search(r'^([A-Z]+)\s*-\s*\d+', line, re.IGNORECASE)
+            # SECOND: Check if this is a regular day header
+            # Support both:
+            # - "TUESDAY- 10th MARCH" / "TUESDAY: 10th MARCH"
+            # - standalone "TUESDAY"
+            day_match = re.search(
+                r'^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\b(?:\s*[-:]\s*.*)?$',
+                line,
+                re.IGNORECASE
+            )
             if day_match:
                 day_name = day_match.group(1).lower()
                 if day_name in day_mapping:
