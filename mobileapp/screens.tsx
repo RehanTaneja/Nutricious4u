@@ -29,7 +29,7 @@ import {
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
 import { logFood, FoodItem, getLogSummary, LogSummaryResponse, createUserProfile, getUserProfile, getUserProfileSafe, updateUserProfile, UserProfile, API_URL, logWorkout, listRoutines, createRoutine, updateRoutine, deleteRoutine, logRoutine, Routine, RoutineItem, RoutineCreateRequest, RoutineUpdateRequest, getRecipes, getNutritionData, searchFood, sendMessageNotification, resetDailyData, sendPushNotification } from './services/api';
-import { useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Svg, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
@@ -4709,32 +4709,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState('');
-  const { isFreeUser, setShowUpgradeModal } = useSubscription();
-  
-  // Import notification service
-
-
-  // Show upgrade modal for free users every time screen is focused
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('[NotificationSettingsScreen] Screen focused, isFreeUser:', isFreeUser);
-      if (isFreeUser) {
-        console.log('[NotificationSettingsScreen] Showing upgrade modal for free user');
-        setShowUpgradeModal(true);
-        // Only redirect non-dietician users to prevent access
-        // Dieticians should have full access to notification settings
-        setTimeout(() => {
-          // Check if user is dietician before redirecting
-          const currentUser = auth.currentUser;
-          const isDieticianUser = currentUser?.email === 'nutricious4u@gmail.com';
-          
-          if (!isDieticianUser) {
-          navigation.navigate('Main');
-          }
-        }, 100);
-      }
-    }, [isFreeUser, setShowUpgradeModal, navigation])
-  );
+  // Notification Settings intentionally does not enforce subscription redirect gate.
 
 
 
