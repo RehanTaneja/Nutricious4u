@@ -4578,6 +4578,7 @@ async def get_subscription_status(userId: str):
         subscription_status = user_data.get("subscriptionStatus")
         is_subscription_active = user_data.get("isSubscriptionActive", False)
         subscription_plan = user_data.get("subscriptionPlan")
+        subscription_end_date = user_data.get("subscriptionEndDate")
         
         # Determine if plan selection is required
         # 1. If subscription was cancelled
@@ -4601,11 +4602,11 @@ async def get_subscription_status(userId: str):
         subscription_data = {
             "subscriptionPlan": user_data.get("subscriptionPlan"),
             "subscriptionStartDate": user_data.get("subscriptionStartDate"),
-            "subscriptionEndDate": user_data.get("subscriptionEndDate"),
+            "subscriptionEndDate": subscription_end_date,
             "currentSubscriptionAmount": user_data.get("currentSubscriptionAmount", 0.0),
             "totalAmountPaid": user_data.get("totalAmountPaid", 0.0),
-            "isSubscriptionActive": user_data.get("isSubscriptionActive", False),
-            "isFreeUser": not user_data.get("isSubscriptionActive", False),
+            "isSubscriptionActive": is_subscription_active,
+            "isFreeUser": not is_subscription_active,
             "autoRenewalEnabled": user_data.get("autoRenewalEnabled", True),  # Default to True
             # New subscription system fields
             "freeTrialUsed": free_trial_used,
@@ -4639,6 +4640,24 @@ async def get_subscription_status(userId: str):
                 ):
                     subscription_data["requiresPlanSelection"] = True
                     requires_plan_selection = True  # Update local variable too
+
+        # Compute effective active/free status from current windows to avoid stale
+        # Firestore flags causing incorrect access gating after app restart.
+        has_unexpired_paid_period = False
+        if subscription_data["subscriptionEndDate"] and subscription_data["subscriptionPlan"] not in ["free", "trial", None]:
+            try:
+                paid_end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
+                has_unexpired_paid_period = datetime.now() <= paid_end_date
+            except Exception:
+                has_unexpired_paid_period = False
+
+        effective_is_active = bool(
+            subscription_data["isSubscriptionActive"] or
+            is_trial_active or
+            has_unexpired_paid_period
+        )
+        subscription_data["isSubscriptionActive"] = effective_is_active
+        subscription_data["isFreeUser"] = not effective_is_active
         
         return subscription_data
         
