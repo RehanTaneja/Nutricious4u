@@ -1080,7 +1080,58 @@ async def create_user_profile(profile: UserProfile):
         doc = await loop.run_in_executor(executor, doc_ref.get)
 
         if doc.exists:
-            return doc.to_dict()
+            existing_profile = doc.to_dict() or {}
+            is_existing_placeholder = (
+                existing_profile.get("firstName", "User") == "User" and
+                existing_profile.get("lastName", "") == "" and
+                (not existing_profile.get("email") or str(existing_profile.get("email", "")).endswith("@example.com"))
+            )
+            is_existing_incomplete = (
+                not existing_profile.get("userId") or
+                not existing_profile.get("firstName") or
+                existing_profile.get("firstName") == "User" or
+                not existing_profile.get("lastName") or
+                existing_profile.get("age") is None or
+                not existing_profile.get("gender") or
+                not existing_profile.get("email") or
+                is_existing_placeholder
+            )
+
+            if not is_existing_incomplete:
+                return existing_profile
+
+            # Heal incomplete/placeholder docs by merging valid signup data while preserving
+            # already stored fields like push token metadata.
+            healed_profile = {**existing_profile, **profile_dict}
+            healed_profile["isDietician"] = (
+                existing_profile.get("isDietician", False) or
+                healed_profile.get("email") == "nutricious4u@gmail.com"
+            )
+
+            if not healed_profile.get("isDietician"):
+                healed_profile.setdefault("subscriptionPlan", "free")
+                healed_profile.setdefault("isSubscriptionActive", False)
+                healed_profile.setdefault("subscriptionStartDate", None)
+                healed_profile.setdefault("subscriptionEndDate", None)
+                healed_profile.setdefault("currentSubscriptionAmount", 0.0)
+                healed_profile.setdefault("totalAmountPaid", 0.0)
+                healed_profile.setdefault("autoRenewalEnabled", True)
+                healed_profile.setdefault("freeTrialUsed", False)
+                healed_profile.setdefault("freeTrialStartDate", None)
+                healed_profile.setdefault("freeTrialEndDate", None)
+                healed_profile.setdefault("pendingPlanSwitch", None)
+                healed_profile.setdefault("nextPlanId", None)
+                healed_profile.setdefault("subscriptionStatus", "expired")
+                healed_profile.setdefault("lastPaymentReminderSent", {
+                    "oneWeek": False,
+                    "twoDays": False,
+                    "oneDay": False
+                })
+
+            healed_profile.setdefault("new_diet_received", False)
+            await loop.run_in_executor(executor, lambda: doc_ref.set(healed_profile))
+            logger.info(f"Healed incomplete profile for user {user_id} during signup")
+            return healed_profile
 
         # Add isDietician field based on email
         if profile_dict.get("email") == "nutricious4u@gmail.com":
