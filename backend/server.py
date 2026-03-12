@@ -1175,6 +1175,7 @@ async def create_user_profile(profile: UserProfile):
 async def get_user_profile(user_id: str):
     """Get a user's profile."""
     logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
+    loop = asyncio.get_event_loop()
     
     # Check if Firebase is available
     if not FIREBASE_AVAILABLE or firestore_db is None:
@@ -1182,40 +1183,75 @@ async def get_user_profile(user_id: str):
         raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
     
     try:
-        # Simplified version without timeout handling first
         logger.info(f"[PROFILE_FETCH] Querying Firestore for user_id: {user_id}")
-        
-        # Create document reference
+
+        # Bounded retry window to absorb signup races where Auth state/push token writes
+        # can briefly create a placeholder/missing profile before signup data is persisted.
+        max_wait_seconds = 6.0
+        poll_intervals = [0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0, 0.5]
+        elapsed = 0.0
+
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
-        
-        # Execute the query
-        doc = doc_ref.get()
-        
-        if not doc.exists:
-            logger.warning(f"[PROFILE_FETCH] No profile found for user_id: {user_id}")
-            raise HTTPException(status_code=404, detail="User profile not found")
-        
-        # Convert to dictionary
-        profile = doc.to_dict()
-        
-        if profile is None:
-            logger.warning(f"[PROFILE_FETCH] Profile is None for user_id: {user_id}")
-            raise HTTPException(status_code=404, detail="User profile not found")
-        
-        logger.info(f"[PROFILE_FETCH] Profile found for user_id: {user_id}, firstName: {profile.get('firstName', 'N/A')}")
-        
-        # Filter out placeholder profiles
-        is_placeholder = (
-            profile.get("firstName", "User") == "User" and
-            profile.get("lastName", "") == "" and
-            (not profile.get("email") or profile.get("email", "").endswith("@example.com"))
-        )
-        if is_placeholder:
-            logger.warning(f"[PROFILE_FETCH] Filtered out placeholder profile for user {user_id}: {profile}")
+        profile = None
+        last_not_ready_reason = "missing"
+
+        for attempt, wait_seconds in enumerate(poll_intervals, start=1):
+            doc = await loop.run_in_executor(executor, doc_ref.get)
+
+            if not doc.exists:
+                last_not_ready_reason = "missing"
+            else:
+                profile = doc.to_dict()
+                if profile is None:
+                    last_not_ready_reason = "missing"
+                else:
+                    logger.info(
+                        f"[PROFILE_FETCH] Profile candidate for user_id: {user_id}, "
+                        f"firstName: {profile.get('firstName', 'N/A')}, attempt: {attempt}"
+                    )
+
+                    # Filter out placeholder profiles
+                    is_placeholder = (
+                        profile.get("firstName", "User") == "User" and
+                        profile.get("lastName", "") == "" and
+                        (not profile.get("email") or profile.get("email", "").endswith("@example.com"))
+                    )
+
+                    # Treat docs missing core signup fields as "not ready" during this bounded window.
+                    is_not_ready = (
+                        is_placeholder or
+                        profile.get("age") is None or
+                        not profile.get("gender") or
+                        not profile.get("firstName") or
+                        not profile.get("lastName") or
+                        not profile.get("email")
+                    )
+
+                    if not is_not_ready:
+                        logger.info(f"[PROFILE_FETCH] Successfully returning profile for user_id: {user_id}")
+                        return profile
+
+                    last_not_ready_reason = "placeholder_or_incomplete"
+
+            elapsed += wait_seconds
+            if elapsed >= max_wait_seconds:
+                break
+
+            logger.info(
+                f"[PROFILE_FETCH] Profile not ready for user_id: {user_id} "
+                f"(reason={last_not_ready_reason}, attempt={attempt}), retrying in {wait_seconds}s"
+            )
+            await asyncio.sleep(wait_seconds)
+
+        if last_not_ready_reason == "placeholder_or_incomplete":
+            logger.warning(
+                f"[PROFILE_FETCH] Profile not ready after bounded wait for user_id: {user_id}. "
+                f"Returning 404 to preserve existing client behavior."
+            )
             raise HTTPException(status_code=404, detail="User profile not found (placeholder)")
-        
-        logger.info(f"[PROFILE_FETCH] Successfully returning profile for user_id: {user_id}")
-        return profile
+
+        logger.warning(f"[PROFILE_FETCH] No profile found for user_id: {user_id}")
+        raise HTTPException(status_code=404, detail="User profile not found")
         
     except HTTPException:
         raise
