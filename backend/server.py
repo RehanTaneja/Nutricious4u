@@ -279,6 +279,13 @@ class BreakRequest(BaseModel):
     toTime: str
     specificDate: Optional[str] = None  # null for daily breaks, date string for specific date breaks
 
+class FrontendEventRequest(BaseModel):
+    userId: str
+    event: str
+    data: Optional[dict] = None
+    platform: Optional[str] = None
+    timestamp: Optional[str] = None
+
 # Define app before any usage
 app = FastAPI(title="Fitness Tracker API", version="1.0.0")
 
@@ -413,6 +420,17 @@ async def test_firebase():
             "error_type": type(e).__name__,
             "timestamp": datetime.now().isoformat()
         }
+
+@api_router.post("/frontend-events")
+async def frontend_events(payload: FrontendEventRequest):
+    """Lightweight frontend event ingestion for client diagnostics."""
+    user_preview = (payload.userId[:15] + "...") if payload.userId else "unknown"
+    logger.info(f"[FRONTEND_EVENT] {payload.event} - user: {user_preview}")
+    logger.info(
+        f"[FRONTEND_EVENT] Payload: platform={payload.platform}, "
+        f"timestamp={payload.timestamp}, data={payload.data or {}}"
+    )
+    return {"success": True}
 
 # Create a thread pool executor
 executor = ThreadPoolExecutor(max_workers=10)
@@ -1172,7 +1190,7 @@ async def create_user_profile(profile: UserProfile):
         raise HTTPException(status_code=500, detail="Failed to create user profile.")
 
 @api_router.get("/users/{user_id}/profile", response_model=UserProfile)
-async def get_user_profile(user_id: str):
+async def get_user_profile(user_id: str, request: Request):
     """Get a user's profile."""
     logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
     loop = asyncio.get_event_loop()
@@ -1190,6 +1208,7 @@ async def get_user_profile(user_id: str):
         max_wait_seconds = 6.0
         poll_intervals = [0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0, 0.5]
         elapsed = 0.0
+        is_debug_event_request = request.query_params.get("frontendEvent") is not None
 
         doc_ref = firestore_db.collection("user_profiles").document(user_id)
         profile = None
@@ -1232,6 +1251,10 @@ async def get_user_profile(user_id: str):
                         return profile
 
                     last_not_ready_reason = "placeholder_or_incomplete"
+
+            if is_debug_event_request:
+                # Frontend event logs should not consume long retry windows.
+                break
 
             elapsed += wait_seconds
             if elapsed >= max_wait_seconds:

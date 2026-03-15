@@ -658,7 +658,9 @@ export const getLogSummary = async (userId: string): Promise<LogSummaryResponse>
 // User Profile API calls
 export const createUserProfile = async (profile: UserProfile): Promise<UserProfile> => {
   try {
-    const response = await enhancedApi.post(`/users/profile`, profile);
+    // Critical path for new signups: bypass queue contention so profile creation
+    // is not delayed by unrelated startup/debug requests.
+    const response = await api.post(`/users/profile`, profile);
     return response.data;
   } catch (error) {
     logger.error('Error creating user profile:', error);
@@ -1103,41 +1105,29 @@ export const testUserExists = async (userId: string) => {
   return response.data;
 };
 
-// Frontend Event Logging for iOS Debug using existing endpoints
+// Frontend Event Logging via dedicated lightweight endpoint
 export const logFrontendEvent = async (userId: string, event: string, data?: any) => {
   try {
     // Only log in EAS builds (not Expo Go)
     if (!__DEV__) {
-      const logData = {
+      const payload = {
         userId,
         event,
-        data: JSON.stringify(data || {}),
+        data: data || {},
         platform: Platform.OS,
         timestamp: new Date().toISOString(),
         userAgent: Platform.OS === 'ios' ? 'Nutricious4u/1 CFNetwork/3826.500.131 Darwin/24.5.0' : 'Nutricious4u/1'
       };
-      
-      // Use profile endpoint with special logging data - this will show in backend logs
-      // The backend will see this in the logs when the request is made
-      const profileLogData = {
-        ...logData,
-        frontendEvent: event,
-        eventData: data,
-        debugLog: true
-      };
-      
-      console.log('📱 FRONTEND EVENT LOG:', JSON.stringify(profileLogData, null, 2));
-      
-      // Make a quick GET request to existing endpoint to trigger backend logging
-      // The query params will show in Railway logs
-      const logUrl = `/users/${userId}/profile?frontendEvent=${encodeURIComponent(event)}&platform=${Platform.OS}&timestamp=${encodeURIComponent(new Date().toISOString())}&data=${encodeURIComponent(JSON.stringify(data || {}))}`;
-      
-      // Use a timeout to not hang the app
-      const logPromise = enhancedApi.get(logUrl);
+
+      console.log('📱 FRONTEND EVENT LOG:', JSON.stringify(payload, null, 2));
+
+      // Never send diagnostics through profile endpoint; keep this path lightweight
+      // and isolated from user-profile reads/writes.
+      const logPromise = api.post('/frontend-events', payload);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Log timeout')), 3000)
+        setTimeout(() => reject(new Error('Log timeout')), 1500)
       );
-      
+
       await Promise.race([logPromise, timeoutPromise]);
     }
   } catch (error) {
