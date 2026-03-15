@@ -67,6 +67,8 @@ const ACTIVITY_LEVELS: { label: string; value: string; multiplier: number }[] = 
 
 const TERMS_URL = 'https://nutricious4u-63158.web.app/terms.html';
 const PRIVACY_URL = 'https://nutricious4u-63158.web.app/privacy.html';
+const SIGNUP_PROFILE_PENDING_PREFIX = 'signup_profile_pending_';
+const getSignupProfilePendingKey = (userId: string) => `${SIGNUP_PROFILE_PENDING_PREFIX}${userId}`;
 
 // Global helper function to get the correct PDF URL with cache busting
 const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
@@ -676,17 +678,24 @@ const LoginSignupScreen = () => {
       const user = userCredential.user;
 
       if (user) {
+        const pendingKey = getSignupProfilePendingKey(user.uid);
+        await AsyncStorage.setItem(pendingKey, JSON.stringify({ startedAt: Date.now() }));
+
         // Create user profile with only signup fields
         // All other fields (currentWeight, goalWeight, height, etc.) will be collected in QnA screen
-        await createUserProfile({
-          id: user.uid,
-          userId: user.uid, // For backward compatibility
-          firstName,
-          lastName,
-          age: parseInt(age),
-          gender,
-          email
-        });
+        try {
+          await createUserProfile({
+            id: user.uid,
+            userId: user.uid, // For backward compatibility
+            firstName,
+            lastName,
+            age: parseInt(age),
+            gender,
+            email
+          });
+        } finally {
+          await AsyncStorage.removeItem(pendingKey);
+        }
 
         // Save credentials if remember me is checked
         if (rememberMe) {

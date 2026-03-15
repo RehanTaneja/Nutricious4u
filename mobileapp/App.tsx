@@ -168,6 +168,37 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
 let isLoginInProgress = false;
 // Set global flag for other components to check
 (global as any).isLoginInProgress = false;
+const SIGNUP_PROFILE_PENDING_PREFIX = 'signup_profile_pending_';
+
+const getSignupProfilePendingKey = (userId: string) => `${SIGNUP_PROFILE_PENDING_PREFIX}${userId}`;
+
+const waitForSignupProfilePendingClear = async (userId: string, maxWaitMs: number = 12000) => {
+  const key = getSignupProfilePendingKey(userId);
+  const start = Date.now();
+
+  while (Date.now() - start < maxWaitMs) {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw);
+      const startedAt = typeof parsed?.startedAt === 'number' ? parsed.startedAt : 0;
+      // Recover from stale markers left by interrupted signup sessions.
+      if (startedAt > 0 && Date.now() - startedAt > 120000) {
+        await AsyncStorage.removeItem(key);
+        return;
+      }
+    } catch {
+      // Invalid marker payload should not block login flow.
+      await AsyncStorage.removeItem(key);
+      return;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+
+  console.warn('[Signup Gate] Timed out waiting for signup profile creation marker to clear');
+};
 
 function AppContent() {
   const navigationRef = useRef<any>(null);
@@ -861,6 +892,7 @@ function AppContent() {
                   try {
                     // Add delay before profile check to prevent conflicts
                     await new Promise(resolve => setTimeout(resolve, 1000));
+                    await waitForSignupProfilePendingClear(firebaseUser.uid);
                     
                     // Add EAS build-specific error handling
                     try {
