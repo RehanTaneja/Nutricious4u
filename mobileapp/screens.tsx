@@ -3776,7 +3776,7 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const profile = await getUserProfile(userId);
+        const profile = await getUserProfileSafe(userId);
         if (profile) {
           // Load age and gender from existing profile
           if (profile.age) setAge(profile.age.toString());

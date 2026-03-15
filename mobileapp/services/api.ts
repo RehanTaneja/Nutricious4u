@@ -1087,15 +1087,11 @@ export const getUserLockStatus = async (userId: string) => {
   console.log('[API] 🔒 Lock status response:', response.data);
   console.log('[API] 🔒 Lock status call completed, app should continue to main screen');
   
-  // Add additional logging call to backend for EAS builds
-  if (!__DEV__) {
-    try {
-      // Make a logging request with crash detection info
-      await enhancedApi.get(`/users/${userId}/profile?debugEvent=LOCK_STATUS_COMPLETED&platform=${Platform.OS}&timestamp=${new Date().toISOString()}&nextStep=NAVIGATE_TO_MAINTABS`);
-    } catch (logError) {
-      console.warn('Failed to log lock status completion:', logError);
-    }
-  }
+  // Keep diagnostics out of profile endpoint to avoid startup contention.
+  await logFrontendEvent(userId, 'LOCK_STATUS_COMPLETED', {
+    platform: Platform.OS,
+    nextStep: 'NAVIGATE_TO_MAINTABS',
+  });
   
   return response.data;
 };

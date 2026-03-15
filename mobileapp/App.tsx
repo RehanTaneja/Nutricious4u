@@ -12,7 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView } from 'react-native';
-import { getUserProfile, createUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
+import { getUserProfile, getUserProfileSafe, createUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
 import { ChatbotScreen } from './ChatbotScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { 
@@ -864,7 +864,7 @@ function AppContent() {
                     
                     // Add EAS build-specific error handling
                     try {
-                      profile = await getUserProfile(firebaseUser.uid);
+                      profile = await getUserProfileSafe(firebaseUser.uid);
                       // Check if profile has complete data (not just firstName)
                       // Profile is complete if it has currentWeight, goalWeight, height, dietaryPreference, activityLevel
                       const hasCompleteProfile = profile && 
