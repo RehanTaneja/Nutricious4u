@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PRODUCTION_BACKEND_URL } from '@env';
 import { logger } from '../utils/logger';
 
@@ -759,13 +760,52 @@ export const isLoginInProgress = (): boolean => {
   return (global as any).isLoginInProgress || false;
 };
 
+const SIGNUP_PROFILE_PENDING_PREFIX = 'signup_profile_pending_';
+const getSignupProfilePendingKey = (userId: string) => `${SIGNUP_PROFILE_PENDING_PREFIX}${userId}`;
+
+const isSignupProfilePending = async (userId: string): Promise<boolean> => {
+  const key = getSignupProfilePendingKey(userId);
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return false;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const startedAt = typeof parsed?.startedAt === 'number' ? parsed.startedAt : 0;
+
+    // Stale marker protection: interrupted signup should not block forever.
+    if (startedAt > 0 && Date.now() - startedAt > 120000) {
+      await AsyncStorage.removeItem(key);
+      return false;
+    }
+    return true;
+  } catch {
+    // Corrupt marker payload should fail open.
+    await AsyncStorage.removeItem(key);
+    return false;
+  }
+};
+
 // Enhanced getUserProfile that respects login state
 export const getUserProfileSafe = async (userId: string): Promise<UserProfile> => {
-  // Check if login is in progress
-  if (isLoginInProgress()) {
-    logger.log(`[getUserProfileSafe] Login in progress, deferring profile request for ${userId}`);
-    // Wait a bit and try again
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  const start = Date.now();
+  const maxWaitMs = 12000;
+
+  // Wait while signup profile creation is pending and/or login bootstrap is active.
+  while (Date.now() - start < maxWaitMs) {
+    const [loginBusy, signupPending] = await Promise.all([
+      Promise.resolve(isLoginInProgress()),
+      isSignupProfilePending(userId),
+    ]);
+
+    if (!loginBusy && !signupPending) {
+      break;
+    }
+
+    logger.log(
+      `[getUserProfileSafe] Deferring profile request for ${userId} ` +
+      `(loginBusy=${loginBusy}, signupPending=${signupPending})`
+    );
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
   
   return getUserProfile(userId);
