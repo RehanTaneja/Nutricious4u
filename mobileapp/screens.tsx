@@ -668,6 +668,10 @@ const LoginSignupScreen = () => {
     setError(null);
     
     try {
+      // Global pre-auth marker to close the tiny window before uid-scoped marker is created.
+      (global as any).isSignupInProgress = true;
+      (global as any).signupStartedAt = Date.now();
+
       // Add iOS-specific timeout handling
       const signupPromise = auth.createUserWithEmailAndPassword(email, password);
       const timeoutPromise = new Promise((_, reject) => 
@@ -729,6 +733,9 @@ const LoginSignupScreen = () => {
       } else {
         setError('Signup failed. Please try again.');
       }
+    } finally {
+      (global as any).isSignupInProgress = false;
+      (global as any).signupStartedAt = 0;
     }
   };
 

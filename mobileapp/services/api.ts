@@ -760,6 +760,21 @@ export const isLoginInProgress = (): boolean => {
   return (global as any).isLoginInProgress || false;
 };
 
+const isGlobalSignupInProgress = (): boolean => {
+  const g = global as any;
+  const inProgress = g.isSignupInProgress === true;
+  if (!inProgress) return false;
+
+  const startedAt = typeof g.signupStartedAt === 'number' ? g.signupStartedAt : 0;
+  // Stale global flag protection.
+  if (startedAt > 0 && Date.now() - startedAt > 120000) {
+    g.isSignupInProgress = false;
+    g.signupStartedAt = 0;
+    return false;
+  }
+  return true;
+};
+
 const SIGNUP_PROFILE_PENDING_PREFIX = 'signup_profile_pending_';
 const getSignupProfilePendingKey = (userId: string) => `${SIGNUP_PROFILE_PENDING_PREFIX}${userId}`;
 
@@ -792,18 +807,19 @@ export const getUserProfileSafe = async (userId: string): Promise<UserProfile> =
 
   // Wait while signup profile creation is pending and/or login bootstrap is active.
   while (Date.now() - start < maxWaitMs) {
-    const [loginBusy, signupPending] = await Promise.all([
+    const [loginBusy, signupPending, globalSignupBusy] = await Promise.all([
       Promise.resolve(isLoginInProgress()),
       isSignupProfilePending(userId),
+      Promise.resolve(isGlobalSignupInProgress()),
     ]);
 
-    if (!loginBusy && !signupPending) {
+    if (!loginBusy && !signupPending && !globalSignupBusy) {
       break;
     }
 
     logger.log(
       `[getUserProfileSafe] Deferring profile request for ${userId} ` +
-      `(loginBusy=${loginBusy}, signupPending=${signupPending})`
+      `(loginBusy=${loginBusy}, signupPending=${signupPending}, globalSignupBusy=${globalSignupBusy})`
     );
     await new Promise(resolve => setTimeout(resolve, 250));
   }
