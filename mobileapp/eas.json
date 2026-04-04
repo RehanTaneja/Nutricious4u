@@ -42,5 +42,13 @@
         "PRODUCTION_BACKEND_URL": "nutricious4u-production.up.railway.app"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6758275620",
+        "appleTeamId": "ZMYQ29G742"
+      }
+    }
   }
 }

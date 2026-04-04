@@ -10531,7 +10531,7 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
         <View style={styles.popupContainer}>
           <Text style={styles.popupTitle}>Welcome to Nutricious4u! 🎉</Text>
           <Text style={styles.popupSubtitle}>
-            Start with a free 1-day trial consultation period
+            Start with a free 3-day trial consultation period
           </Text>
           
           <View style={{ marginVertical: 20 }}>
