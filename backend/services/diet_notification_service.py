@@ -298,6 +298,7 @@ class DietNotificationService:
             activities = []
             lines = diet_text.split('\n')
             current_day = None
+            is_trial_day_source = False
             
             day_mapping = {
                 'monday': 0, 'mon': 0,
@@ -319,6 +320,7 @@ class DietNotificationService:
                 if trial_day_match:
                     trial_day_num = int(trial_day_match.group(1))
                     current_day = trial_day_num  # Store as 1, 2, or 3 for free trial
+                    is_trial_day_source = True
                     logger.info(f"Found free trial day header: DAY {trial_day_num}")
                     continue
                 
@@ -335,6 +337,7 @@ class DietNotificationService:
                     day_name = day_match.group(1).lower()
                     if day_name in day_mapping:
                         current_day = day_mapping[day_name]
+                        is_trial_day_source = False
                         logger.info(f"Found day header: {day_name.upper()} (day {current_day})")
                         continue
                 
@@ -381,6 +384,7 @@ class DietNotificationService:
                                 'minute': minute,
                                 'activity': activity_text,
                                 'day': current_day,  # Use current day context
+                                'is_trial_day_source': is_trial_day_source,
                                 'original_text': line
                             }
                             activities.append(activity)
@@ -432,6 +436,7 @@ class DietNotificationService:
         activities = []
         lines = diet_text.split('\n')
         current_day = None
+        is_trial_day_source = False
         is_free_trial = False
         
         # Day mapping for structured diets
@@ -455,6 +460,7 @@ class DietNotificationService:
             if trial_day_match:
                 trial_day_num = int(trial_day_match.group(1))
                 current_day = trial_day_num  # Store as 1, 2, or 3 for free trial
+                is_trial_day_source = True
                 is_free_trial = True
                 logger.info(f"  📅 Found free trial day: DAY {trial_day_num}")
                 continue
@@ -472,6 +478,7 @@ class DietNotificationService:
                 day_name = day_match.group(1).lower()
                 if day_name in day_mapping:
                     current_day = day_mapping[day_name]
+                    is_trial_day_source = False
                     is_free_trial = False
                     print(f"  📅 Found day: {day_name.upper()} (day {current_day})")
                     continue
@@ -561,6 +568,7 @@ class DietNotificationService:
                                 'hour': hour,
                                 'minute': minute,
                                 'day': current_day,  # Include day information
+                                'is_trial_day_source': is_trial_day_source,
                                 'unique_id': f"{hour:02d}:{minute:02d}_{hash(activity_text.lower().strip()) % 1000000}"
                             }
                             
@@ -1076,10 +1084,12 @@ class DietNotificationService:
         trial_day = None
         selected_days = []
         
+        is_trial_day_source = activity.get('is_trial_day_source', False)
         if 'day' in activity and activity['day'] is not None:
             day_value = activity['day']
-            # Check if it's a free trial day (1, 2, or 3)
-            if day_value in [1, 2, 3]:
+            # Treat as free trial ONLY when parsed from explicit DAY 1/2/3 headers.
+            # Weekday mapping also uses 1/2/3 (Tue/Wed/Thu), so numeric day alone is ambiguous.
+            if is_trial_day_source and day_value in [1, 2, 3]:
                 is_free_trial_day = True
                 trial_day = day_value
                 logger.info(f"Created free trial notification for DAY {trial_day}: {activity['activity'][:50]}...")
@@ -1142,7 +1152,7 @@ class DietNotificationService:
             if not diet_days:
                 # Check if any activities have trial days (1, 2, 3)
                 trial_days_found = any(
-                    'day' in activity and activity['day'] in [1, 2, 3]
+                    activity.get('is_trial_day_source') and activity.get('day') in [1, 2, 3]
                     for activity in activities
                 )
                 if trial_days_found:
