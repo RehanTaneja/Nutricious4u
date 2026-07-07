@@ -657,7 +657,13 @@ export const getLogSummary = async (userId: string): Promise<LogSummaryResponse>
 }
 
 // User Profile API calls
-export const createUserProfile = async (profile: UserProfile): Promise<UserProfile> => {
+// The backend only requires the signup fields; everything else (weight, height,
+// diet preferences, targets...) is optional and collected later in the QnA screen.
+export type CreateUserProfilePayload =
+  Pick<UserProfile, 'id' | 'firstName' | 'lastName' | 'age' | 'gender' | 'email'> &
+  Partial<UserProfile>;
+
+export const createUserProfile = async (profile: CreateUserProfilePayload): Promise<UserProfile> => {
   try {
     // Critical path for new signups: bypass queue contention so profile creation
     // is not delayed by unrelated startup/debug requests.
