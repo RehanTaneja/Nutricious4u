@@ -200,6 +200,21 @@ const waitForSignupProfilePendingClear = async (userId: string, maxWaitMs: numbe
   console.warn('[Signup Gate] Timed out waiting for signup profile creation marker to clear');
 };
 
+// Resolve quiz-completion status when the profile fetch fails. Only a definitive
+// 404 (profile genuinely absent/incomplete on the server) may demote the user to
+// the QnA screen; transient failures (network, timeout, 5xx, cold start) fall back
+// to the last known status persisted in AsyncStorage so established users are not
+// routed back into onboarding.
+const resolveQuizStatusOnProfileError = async (error: any): Promise<boolean> => {
+  if (error?.response?.status === 404) {
+    await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+    return false;
+  }
+  const stored = await AsyncStorage.getItem('hasCompletedQuiz');
+  console.log(`[Profile Check] Transient profile fetch failure, using last known quiz status: ${stored}`);
+  return stored === 'true';
+};
+
 function AppContent() {
   const navigationRef = useRef<any>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -922,14 +937,12 @@ function AppContent() {
                       }
                     } catch (profileError: any) {
                       console.log('[Profile Check] Error checking profile:', profileError);
-                      
+                      setHasCompletedQuiz(await resolveQuizStatusOnProfileError(profileError));
+
                       // EAS build-specific fallback with iOS handling
                       if (!__DEV__) {
                         console.log('[EAS Build] Using fallback profile handling');
-                        // For EAS builds, assume user needs to complete quiz
-                        setHasCompletedQuiz(false);
-                        await AsyncStorage.setItem('hasCompletedQuiz', 'false');
-                        
+
                         // iOS-specific: Skip additional API calls to prevent crashes
                         if (Platform.OS === 'ios') {
                           console.log('[iOS EAS Build] Minimal initialization to prevent crashes');
@@ -940,26 +953,22 @@ function AppContent() {
                           (global as any).isLoginInProgress = false;
                         return; // Exit early to prevent further API calls
                         }
-                        
+
                         // Android EAS: Continue with normal flow
                         setHasActiveSubscription(false);
                         setIsFreeUser(true);
-                      } else {
-                        // For Expo Go, use normal error handling
-                        setHasCompletedQuiz(false);
-                        await AsyncStorage.setItem('hasCompletedQuiz', 'false');
                       }
                     }
                   } catch (error) {
-                    console.log('[Profile Check] Error checking profile, assuming quiz not completed:', error);
-                    setHasCompletedQuiz(false);
-                    await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                    console.log('[Profile Check] Error checking profile, using last known quiz status:', error);
+                    setHasCompletedQuiz(await resolveQuizStatusOnProfileError(error));
                   }
                   
                   // Early exit for new users without profile - skip unnecessary delays and API calls
                   if (!isDieticianAccount && !profile) {
-                    console.log('[LOGIN SEQUENCE] New user without profile - exiting early to skip unnecessary checks');
-                    setHasCompletedQuiz(false);
+                    // Quiz status was already resolved above (completeness check, 404, or
+                    // last-known-status fallback) - do not force it to false here.
+                    console.log('[LOGIN SEQUENCE] No profile available - exiting early to skip unnecessary checks');
                     setHasActiveSubscription(false);
                     setIsFreeUser(true);
                     setCheckingProfile(false);
@@ -1097,8 +1106,9 @@ function AppContent() {
                 }
               } catch (e) {
                 console.error('Error in user profile setup:', e);
-                setHasCompletedQuiz(false);
-                await AsyncStorage.setItem('hasCompletedQuiz', 'false');
+                // Failures in subscription/notification setup must not demote an
+                // onboarded user back to the quiz.
+                setHasCompletedQuiz(await resolveQuizStatusOnProfileError(e));
               }
               console.log('[LOGIN SEQUENCE] 🏁 Finalizing login sequence...');
               setCheckingProfile(false);
