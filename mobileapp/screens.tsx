@@ -3788,25 +3788,38 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [targets, setTargets] = useState({ calories: 0, protein: 0, fat: 0 });
+  const [showDemographicFields, setShowDemographicFields] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Load age and gender from existing profile (created during signup)
+  // Load age and gender from existing profile (created during signup).
+  // Retries ride out backend cold starts; if age/gender still can't be loaded,
+  // fallback inputs are revealed so the user can provide them directly instead
+  // of hitting a dead-end error at submit time.
   useEffect(() => {
+    let cancelled = false;
     const loadProfile = async () => {
-      try {
-        const profile = await getUserProfileSafe(userId);
-        if (profile) {
-          // Load age and gender from existing profile
-          if (profile.age) setAge(profile.age.toString());
-          if (profile.gender) setGender(profile.gender);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const profile = await getUserProfileSafe(userId);
+          if (cancelled) return;
+          if (profile) {
+            if (profile.age) setAge(profile.age.toString());
+            if (profile.gender) setGender(profile.gender);
+            if (profile.age && profile.gender) return;
+          }
+        } catch (error) {
+          console.log(`[QnA Screen] Could not load profile (attempt ${attempt}):`, error);
         }
-      } catch (error) {
-        console.log('[QnA Screen] Could not load profile:', error);
-        // If profile load fails, age/gender will remain empty
-        // This should not happen for new users, but handle gracefully
+        if (cancelled) return;
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+      }
+      if (!cancelled) {
+        console.log('[QnA Screen] Age/gender unavailable after retries, showing fallback inputs');
+        setShowDemographicFields(true);
       }
     };
     loadProfile();
+    return () => { cancelled = true; };
   }, [userId]);
 
   // Ensure ScrollView starts at top when screen is focused
@@ -3838,16 +3851,47 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       setError('Please fill in all required fields');
       return;
     }
-    // Validate age/gender were loaded from profile
-    if (!age || !gender) {
-      console.log('[handleSubmit] Age/gender not loaded from profile.');
-      setError('Profile information missing. Please contact support.');
+    // Age/gender normally come from the signup profile. If they failed to load
+    // at mount (e.g. backend cold start), retry the fetch now before failing.
+    let effectiveAge = age;
+    let effectiveGender = gender;
+    if (!effectiveAge || !effectiveGender) {
+      console.log('[handleSubmit] Age/gender missing, re-fetching profile.');
+      try {
+        const profile = await getUserProfileSafe(userId);
+        if (profile?.age && !effectiveAge) {
+          effectiveAge = profile.age.toString();
+          setAge(effectiveAge);
+        }
+        if (profile?.gender && !effectiveGender) {
+          effectiveGender = profile.gender;
+          setGender(effectiveGender);
+        }
+      } catch (e) {
+        console.log('[handleSubmit] Profile re-fetch failed:', e);
+      }
+    }
+    if (!effectiveAge || !effectiveGender) {
+      console.log('[handleSubmit] Age/gender still missing, asking user to fill them in.');
+      setShowDemographicFields(true);
+      setError('We could not load your age and gender. Please fill them in at the top of the form.');
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
     console.log('[handleSubmit] Validation passed. Setting loading to true.');
     setLoading(true);
     setError(null);
     try {
+      // Compute targets from the effective values rather than state, which can be
+      // stale when age/gender were recovered during this submit.
+      const computedTargets = calculateTargets({
+        weight: Number(currentWeight),
+        height: Number(height),
+        age: Number(effectiveAge),
+        gender: effectiveGender,
+        activityLevel,
+        goalWeight: Number(goalWeight),
+      });
       const profileData = {
         currentWeight: Number(currentWeight),
         goalWeight: Number(goalWeight),
@@ -3857,11 +3901,11 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         allergies,
         medicalConditions,
         activityLevel,
-        age: Number(age),
-        gender,
-        targetCalories: targets.calories,
-        targetProtein: targets.protein,
-        targetFat: targets.fat,
+        age: Number(effectiveAge),
+        gender: effectiveGender,
+        targetCalories: computedTargets.calories,
+        targetProtein: computedTargets.protein,
+        targetFat: computedTargets.fat,
       };
       console.log('[handleSubmit] Calling updateUserProfile with data:', JSON.stringify(profileData, null, 2));
       const response = await updateUserProfile(userId, profileData);
@@ -3901,7 +3945,36 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
           showsVerticalScrollIndicator={false}
         >
             <Text style={[styles.title, { fontSize: 28, textAlign: 'center', marginBottom: 24 }]}>Tell us about yourself</Text>
-            
+
+            {showDemographicFields && (
+              <>
+                <Text style={styles.inputLabel}>Age</Text>
+                <StyledInput placeholder="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
+
+                <Text style={styles.inputLabel}>Gender</Text>
+                <View style={styles.genderContainer}>
+                  <TouchableOpacity
+                    style={[styles.genderButton, gender === 'male' && styles.genderButtonSelected]}
+                    onPress={() => setGender('male')}
+                  >
+                    <Text style={[styles.genderButtonText, gender === 'male' && styles.genderButtonTextSelected]}>Male</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.genderButton, gender === 'female' && styles.genderButtonSelected]}
+                    onPress={() => setGender('female')}
+                  >
+                    <Text style={[styles.genderButtonText, gender === 'female' && styles.genderButtonTextSelected]}>Female</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.genderButton, gender === 'other' && styles.genderButtonSelected]}
+                    onPress={() => setGender('other')}
+                  >
+                    <Text style={[styles.genderButtonText, gender === 'other' && styles.genderButtonTextSelected]}>Other</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
             <Text style={styles.inputLabel}>Current Weight (kg)</Text>
             <StyledInput placeholder="Current Weight (kg)" value={currentWeight} onChangeText={setCurrentWeight} keyboardType="numeric" />
             
