@@ -13,6 +13,28 @@ install! 'cocoapods',
 
 prepare_react_native_project!
 
+pre_install do |installer|
+  # Xcode 26 workaround: fmt 11.0.2 (vendored by RN 0.79) force-enables consteval
+  # via an unguarded detection block in base.h, which Xcode 26's stricter clang
+  # rejects ("call to consteval function ... is not a constant expression").
+  # Compiler flags cannot override it (the header redefines the macro), so patch
+  # the freshly downloaded header to take the non-consteval branch (runtime
+  # format-string checks; no behavior change).
+  # Remove after upgrading past RN 0.83 (fmt >= 12.1).
+  fmt_header = File.join(__dir__, 'Pods', 'fmt', 'include', 'fmt', 'base.h')
+  if File.exist?(fmt_header)
+    original = "#if FMT_USE_CONSTEVAL\n#  define FMT_CONSTEVAL consteval"
+    patched  = "#if 0  // FMT_USE_CONSTEVAL force-disabled for Xcode 26 (see note above)\n#  define FMT_CONSTEVAL consteval"
+    content = File.read(fmt_header)
+    if content.include?(original)
+      File.write(fmt_header, content.sub(original, patched))
+      Pod::UI.puts 'Patched fmt base.h: consteval disabled for Xcode 26'
+    elsif !content.include?('force-disabled for Xcode 26')
+      Pod::UI.warn 'fmt base.h consteval patch pattern NOT found - fmt version may have changed; build may fail on Xcode 26'
+    end
+  end
+end
+
 target 'Nutricious4u' do
   use_expo_modules!
 
@@ -58,20 +80,6 @@ target 'Nutricious4u' do
         resource_bundle_target.build_configurations.each do |config|
           config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
         end
-      end
-    end
-
-    # Xcode 26 workaround: its stricter Clang rejects the consteval format-string
-    # checking in the fmt version vendored by React Native 0.79 ("call to consteval
-    # function ... is not a constant expression"). Disabling fmt's consteval path
-    # makes it fall back to runtime format-string validation - a compile-time-only
-    # change with no runtime behavior difference. Fixed upstream in newer RN; remove
-    # this after upgrading past RN 0.83.
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
-        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_USE_CONSTEVAL=0'
-        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_CONSTEVAL='
       end
     end
   end
