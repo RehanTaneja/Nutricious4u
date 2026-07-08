@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
 import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
 import firebase, { auth, firestore, setupDietNotificationListener } from './services/firebase';
 import { registerAndSavePushToken } from './services/pushTokenManager';
@@ -107,6 +107,8 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
       },
       tabBarActiveTintColor: COLORS.primary,
       tabBarInactiveTintColor: COLORS.placeholder,
+      // Smooth cross-tab transition (React Navigation v7 built-in).
+      animation: 'shift',
       tabBarStyle: {
         // Faux-glass: translucent fill + hairline light border, no blur dependency.
         backgroundColor: 'rgba(255, 255, 255, 0.86)',
@@ -1531,7 +1533,13 @@ function AppContent() {
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
       <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator>
+        <Stack.Navigator
+          screenOptions={{
+            // Smooth, consistent slide-in for pushed screens on both platforms.
+            ...TransitionPresets.SlideFromRightIOS,
+            gestureEnabled: true,
+          }}
+        >
           {!user ? (
             <Stack.Screen
               name="Login"

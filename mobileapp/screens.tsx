@@ -45,6 +45,28 @@ import * as Notifications from 'expo-notifications';
 import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { Dimensions } from 'react-native';
+
+// Fire a success haptic tick; purely additive feedback, never throws.
+const successHaptic = () => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+};
+
+// Shared confetti burst overlay for logging celebrations.
+const CelebrationBurst = ({ visible }: { visible: boolean }) => {
+  if (!visible) return null;
+  return (
+    <ConfettiCannon
+      count={80}
+      origin={{ x: Dimensions.get('window').width / 2, y: -10 }}
+      fadeOut
+      autoStart
+      explosionSpeed={350}
+      fallSpeed={2600}
+    />
+  );
+};
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
 import { dashboardCache } from './services/cache';
 
@@ -1279,6 +1301,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [workoutQty, setWorkoutQty] = useState('');
   const [showFoodSuccess, setShowFoodSuccess] = useState(false);
   const [showWorkoutSuccess, setShowWorkoutSuccess] = useState(false);
+  const [showLogConfetti, setShowLogConfetti] = useState(false);
+  // Celebration feedback on successful logs: confetti burst + success haptic.
+  const celebrateLog = () => {
+    successHaptic();
+    setShowLogConfetti(true);
+    setTimeout(() => setShowLogConfetti(false), 3000);
+  };
   const [showFoodError, setShowFoodError] = useState(false);
   const [showWorkoutError, setShowWorkoutError] = useState(false);
   const [workoutError, setWorkoutError] = useState('');
@@ -2009,6 +2038,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
+        celebrateLog();
         setFoodName('');
         setFoodQty('');
         setNutritionData(null);
@@ -2092,9 +2122,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       setShowWorkoutModal(false);
       setShowWorkoutSuccess(true);
+      celebrateLog();
       setWorkoutName('');
       setWorkoutQty('');
-      
+
       // Show success popup
       setTimeout(() => setShowWorkoutSuccess(false), 1500);
     } catch (error: any) {
@@ -2341,19 +2372,17 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 20 }} 
         showsVerticalScrollIndicator={false}
       >
-      <GradientSurface colors={GRADIENTS.hero} style={styles.heroPanel}>
-        <View style={styles.headerContainer}>
-          <Text style={[styles.screenTitle, { color: INK.onInk }]}>Dashboard</Text>
-        </View>
-        {/* --- Single Rectangle Widget --- */}
-        <SummaryWidget
-          todayData={todayData}
-          targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, burned: targetBurned }}
-          burnedToday={burnedToday}
-          onPress={() => navigation.navigate('TrackingDetails', { summary, burnedToday, userProfile, workoutSummary })}
-        />
-        {/* --- End Widget --- */}
-      </GradientSurface>
+      <View style={styles.headerContainer}>
+        <Text style={styles.screenTitle}>Dashboard</Text>
+      </View>
+      {/* --- Single Rectangle Widget --- */}
+      <SummaryWidget
+        todayData={todayData}
+        targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, burned: targetBurned }}
+        burnedToday={burnedToday}
+        onPress={() => navigation.navigate('TrackingDetails', { summary, burnedToday, userProfile, workoutSummary })}
+      />
+      {/* --- End Widget --- */}
       <View style={styles.actionsContainer}>
         <TouchableOpacity 
           style={[styles.actionButton, { backgroundColor: COLORS.logFood }]}
@@ -3223,6 +3252,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       </Modal>
 
       </ScrollView>
+      <CelebrationBurst visible={showLogConfetti} />
     </SafeAreaView>
   );
 };
@@ -3293,6 +3323,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
         servingSize: servingSizeNum
       });
       setShowConfetti(true);
+      successHaptic();
       setExpandedId(null);
       if (onFoodLogged) onFoodLogged();
       setTimeout(() => setShowConfetti(false), 3000);
@@ -3451,6 +3482,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
           </View>
         </View>
       )}
+      <CelebrationBurst visible={showConfetti} />
     </SafeAreaView>
   );
 };
@@ -3537,6 +3569,7 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
       // Call parent/dashboard to update calories
       if (onWorkoutLogged) onWorkoutLogged(caloriesBurned);
       setShowSuccess(true);
+      successHaptic();
       setSelectedExercise(null); setDuration(''); setSets(''); setReps('');
     } catch (error) {
       console.error('Error logging workout:', error);
@@ -3618,15 +3651,16 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
       )}
       {showSuccess && (
         <View style={styles.errorPopupOverlay}>
-          <View style={styles.errorPopup}>
+          <PopIn style={styles.errorPopup}>
             <Text style={styles.errorTitle}>✅ Success</Text>
             <Text style={styles.errorMessage}>Workout logged successfully!</Text>
             <TouchableOpacity style={styles.errorButton} onPress={() => setShowSuccess(false)}>
               <Text style={styles.errorButtonText}>Dismiss</Text>
             </TouchableOpacity>
-          </View>
+          </PopIn>
         </View>
       )}
+      <CelebrationBurst visible={showSuccess} />
     </SafeAreaView>
   );
 };
@@ -8285,14 +8319,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.primary,
-  },
-  heroPanel: {
-    borderRadius: RADII.xl,
-    padding: SPACING.lg,
-    paddingBottom: SPACING.sm,
-    marginBottom: SPACING.lg,
-    overflow: 'hidden',
-    ...SHADOWS.floating,
   },
   modalOverlay: {
     flex: 1,
