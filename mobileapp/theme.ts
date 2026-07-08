@@ -60,6 +60,37 @@ export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32
 
 export const RADII = { sm: 10, md: 14, lg: 20, xl: 28, pill: 999 };
 
+// Forest-ink editorial layer: deep green hero panels and display accents.
+export const INK = {
+  deep: '#0B3B2E',
+  mid: '#14532D',
+  onInk: '#ECFDF5',
+  onInkMuted: 'rgba(236, 253, 245, 0.64)',
+};
+
+export const GRADIENTS = {
+  primary: ['#10B981', '#0D9488'],   // buttons, active fills (emerald -> teal)
+  hero: ['#0B3B2E', '#14532D'],      // dashboard hero panel
+  cardSheen: ['#FFFFFF', '#F0FDF4'], // subtle card sheen
+};
+
+// Faux-glass surfaces: translucent fills + hairline light borders (no blur dep).
+export const GLASS = {
+  fill: 'rgba(255, 255, 255, 0.72)',
+  fillStrong: 'rgba(255, 255, 255, 0.86)',
+  border: 'rgba(255, 255, 255, 0.55)',
+  tintFill: 'rgba(209, 250, 229, 0.35)',
+};
+
+// Micro-interaction timings; visual feedback only.
+export const ANIM = {
+  pressScale: 0.97,
+  spring: { friction: 6, tension: 140 },
+  fadeMs: 180,
+  popMs: 220,
+  barMs: 600,
+};
+
 export const SHADOWS = {
   subtle: {
     shadowColor: '#0F172A',

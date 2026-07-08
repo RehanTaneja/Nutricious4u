@@ -108,8 +108,10 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
       tabBarActiveTintColor: COLORS.primary,
       tabBarInactiveTintColor: COLORS.placeholder,
       tabBarStyle: {
-        backgroundColor: COLORS.white,
-        borderTopWidth: 0,
+        // Faux-glass: translucent fill + hairline light border, no blur dependency.
+        backgroundColor: 'rgba(255, 255, 255, 0.86)',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.55)',
         shadowColor: '#0F172A',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.06,

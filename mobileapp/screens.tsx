@@ -471,7 +471,7 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={closeModals}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>
               {showEditModal ? 'Edit Recipe' : 'Add New Recipe'}
             </Text>
@@ -511,7 +511,7 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </PopIn>
         </View>
       </Modal>
     </SafeAreaView>
@@ -521,8 +521,94 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
 // --- Color Palette ---
 // Tokens live in theme.ts ("Green Diet" theme). COLORS is re-exported so
 // existing imports from this module keep working.
-import { COLORS, TYPE, SPACING, RADII, SHADOWS } from './theme';
+import { COLORS, TYPE, SPACING, RADII, SHADOWS, INK, GRADIENTS, GLASS, ANIM } from './theme';
 export { COLORS };
+
+// --- Presentational-only helpers (visual layer, no interactive elements) ---
+
+// Gradient surface with the proven iOS EAS fallback (LinearGradient is unreliable
+// in iOS EAS builds in this repo; see SummaryWidget's nested-View workaround).
+const GradientSurface = ({
+  colors,
+  style,
+  start = { x: 0, y: 0 },
+  end = { x: 1, y: 1 },
+  children,
+}: {
+  colors: string[];
+  style?: StyleProp<ViewStyle>;
+  start?: { x: number; y: number };
+  end?: { x: number; y: number };
+  children?: React.ReactNode;
+}) => {
+  if (Platform.OS === 'ios' && !__DEV__) {
+    return (
+      <View style={[style, { backgroundColor: colors[0], overflow: 'hidden' }]}>
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '5%',
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors[colors.length - 1],
+            opacity: 0.35,
+          }}
+        />
+        {children}
+      </View>
+    );
+  }
+  return (
+    <LinearGradient colors={colors as any} start={start} end={end} style={style}>
+      {children}
+    </LinearGradient>
+  );
+};
+
+// Soft pop-in for modal content cards: scale 0.96 -> 1 with a fade, on mount.
+const PopIn = ({ style, children }: { style?: StyleProp<ViewStyle>; children?: React.ReactNode }) => {
+  const scale = useRef(new Animated.Value(0.96)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: ANIM.spring.friction,
+        tension: ANIM.spring.tension,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, { toValue: 1, duration: ANIM.popMs, useNativeDriver: true }),
+    ]).start();
+  }, []);
+  return (
+    <Animated.View style={[style, { transform: [{ scale }], opacity }]}>{children}</Animated.View>
+  );
+};
+
+// Progress fill that glides to its value instead of jumping (width animation
+// cannot use the native driver).
+const AnimatedBar = ({
+  progress,
+  color,
+  style,
+}: {
+  progress: number;
+  color?: string;
+  style?: StyleProp<ViewStyle>;
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: Math.max(0, Math.min(1, progress || 0)),
+      duration: ANIM.barMs,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+  const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  return <Animated.View style={[style, color ? { backgroundColor: color } : null, { width }]} />;
+};
 
 // --- Reusable Styled Components ---
 
@@ -556,26 +642,59 @@ interface StyledButtonProps {
   disabled?: boolean;
 }
 
-const StyledButton = ({ title, onPress, style, disabled = false }: StyledButtonProps) => (
-  <TouchableOpacity 
-    style={[styles.button, disabled && styles.disabledButton, style]} 
-    onPress={onPress} 
-    disabled={disabled}
-    activeOpacity={0.8}
-  >
-    <Text style={styles.buttonText}>{title}</Text>
-  </TouchableOpacity>
-);
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+const StyledButton = ({ title, onPress, style, disabled = false }: StyledButtonProps) => {
+  // Visual-only press feedback: spring the button face to ANIM.pressScale and back.
+  // The transform lives on the touchable itself so caller layout (flex, width,
+  // margins) is preserved exactly.
+  const scale = useRef(new Animated.Value(1)).current;
+  const springTo = (toValue: number) =>
+    Animated.spring(scale, {
+      toValue,
+      friction: ANIM.spring.friction,
+      tension: ANIM.spring.tension,
+      useNativeDriver: true,
+    }).start();
+
+  // The emerald->teal gradient face only applies when no caller overrode the
+  // background (e.g. the red logout button keeps its solid fill).
+  const flat = (StyleSheet.flatten([styles.button, disabled && styles.disabledButton, style]) ||
+    {}) as ViewStyle;
+  const useGradient = !disabled && flat.backgroundColor === COLORS.primary;
+
+  return (
+    <AnimatedTouchable
+      style={[
+        styles.button,
+        disabled && styles.disabledButton,
+        style,
+        useGradient && { backgroundColor: 'transparent', overflow: 'hidden' },
+        { transform: [{ scale }] },
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.8}
+      onPressIn={() => springTo(ANIM.pressScale)}
+      onPressOut={() => springTo(1)}
+    >
+      {useGradient && (
+        <GradientSurface colors={GRADIENTS.primary} style={StyleSheet.absoluteFill as any} />
+      )}
+      <Text style={styles.buttonText}>{title}</Text>
+    </AnimatedTouchable>
+  );
+};
 
 const ErrorPopup = ({ message, onClose }: { message: string; onClose: () => void }) => (
   <View style={styles.errorPopupOverlay}>
-    <View style={styles.errorPopup}>
+    <PopIn style={styles.errorPopup}>
       <Text style={styles.errorTitle}>❌ Error</Text>
       <Text style={styles.errorMessage}>{message}</Text>
       <TouchableOpacity style={styles.errorButton} onPress={onClose}>
         <Text style={styles.errorButtonText}>Dismiss</Text>
       </TouchableOpacity>
-    </View>
+    </PopIn>
   </View>
 );
 
@@ -2222,17 +2341,19 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: topSpacing, paddingBottom: 20 }} 
         showsVerticalScrollIndicator={false}
       >
-      <View style={styles.headerContainer}>
-        <Text style={styles.screenTitle}>Dashboard</Text>
-      </View>
-      {/* --- Single Rectangle Widget --- */}
-      <SummaryWidget
-        todayData={todayData}
-        targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, burned: targetBurned }}
-        burnedToday={burnedToday}
-        onPress={() => navigation.navigate('TrackingDetails', { summary, burnedToday, userProfile, workoutSummary })}
-      />
-      {/* --- End Widget --- */}
+      <GradientSurface colors={GRADIENTS.hero} style={styles.heroPanel}>
+        <View style={styles.headerContainer}>
+          <Text style={[styles.screenTitle, { color: INK.onInk }]}>Dashboard</Text>
+        </View>
+        {/* --- Single Rectangle Widget --- */}
+        <SummaryWidget
+          todayData={todayData}
+          targets={{ calories: targetCalories, protein: targetProtein, fat: targetFat, burned: targetBurned }}
+          burnedToday={burnedToday}
+          onPress={() => navigation.navigate('TrackingDetails', { summary, burnedToday, userProfile, workoutSummary })}
+        />
+        {/* --- End Widget --- */}
+      </GradientSurface>
       <View style={styles.actionsContainer}>
         <TouchableOpacity 
           style={[styles.actionButton, { backgroundColor: COLORS.logFood }]}
@@ -2621,7 +2742,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowFoodModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Log Food</Text>
             <Text style={styles.modalLabel}>Name of the food</Text>
             <TextInput
@@ -2666,7 +2787,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
       {/* Food Error Popup */}
@@ -2723,7 +2844,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowWorkoutModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Log Workout</Text>
             <Text style={styles.modalLabel}>Name of the workout</Text>
             <TextInput
@@ -2764,7 +2885,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
       {/* Workout Error Popup */}
@@ -2821,7 +2942,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowNutritionConfirm(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Confirm Nutrition Data</Text>
             <Text style={styles.modalExplanation}>
               Gemini AI analyzed "{pendingFoodData?.name}" ({pendingFoodData?.quantity}g). Please review and adjust if needed:
@@ -2880,7 +3001,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
 
@@ -4381,7 +4502,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessPopup(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Changes made successfully!</Text>
               <TouchableOpacity
                 style={styles.bigCloseButton}
@@ -4389,7 +4510,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -4744,7 +4865,7 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessPopup(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Changes made successfully!</Text>
               <TouchableOpacity
                 style={styles.bigCloseButton}
@@ -4752,7 +4873,7 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -6011,7 +6132,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
-              <View style={styles.modalContainer}>
+              <PopIn style={styles.modalContainer}>
                 <Text style={styles.modalTitle}>{modalMode === 'add' ? 'Add Notification' : 'Edit Notification'}</Text>
                 <Text style={styles.modalLabel}>Message</Text>
                 <TextInput
@@ -6098,7 +6219,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={styles.modalButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </PopIn>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
@@ -6190,7 +6311,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
-              <View style={styles.modalContainer}>
+              <PopIn style={styles.modalContainer}>
                 <Text style={styles.modalTitle}>Edit Diet Notification</Text>
                 
                 <Text style={styles.modalLabel}>Message</Text>
@@ -6305,7 +6426,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
+              </PopIn>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
@@ -6359,7 +6480,7 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
               <View key={item.label} style={styles.summaryWidgetRow}>
                 <Text style={[styles.summaryWidgetLabel, { color: item.labelColor }]}>{item.label}</Text>
                 <View style={styles.summaryWidgetBarBg}>
-                  <View style={[styles.summaryWidgetBar, { backgroundColor: item.color, width: `${progress * 100}%` }]} />
+                  <AnimatedBar progress={progress} color={item.color} style={styles.summaryWidgetBar} />
                 </View>
               </View>
             );
@@ -6384,7 +6505,7 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
             <View key={item.label} style={styles.summaryWidgetRow}>
               <Text style={[styles.summaryWidgetLabel, { color: item.labelColor }]}>{item.label}</Text>
               <View style={styles.summaryWidgetBarBg}>
-                <View style={[styles.summaryWidgetBar, { backgroundColor: item.color, width: `${progress * 100}%` }]} />
+                <AnimatedBar progress={progress} color={item.color} style={styles.summaryWidgetBar} />
               </View>
             </View>
           );
@@ -7084,7 +7205,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
+            <PopIn style={styles.modalContainer}>
               <Text style={styles.modalTitle}>{editingRoutine ? 'Edit Routine' : 'Create Routine'}</Text>
               <StyledInput
                 placeholder="Routine Name"
@@ -7132,7 +7253,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
                 <StyledButton title="Save" onPress={handleSaveRoutine} disabled={saving} style={{ flex: 1, marginRight: 8 }} />
                 <StyledButton title="Cancel" onPress={closeModal} style={{ flex: 1, backgroundColor: COLORS.error, marginLeft: 8 }} />
               </View>
-            </View>
+            </PopIn>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
@@ -7767,8 +7888,8 @@ const dieticianMessageStyles = StyleSheet.create({
     paddingTop: 10,
     paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: '#E2ECE6',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
     alignItems: 'center',
   },
   chatInput: {
@@ -8165,6 +8286,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
+  heroPanel: {
+    borderRadius: RADII.xl,
+    padding: SPACING.lg,
+    paddingBottom: SPACING.sm,
+    marginBottom: SPACING.lg,
+    overflow: 'hidden',
+    ...SHADOWS.floating,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -8418,9 +8547,11 @@ const styles = StyleSheet.create({
     color: COLORS.placeholder,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '700',
-    color: COLORS.text,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
     marginBottom: 16,
   },
 
@@ -12487,13 +12618,13 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowSuccess(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={styles.successPopup}>
+          <PopIn style={styles.successPopup}>
             <Text style={styles.successTitle}>Success</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity style={styles.successButton} onPress={() => { setShowSuccess(false); if (navigation.canGoBack()) navigation.goBack(); }}>
               <Text style={styles.successButtonText}>OK</Text>
             </TouchableOpacity>
-          </View>
+          </PopIn>
         </View>
       </Modal>
     </SafeAreaView>
@@ -13211,7 +13342,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowBreakConfirmation(false)}
         >
           <View style={styles.successPopupOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Confirm Break</Text>
               <Text style={styles.successMessage}>
                 {breakConfirmationSlot ? 
@@ -13233,7 +13364,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
                   <Text style={styles.successButtonText}>Confirm</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </PopIn>
           </View>
         </Modal>
         
@@ -13245,7 +13376,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessMessage(false)}
         >
           <View style={styles.successPopupOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Success</Text>
               <Text style={styles.successMessage}>{successMessage}</Text>
               <TouchableOpacity 
@@ -13254,7 +13385,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.successButtonText}>OK</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </ScrollView>

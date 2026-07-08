@@ -229,8 +229,8 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: '#E2ECE6',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
     alignItems: 'center',
   },
   chatInput: {
