@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
 import { Home, Settings, MessageCircle, BookOpen, Utensils } from 'lucide-react-native';
 import firebase, { auth, firestore, setupDietNotificationListener } from './services/firebase';
 import { registerAndSavePushToken } from './services/pushTokenManager';
@@ -107,6 +107,24 @@ const MainTabs = ({ isDietician, isFreeUser }: { isDietician: boolean; isFreeUse
       },
       tabBarActiveTintColor: COLORS.primary,
       tabBarInactiveTintColor: COLORS.placeholder,
+      // Smooth cross-tab transition (React Navigation v7 built-in).
+      animation: 'shift',
+      tabBarStyle: {
+        // Faux-glass: translucent fill + hairline light border, no blur dependency.
+        backgroundColor: 'rgba(255, 255, 255, 0.86)',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.55)',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+        elevation: 8,
+      },
+      tabBarLabelStyle: {
+        fontSize: 10,
+        fontWeight: '600',
+        letterSpacing: 0.2,
+      },
     })}
   >
     <Tab.Screen 
@@ -1210,7 +1228,7 @@ function AppContent() {
           {error}
         </Text>
         <TouchableOpacity 
-          style={{ backgroundColor: COLORS.primary, padding: 15, borderRadius: 8 }}
+          style={{ backgroundColor: COLORS.primary, padding: 15, borderRadius: 10 }}
           onPress={() => {
             setError(null);
             setLoading(true);
@@ -1515,7 +1533,13 @@ function AppContent() {
   return (
     <AppContext.Provider value={{ hasCompletedQuiz, setHasCompletedQuiz }}>
       <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator>
+        <Stack.Navigator
+          screenOptions={{
+            // Smooth, consistent slide-in for pushed screens on both platforms.
+            ...TransitionPresets.SlideFromRightIOS,
+            gestureEnabled: true,
+          }}
+        >
           {!user ? (
             <Stack.Screen
               name="Login"
@@ -1945,25 +1969,25 @@ function AppContent() {
 const styles = StyleSheet.create({
   notificationOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   notificationPopup: {
-    backgroundColor: '#34D399',
-    borderRadius: 16,
+    backgroundColor: '#059669',
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
   notificationTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 12,
   },
@@ -1978,44 +2002,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
     minWidth: 80,
     alignItems: 'center',
   },
   notificationButtonText: {
-    color: '#34D399',
+    color: '#059669',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   subscriptionPopupOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   subscriptionPopupContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     maxHeight: '80%',
     width: '90%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
   subscriptionPopupTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#27272A',
+    fontWeight: '700',
+    color: '#1E293B',
     textAlign: 'center',
     marginBottom: 8,
   },
   subscriptionPopupSubtitle: {
     fontSize: 14,
-    color: '#A1A1AA',
+    color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -2023,15 +2047,15 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   subscriptionPopupPlanItem: {
-    backgroundColor: '#E6F8F0',
-    borderRadius: 12,
+    backgroundColor: '#E7F6EF',
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   subscriptionSelectedPlanItem: {
-    borderColor: '#6EE7B7',
+    borderColor: '#10B981',
     backgroundColor: '#f0fff4',
   },
   subscriptionPopupPlanHeader: {
@@ -2042,22 +2066,22 @@ const styles = StyleSheet.create({
   },
   subscriptionPopupPlanName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#27272A',
+    fontWeight: '700',
+    color: '#1E293B',
   },
   subscriptionPopupPlanPrice: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#6EE7B7',
+    fontWeight: '700',
+    color: '#10B981',
   },
   subscriptionPopupPlanDuration: {
     fontSize: 14,
-    color: '#A1A1AA',
+    color: '#94A3B8',
     marginBottom: 4,
   },
   subscriptionPopupPlanDescription: {
     fontSize: 14,
-    color: '#27272A',
+    color: '#1E293B',
     lineHeight: 20,
   },
   subscriptionPopupPlanSelectedIndicator: {
@@ -2066,8 +2090,8 @@ const styles = StyleSheet.create({
   },
   subscriptionPopupPlanSelectedText: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#6EE7B7',
+    fontWeight: '700',
+    color: '#10B981',
   },
   subscriptionPopupButtons: {
     flexDirection: 'row',
@@ -2077,10 +2101,10 @@ const styles = StyleSheet.create({
   },
   subscriptionPopupCancelButton: {
     flex: 1,
-    backgroundColor: '#A1A1AA',
+    backgroundColor: '#94A3B8',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   subscriptionPopupCancelButtonText: {
@@ -2090,45 +2114,45 @@ const styles = StyleSheet.create({
   },
   subscriptionPopupConfirmButton: {
     flex: 1,
-    backgroundColor: '#6EE7B7',
+    backgroundColor: '#10B981',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   subscriptionPopupConfirmButtonDisabled: {
-    backgroundColor: '#A1A1AA',
+    backgroundColor: '#94A3B8',
   },
   subscriptionPopupConfirmButtonText: {
-    color: '#27272A',
+    color: '#1E293B',
     fontSize: 16,
     fontWeight: '600',
   },
   // App Lock Modal Styles
   lockModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   lockModalContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     width: '90%',
     maxWidth: 400,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 10,
   },
   lockModalTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FF4444',
+    fontWeight: '700',
+    color: '#DC2626',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -2146,9 +2170,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     backgroundColor: '#FFF5F5',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#FF4444',
+    borderColor: '#DC2626',
   },
   lockModalAmountLabel: {
     fontSize: 18,
@@ -2158,8 +2182,8 @@ const styles = StyleSheet.create({
   },
   lockModalAmount: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FF4444',
+    fontWeight: '700',
+    color: '#DC2626',
   },
   lockModalMessage: {
     fontSize: 16,
@@ -2175,7 +2199,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2187,32 +2211,32 @@ const styles = StyleSheet.create({
   // Upgrade Modal Styles
   upgradeModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   upgradeModalContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     width: '90%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
   upgradeModalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#27272A',
+    fontWeight: '700',
+    color: '#1E293B',
     textAlign: 'center',
     marginBottom: 8,
   },
   upgradeModalSubtitle: {
     fontSize: 14,
-    color: '#A1A1AA',
+    color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 24,
   },
@@ -2221,30 +2245,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   upgradeModalCancelButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#DC2626',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
     flex: 0.48,
     alignItems: 'center',
   },
   upgradeModalCancelButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   upgradeModalUpgradeButton: {
     backgroundColor: '#10B981',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
     flex: 0.48,
     alignItems: 'center',
   },
   upgradeModalUpgradeButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });
 

@@ -159,7 +159,7 @@ export const ChatbotScreen = () => {
     if (item.type === 'date') {
       return (
         <View style={{ alignItems: 'center', marginVertical: 8 }}>
-          <Text style={{ color: '#444', fontWeight: 'bold', backgroundColor: '#E0E7FF', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 8, fontSize: 13 }}>{item.heading}</Text>
+          <Text style={{ color: '#64748B', fontWeight: '700', backgroundColor: '#D1FAE5', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 10, fontSize: 13 }}>{item.heading}</Text>
         </View>
       );
     }
@@ -204,14 +204,14 @@ export const ChatbotScreen = () => {
             value={inputText}
             onChangeText={setInputText}
             placeholder="Type a message..."
-            placeholderTextColor="#A1A1AA"
+            placeholderTextColor="#94A3B8"
             editable={!loading}
             multiline
             onContentSizeChange={e => setInputHeight(e.nativeEvent.contentSize.height)}
             textAlignVertical="top"
           />
           <TouchableOpacity onPress={handleSend} style={styles.sendButton} disabled={loading}>
-            <Send color="#6EE7B7" size={24} />
+            <Send color="#10B981" size={24} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -222,60 +222,62 @@ export const ChatbotScreen = () => {
 const styles = StyleSheet.create({
   chatbotContainer: {
     flex: 1,
-    backgroundColor: '#F0FFF4', // Using direct color value from COLORS
+    backgroundColor: '#F6FAF7', // Using direct color value from COLORS
   },
   inputContainer: {
     flexDirection: 'row',
     paddingTop: 10,
     paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
     alignItems: 'center',
   },
   chatInput: {
     flex: 1,
     minHeight: 40,
     maxHeight: 120,
-    backgroundColor: '#F0FFF4',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     paddingHorizontal: 15,
     marginRight: 10,
-    fontSize: 16,
-    color: '#27272A',
-    borderWidth: 2,
-    borderColor: '#111',
+    fontSize: 15,
+    color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2ECE6',
   },
   sendButton: {
     padding: 5,
   },
   messageBubble: {
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 20,
     marginVertical: 4,
     maxWidth: '90%',
     flexWrap: 'wrap',
   },
   userMessage: {
-    backgroundColor: '#FFD700', // vibrant yellow
+    backgroundColor: '#D1FAE5', // soft emerald tint
     alignSelf: 'flex-end',
     borderBottomRightRadius: 4,
   },
   botMessage: {
-    backgroundColor: '#00E0FF', // vibrant cyan
+    backgroundColor: '#FFFFFF', // clean surface with hairline border
+    borderWidth: 1,
+    borderColor: '#E2ECE6',
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
   },
   messageText: {
-    fontSize: 16,
-    color: '#111',
+    fontSize: 15,
+    color: '#1E293B',
     flexWrap: 'wrap',
     width: 'auto',
     alignSelf: 'flex-start',
   },
   timestampText: {
     fontSize: 11,
-    color: '#444',
+    color: '#64748B',
     marginLeft: 8,
     marginTop: 2,
     marginBottom: 6,

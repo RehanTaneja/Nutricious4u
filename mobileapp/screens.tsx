@@ -45,6 +45,28 @@ import * as Notifications from 'expo-notifications';
 import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { Dimensions } from 'react-native';
+
+// Fire a success haptic tick; purely additive feedback, never throws.
+const successHaptic = () => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+};
+
+// Shared confetti burst overlay for logging celebrations.
+const CelebrationBurst = ({ visible }: { visible: boolean }) => {
+  if (!visible) return null;
+  return (
+    <ConfettiCannon
+      count={80}
+      origin={{ x: Dimensions.get('window').width / 2, y: -10 }}
+      fadeOut
+      autoStart
+      explosionSpeed={350}
+      fallSpeed={2600}
+    />
+  );
+};
 import { getWorkoutLogSummary, WorkoutLogSummaryResponse } from './services/api';
 import { dashboardCache } from './services/cache';
 
@@ -471,7 +493,7 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={closeModals}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>
               {showEditModal ? 'Edit Recipe' : 'Add New Recipe'}
             </Text>
@@ -511,7 +533,7 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </PopIn>
         </View>
       </Modal>
     </SafeAreaView>
@@ -519,35 +541,95 @@ const RecipesScreen = ({ navigation }: { navigation: any }) => {
 };
 
 // --- Color Palette ---
-export const COLORS = {
-  background: '#F0FFF4', // A very light, soft green
-  primary: '#6EE7B7',     // A vibrant, friendly mint green
-  primaryDark: '#34D399', // A darker shade for presses
-  white: '#FFFFFF',
-  text: '#27272A',       // A dark, modern text color
-  placeholder: '#A1A1AA',
-  error: '#EF4444',
-  energy: '#FF6B6B',      // Vibrant coral for calories
-  protein: '#4ECDC4',     // Soft teal for protein
-  fat: '#FFD93D',        // Bright yellow for fat
-  logFood: '#6C5CE7',    // Soft purple
+// Tokens live in theme.ts ("Green Diet" theme). COLORS is re-exported so
+// existing imports from this module keep working.
+import { COLORS, TYPE, SPACING, RADII, SHADOWS, INK, GRADIENTS, GLASS, ANIM } from './theme';
+export { COLORS };
 
-  logWorkout: '#FF7675', // Soft red
-  streakRed: '#FFB3B3', // very light red
-  streakActive: '#FFA500', // bright orange
-  streakInactive: '#A1A1AA', // gray
-  streakYellow: '#FFD93D', // yellow
-  streakVibrant: '#FF6B00', // vibrant flame
-  chartBars: [
-    '#A8E6CF',  // Mint
-    '#DCEDC1',  // Light lime
-    '#FFD3B6',  // Peach
-    '#FFAAA5',  // Salmon
-    '#FF8B94',  // Pink
-    '#A8E6CF',  // Mint
-    '#DCEDC1',  // Light lime
-  ],
-  lightGreen: '#E6F8F0', // A very light green for bot messages
+// --- Presentational-only helpers (visual layer, no interactive elements) ---
+
+// Gradient surface with the proven iOS EAS fallback (LinearGradient is unreliable
+// in iOS EAS builds in this repo; see SummaryWidget's nested-View workaround).
+const GradientSurface = ({
+  colors,
+  style,
+  start = { x: 0, y: 0 },
+  end = { x: 1, y: 1 },
+  children,
+}: {
+  colors: string[];
+  style?: StyleProp<ViewStyle>;
+  start?: { x: number; y: number };
+  end?: { x: number; y: number };
+  children?: React.ReactNode;
+}) => {
+  if (Platform.OS === 'ios' && !__DEV__) {
+    return (
+      <View style={[style, { backgroundColor: colors[0], overflow: 'hidden' }]}>
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '5%',
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors[colors.length - 1],
+            opacity: 0.35,
+          }}
+        />
+        {children}
+      </View>
+    );
+  }
+  return (
+    <LinearGradient colors={colors as any} start={start} end={end} style={style}>
+      {children}
+    </LinearGradient>
+  );
+};
+
+// Soft pop-in for modal content cards: scale 0.96 -> 1 with a fade, on mount.
+const PopIn = ({ style, children }: { style?: StyleProp<ViewStyle>; children?: React.ReactNode }) => {
+  const scale = useRef(new Animated.Value(0.96)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: ANIM.spring.friction,
+        tension: ANIM.spring.tension,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, { toValue: 1, duration: ANIM.popMs, useNativeDriver: true }),
+    ]).start();
+  }, []);
+  return (
+    <Animated.View style={[style, { transform: [{ scale }], opacity }]}>{children}</Animated.View>
+  );
+};
+
+// Progress fill that glides to its value instead of jumping (width animation
+// cannot use the native driver).
+const AnimatedBar = ({
+  progress,
+  color,
+  style,
+}: {
+  progress: number;
+  color?: string;
+  style?: StyleProp<ViewStyle>;
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: Math.max(0, Math.min(1, progress || 0)),
+      duration: ANIM.barMs,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+  const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  return <Animated.View style={[style, color ? { backgroundColor: color } : null, { width }]} />;
 };
 
 // --- Reusable Styled Components ---
@@ -582,26 +664,59 @@ interface StyledButtonProps {
   disabled?: boolean;
 }
 
-const StyledButton = ({ title, onPress, style, disabled = false }: StyledButtonProps) => (
-  <TouchableOpacity 
-    style={[styles.button, disabled && styles.disabledButton, style]} 
-    onPress={onPress} 
-    disabled={disabled}
-    activeOpacity={0.8}
-  >
-    <Text style={styles.buttonText}>{title}</Text>
-  </TouchableOpacity>
-);
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+const StyledButton = ({ title, onPress, style, disabled = false }: StyledButtonProps) => {
+  // Visual-only press feedback: spring the button face to ANIM.pressScale and back.
+  // The transform lives on the touchable itself so caller layout (flex, width,
+  // margins) is preserved exactly.
+  const scale = useRef(new Animated.Value(1)).current;
+  const springTo = (toValue: number) =>
+    Animated.spring(scale, {
+      toValue,
+      friction: ANIM.spring.friction,
+      tension: ANIM.spring.tension,
+      useNativeDriver: true,
+    }).start();
+
+  // The emerald->teal gradient face only applies when no caller overrode the
+  // background (e.g. the red logout button keeps its solid fill).
+  const flat = (StyleSheet.flatten([styles.button, disabled && styles.disabledButton, style]) ||
+    {}) as ViewStyle;
+  const useGradient = !disabled && flat.backgroundColor === COLORS.primary;
+
+  return (
+    <AnimatedTouchable
+      style={[
+        styles.button,
+        disabled && styles.disabledButton,
+        style,
+        useGradient && { backgroundColor: 'transparent', overflow: 'hidden' },
+        { transform: [{ scale }] },
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.8}
+      onPressIn={() => springTo(ANIM.pressScale)}
+      onPressOut={() => springTo(1)}
+    >
+      {useGradient && (
+        <GradientSurface colors={GRADIENTS.primary} style={StyleSheet.absoluteFill as any} />
+      )}
+      <Text style={styles.buttonText}>{title}</Text>
+    </AnimatedTouchable>
+  );
+};
 
 const ErrorPopup = ({ message, onClose }: { message: string; onClose: () => void }) => (
   <View style={styles.errorPopupOverlay}>
-    <View style={styles.errorPopup}>
+    <PopIn style={styles.errorPopup}>
       <Text style={styles.errorTitle}>❌ Error</Text>
       <Text style={styles.errorMessage}>{message}</Text>
       <TouchableOpacity style={styles.errorButton} onPress={onClose}>
         <Text style={styles.errorButtonText}>Dismiss</Text>
       </TouchableOpacity>
-    </View>
+    </PopIn>
   </View>
 );
 
@@ -1024,7 +1139,7 @@ const LoginSignupScreen = () => {
                     <Text style={styles.errorButtonText}>{forgotLoading ? 'Sending...' : 'Send'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.errorButton, { flex: 1, marginLeft: 8, backgroundColor: '#aaa' }]}
+                    style={[styles.errorButton, { flex: 1, marginLeft: 8, backgroundColor: '#94A3B8' }]}
                     onPress={() => {
                       setShowForgotPassword(false);
                       setForgotEmail('');
@@ -1079,7 +1194,7 @@ const CircularProgress = ({
           alignItems: 'center',
           backgroundColor: COLORS.background
         }}>
-          <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.text, textAlign: 'center' }}>
             {Math.round(value)} / {Math.round(maxValue)}
           </Text>
           <Text style={{ fontSize: 10, color: COLORS.placeholder, textAlign: 'center' }}>
@@ -1186,6 +1301,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [workoutQty, setWorkoutQty] = useState('');
   const [showFoodSuccess, setShowFoodSuccess] = useState(false);
   const [showWorkoutSuccess, setShowWorkoutSuccess] = useState(false);
+  const [showLogConfetti, setShowLogConfetti] = useState(false);
+  // Celebration feedback on successful logs: confetti burst + success haptic.
+  const celebrateLog = () => {
+    successHaptic();
+    setShowLogConfetti(true);
+    setTimeout(() => setShowLogConfetti(false), 3000);
+  };
   const [showFoodError, setShowFoodError] = useState(false);
   const [showWorkoutError, setShowWorkoutError] = useState(false);
   const [workoutError, setWorkoutError] = useState('');
@@ -1916,6 +2038,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         setShowNutritionConfirm(false);
         setShowFoodModal(false);
         setShowFoodSuccess(true);
+        celebrateLog();
         setFoodName('');
         setFoodQty('');
         setNutritionData(null);
@@ -1999,9 +2122,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       
       setShowWorkoutModal(false);
       setShowWorkoutSuccess(true);
+      celebrateLog();
       setWorkoutName('');
       setWorkoutQty('');
-      
+
       // Show success popup
       setTimeout(() => setShowWorkoutSuccess(false), 1500);
     } catch (error: any) {
@@ -2290,19 +2414,19 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                           style={{ 
                             backgroundColor: COLORS.primary, 
                             padding: 12, 
-                            borderRadius: 8, 
+                            borderRadius: 10, 
                             alignItems: 'center',
                             opacity: 1  // Always fully visible
                           }}
                           onPress={handleOpenDiet}
                           // Remove disabled prop - button is always clickable
                         >
-                          <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 18 }}>My Diet</Text>
+                          <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 18 }}>My Diet</Text>
                         </TouchableOpacity>
         {dietLoading ? (
-          <Text style={{ color: COLORS.placeholder, marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>Loading diet info...</Text>
+          <Text style={{ color: COLORS.placeholder, marginTop: 12, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>Loading diet info...</Text>
         ) : dietError ? (
-          <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>{dietError}</Text>
+          <Text style={{ color: 'red', marginTop: 12, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>{dietError}</Text>
         ) : (
           <>
             {/* Show trial countdown if on trial */}
@@ -2311,7 +2435,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 <Text style={{ color: COLORS.text, marginTop: 12, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
                   Free Trial Remaining
                 </Text>
-                <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
+                <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: '700', textAlign: 'center' }}>
                   {trialCountdown.days} days {trialCountdown.hours} hours
                 </Text>
               </>
@@ -2320,7 +2444,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             <Text style={{ color: COLORS.text, marginTop: 12, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
               Time Until next diet
             </Text>
-            <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center' }}>
+            <Text style={{ color: COLORS.primary, marginTop: 4, fontSize: 20, fontWeight: '700', textAlign: 'center' }}>
               {daysLeft ? `${daysLeft.days} days ${daysLeft.hours} hours` : '-'}
             </Text>
               </>
@@ -2339,7 +2463,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             <TouchableOpacity onPress={() => setShowDietPdf(false)} style={{ padding: 8, marginRight: 8 }}>
               <Text style={{ fontSize: 22, color: COLORS.primary }}>Close</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text }}>My Diet PDF</Text>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text }}>My Diet PDF</Text>
           </View>
                       <View style={{ flex: 1 }}>
               {dietPdfUrl ? (
@@ -2360,7 +2484,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                                   margin: 0; 
                                   padding: 0; 
                                   font-family: Arial, sans-serif;
-                                  background-color: #f0f0f0;
+                                  background-color: #EFF5F1;
                                 }
                                 .container {
                                   width: 100%;
@@ -2387,7 +2511,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                           .page-canvas {
                             display: block;
                             margin: 0 auto 20px auto;
-                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
                             touch-action: manipulation;
                           }
                                 .loading {
@@ -2396,7 +2520,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                                   align-items: center;
                                   height: 100%;
                                   font-size: 18px;
-                                  color: #666;
+                                  color: #64748B;
                                 }
                                 .error {
                                   display: flex;
@@ -2404,12 +2528,12 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                                   align-items: center;
                                   height: 100%;
                                   font-size: 16px;
-                                  color: #d32f2f;
+                                  color: #DC2626;
                                   text-align: center;
                                   padding: 20px;
                                 }
                                                           .page-indicator {
-                            background: rgba(0, 0, 0, 0.7);
+                            background: rgba(15, 23, 42, 0.7);
                             color: white;
                             padding: 8px 16px;
                             text-align: center;
@@ -2647,7 +2771,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowFoodModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Log Food</Text>
             <Text style={styles.modalLabel}>Name of the food</Text>
             <TextInput
@@ -2692,7 +2816,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
       {/* Food Error Popup */}
@@ -2749,7 +2873,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowWorkoutModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Log Workout</Text>
             <Text style={styles.modalLabel}>Name of the workout</Text>
             <TextInput
@@ -2790,7 +2914,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
       {/* Workout Error Popup */}
@@ -2847,7 +2971,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         onRequestClose={() => setShowNutritionConfirm(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <PopIn style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Confirm Nutrition Data</Text>
             <Text style={styles.modalExplanation}>
               Gemini AI analyzed "{pendingFoodData?.name}" ({pendingFoodData?.quantity}g). Please review and adjust if needed:
@@ -2906,7 +3030,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               </TouchableOpacity>
             </View>
             <Text style={styles.poweredBy}>Powered by Google Gemini 2.5 Flash</Text>
-          </View>
+          </PopIn>
         </View>
       </Modal>
 
@@ -2918,7 +3042,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       >
         <View style={{ 
           flex: 1, 
-          backgroundColor: 'rgba(0,0,0,0.5)', 
+          backgroundColor: 'rgba(15, 23, 42, 0.45)', 
           justifyContent: 'center', 
           alignItems: 'center',
           paddingHorizontal: 20
@@ -2930,9 +3054,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             width: '100%',
             maxWidth: 350,
             alignItems: 'center',
-            shadowColor: '#000',
+            shadowColor: '#0F172A',
             shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.25,
+            shadowOpacity: 0.1,
             shadowRadius: 10,
             elevation: 10
           }}>
@@ -2941,7 +3065,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               width: 80,
               height: 80,
               borderRadius: 40,
-              backgroundColor: '#4CAF50',
+              backgroundColor: '#16A34A',
               justifyContent: 'center',
               alignItems: 'center',
               marginBottom: 20
@@ -2951,8 +3075,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 24,
-              fontWeight: 'bold',
-              color: '#2E7D32',
+              fontWeight: '700',
+              color: '#059669',
               textAlign: 'center',
               marginBottom: 15
             }}>
@@ -2961,7 +3085,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 16,
-              color: '#666',
+              color: '#64748B',
               textAlign: 'center',
               lineHeight: 22,
               marginBottom: 25
@@ -2978,16 +3102,16 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               <TouchableOpacity
                 style={{
                   flex: 1,
-                  backgroundColor: '#f5f5f5',
+                  backgroundColor: '#F6FAF7',
                   paddingVertical: 15,
-                  borderRadius: 12,
+                  borderRadius: 14,
                   alignItems: 'center'
                 }}
                 onPress={() => setShowAutoExtractionPopup(false)}
                 disabled={extractionLoading}
               >
                 <Text style={{
-                  color: '#666',
+                  color: '#64748B',
                   fontSize: 16,
                   fontWeight: '600'
                 }}>
@@ -2998,9 +3122,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               <TouchableOpacity
                 style={{
                   flex: 1,
-                  backgroundColor: extractionLoading ? '#CCCCCC' : '#4CAF50',
+                  backgroundColor: extractionLoading ? '#E2ECE6' : '#16A34A',
                   paddingVertical: 15,
-                  borderRadius: 12,
+                  borderRadius: 14,
                   alignItems: 'center',
                   opacity: extractionLoading ? 0.8 : 1
                 }}
@@ -3033,7 +3157,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       >
         <View style={{ 
           flex: 1, 
-          backgroundColor: 'rgba(0,0,0,0.5)', 
+          backgroundColor: 'rgba(15, 23, 42, 0.45)', 
           justifyContent: 'center', 
           alignItems: 'center',
           paddingHorizontal: 20
@@ -3045,9 +3169,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             width: '100%',
             maxWidth: 350,
             alignItems: 'center',
-            shadowColor: '#000',
+            shadowColor: '#0F172A',
             shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.25,
+            shadowOpacity: 0.1,
             shadowRadius: 10,
             elevation: 10
           }}>
@@ -3056,7 +3180,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               width: 100,
               height: 100,
               borderRadius: 50,
-              backgroundColor: '#4CAF50',
+              backgroundColor: '#16A34A',
               justifyContent: 'center',
               alignItems: 'center',
               marginBottom: 25
@@ -3066,8 +3190,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 26,
-              fontWeight: 'bold',
-              color: '#2E7D32',
+              fontWeight: '700',
+              color: '#059669',
               textAlign: 'center',
               marginBottom: 15
             }}>
@@ -3076,7 +3200,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 18,
-              color: '#4CAF50',
+              color: '#16A34A',
               textAlign: 'center',
               fontWeight: '600',
               marginBottom: 10
@@ -3086,9 +3210,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 24,
-              color: '#2E7D32',
+              color: '#059669',
               textAlign: 'center',
-              fontWeight: 'bold',
+              fontWeight: '700',
               marginBottom: 15
             }}>
               {extractionSuccessCount} diet reminders
@@ -3096,7 +3220,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <Text style={{
               fontSize: 16,
-              color: '#666',
+              color: '#64748B',
               textAlign: 'center',
               lineHeight: 22,
               marginBottom: 30
@@ -3106,10 +3230,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             
             <TouchableOpacity
               style={{
-                backgroundColor: '#4CAF50',
+                backgroundColor: '#16A34A',
                 paddingVertical: 15,
                 paddingHorizontal: 40,
-                borderRadius: 12,
+                borderRadius: 14,
                 width: '100%',
                 alignItems: 'center'
               }}
@@ -3128,6 +3252,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       </Modal>
 
       </ScrollView>
+      <CelebrationBurst visible={showLogConfetti} />
     </SafeAreaView>
   );
 };
@@ -3198,6 +3323,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
         servingSize: servingSizeNum
       });
       setShowConfetti(true);
+      successHaptic();
       setExpandedId(null);
       if (onFoodLogged) onFoodLogged();
       setTimeout(() => setShowConfetti(false), 3000);
@@ -3251,7 +3377,7 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
                       height: 36,
                       borderColor: COLORS.primary,
                       borderWidth: 1,
-                      borderRadius: 8,
+                      borderRadius: 10,
                       marginRight: 8,
                       textAlign: 'center',
                       backgroundColor: COLORS.white,
@@ -3281,63 +3407,63 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
         <View style={{
           position: 'absolute',
           top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.4)',
+          backgroundColor: 'rgba(15, 23, 42, 0.4)',
           justifyContent: 'center', alignItems: 'center', zIndex: 1000
         }}>
           <View style={{
-            backgroundColor: '#e6ffe6',
-            borderRadius: 24,
+            backgroundColor: '#E7F6EF',
+            borderRadius: 28,
             padding: 32,
             alignItems: 'center',
             width: '80%',
-            shadowColor: '#00C851',
+            shadowColor: '#16A34A',
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
+            shadowOpacity: 0.1,
             shadowRadius: 8,
             elevation: 8,
           }}>
             <Text style={{ fontSize: 36, marginBottom: 8 }}>🎉</Text>
-            <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#009e60', marginBottom: 8 }}>Food Logged!</Text>
-            <Text style={{ fontSize: 18, color: '#333', marginBottom: 8, textAlign: 'center' }}>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: '#059669', marginBottom: 8 }}>Food Logged!</Text>
+            <Text style={{ fontSize: 18, color: '#1E293B', marginBottom: 8, textAlign: 'center' }}>
               {successFood ? `${successFood.name} (${successFood.servingSize}g) has been added to your log!` : 'Food has been logged!'}
             </Text>
             {successFood && (
               <View style={{ 
-                backgroundColor: '#f8f9fa', 
-                borderRadius: 12, 
+                backgroundColor: '#F6FAF7', 
+                borderRadius: 14, 
                 padding: 16, 
                 marginBottom: 16,
                 width: '100%'
               }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 8, textAlign: 'center' }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 8, textAlign: 'center' }}>
                   Nutritional Information Added:
                 </Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
                   <View style={{ alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FF6B6B' }}>{successFood.calories}</Text>
-                    <Text style={{ fontSize: 12, color: '#666' }}>Calories</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: '#F97316' }}>{successFood.calories}</Text>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>Calories</Text>
                   </View>
                   <View style={{ alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#4ECDC4' }}>{successFood.protein}g</Text>
-                    <Text style={{ fontSize: 12, color: '#666' }}>Protein</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: '#0D9488' }}>{successFood.protein}g</Text>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>Protein</Text>
                   </View>
                   <View style={{ alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFD93D' }}>{successFood.fat}g</Text>
-                    <Text style={{ fontSize: 12, color: '#666' }}>Fat</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: '#EAB308' }}>{successFood.fat}g</Text>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>Fat</Text>
                   </View>
                 </View>
               </View>
             )}
             <TouchableOpacity
               style={{
-                backgroundColor: '#4ee44e',
+                backgroundColor: '#16A34A',
                 paddingVertical: 16,
                 paddingHorizontal: 40,
-                borderRadius: 16,
+                borderRadius: 20,
                 marginTop: 8,
-                shadowColor: '#4ee44e',
+                shadowColor: '#16A34A',
                 shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.2,
+                shadowOpacity: 0.08,
                 shadowRadius: 4,
                 elevation: 4,
               }}
@@ -3351,11 +3477,12 @@ const FoodLogScreen = ({ navigation, route }: { navigation: any, route?: any }) 
               }}
               activeOpacity={0.85}
             >
-              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>Close</Text>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
+      <CelebrationBurst visible={showConfetti} />
     </SafeAreaView>
   );
 };
@@ -3442,6 +3569,7 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
       // Call parent/dashboard to update calories
       if (onWorkoutLogged) onWorkoutLogged(caloriesBurned);
       setShowSuccess(true);
+      successHaptic();
       setSelectedExercise(null); setDuration(''); setSets(''); setReps('');
     } catch (error) {
       console.error('Error logging workout:', error);
@@ -3473,7 +3601,7 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
             keyExtractor={item => item.id.toString()}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.workoutResultBox} onPress={() => setSelectedExercise(item)}>
-                <Text style={[styles.foodName, {fontSize: 20, fontWeight: 'bold', textAlign: 'center'}]}>
+                <Text style={[styles.foodName, {fontSize: 20, fontWeight: '700', textAlign: 'center'}]}>
                   {(() => {
                     // Prefer English translation name
                     const en = item.translations.find((t: any) => t.language === 2 && t.name);
@@ -3490,7 +3618,7 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
       )}
       {selectedExercise && (
         <View style={styles.logContainer}>
-          <Text style={[styles.foodName, {fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 16}]}>{selectedExercise.name}</Text>
+          <Text style={[styles.foodName, {fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 16}]}>{selectedExercise.name}</Text>
           {CARDIO_CATEGORIES.includes(selectedExercise.category) ? (
             <StyledInput
               placeholder="Duration (minutes)"
@@ -3523,15 +3651,16 @@ const WorkoutLogScreen = ({ navigation, route }: { navigation: any, route?: any 
       )}
       {showSuccess && (
         <View style={styles.errorPopupOverlay}>
-          <View style={styles.errorPopup}>
+          <PopIn style={styles.errorPopup}>
             <Text style={styles.errorTitle}>✅ Success</Text>
             <Text style={styles.errorMessage}>Workout logged successfully!</Text>
             <TouchableOpacity style={styles.errorButton} onPress={() => setShowSuccess(false)}>
               <Text style={styles.errorButtonText}>Dismiss</Text>
             </TouchableOpacity>
-          </View>
+          </PopIn>
         </View>
       )}
+      <CelebrationBurst visible={showSuccess} />
     </SafeAreaView>
   );
 };
@@ -4022,10 +4151,10 @@ const QnAScreen = ({ navigation, route }: { navigation: any; route: any }) => {
             />
 
             <View style={{ marginVertical: 12 }}>
-              <Text style={{ fontWeight: 'bold', color: '#888', fontSize: 16 }}>Your Calculated Daily Targets</Text>
-              <Text style={{ fontSize: 15, color: '#222', marginTop: 4 }}>Calories: {targets.calories} kcal</Text>
-              <Text style={{ fontSize: 15, color: '#222' }}>Protein: {targets.protein} g</Text>
-              <Text style={{ fontSize: 15, color: '#222' }}>Fat: {targets.fat} g</Text>
+              <Text style={{ fontWeight: '700', color: '#64748B', fontSize: 16 }}>Your Calculated Daily Targets</Text>
+              <Text style={{ fontSize: 15, color: '#1E293B', marginTop: 4 }}>Calories: {targets.calories} kcal</Text>
+              <Text style={{ fontSize: 15, color: '#1E293B' }}>Protein: {targets.protein} g</Text>
+              <Text style={{ fontSize: 15, color: '#1E293B' }}>Fat: {targets.fat} g</Text>
             </View>
 
             <StyledButton title={loading ? 'Saving...' : 'Save & Continue'} onPress={handleSubmit} disabled={loading} />
@@ -4220,9 +4349,9 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 32 }}>
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: 'bold', padding: 8, marginRight: 8 }}>{'←'}</Text>
+              <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: '700', padding: 8, marginRight: 8 }}>{'←'}</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 28, fontWeight: 'bold', color: COLORS.text }}>Account Settings</Text>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: COLORS.text }}>Account Settings</Text>
           </View>
           <Text style={styles.inputLabel}>First Name</Text>
           <StyledInput
@@ -4328,14 +4457,14 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
             onChangeText={text => { setEditProfile({ ...editProfile!, medicalConditions: text }); setHasUnsavedChanges(true); }}
           />
           <View style={{ marginVertical: 12 }}>
-            <Text style={{ fontWeight: 'bold', color: '#888', fontSize: 16 }}>Your Calculated Daily Targets</Text>
-            <Text style={{ fontSize: 15, color: '#222', marginTop: 4 }}>Calories: {targets.calories} kcal</Text>
-            <Text style={{ fontSize: 15, color: '#222' }}>Protein: {targets.protein} g</Text>
-            <Text style={{ fontSize: 15, color: '#222' }}>Fat: {targets.fat} g</Text>
+            <Text style={{ fontWeight: '700', color: '#64748B', fontSize: 16 }}>Your Calculated Daily Targets</Text>
+            <Text style={{ fontSize: 15, color: '#1E293B', marginTop: 4 }}>Calories: {targets.calories} kcal</Text>
+            <Text style={{ fontSize: 15, color: '#1E293B' }}>Protein: {targets.protein} g</Text>
+            <Text style={{ fontSize: 15, color: '#1E293B' }}>Fat: {targets.fat} g</Text>
           </View>
 
           <View style={{ marginVertical: 12 }}>
-            <Text style={{ fontWeight: 'bold', color: '#888', fontSize: 16 }}>Daily Calories Burned Goal</Text>
+            <Text style={{ fontWeight: '700', color: '#64748B', fontSize: 16 }}>Daily Calories Burned Goal</Text>
             <View style={styles.pickerWrapper}>
               <Picker
                 selectedValue={editProfile?.caloriesBurnedGoal ?? 0}
@@ -4370,18 +4499,18 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
 
           {/* Delete Account Section - Only show for non-dietician users */}
           {!isDietician && (
-            <View style={{ marginTop: 32, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#e0e0e0' }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#d32f2f', marginBottom: 8 }}>
+            <View style={{ marginTop: 32, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#E2ECE6' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#DC2626', marginBottom: 8 }}>
                 Danger Zone
               </Text>
-              <Text style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 16 }}>
                 Once you delete your account, there is no going back. Please be certain.
               </Text>
               <TouchableOpacity
                 style={{
-                  backgroundColor: '#d32f2f',
+                  backgroundColor: '#DC2626',
                   padding: 16,
-                  borderRadius: 8,
+                  borderRadius: 10,
                   alignItems: 'center',
                   opacity: deletingAccount ? 0.6 : 1,
                 }}
@@ -4391,7 +4520,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
                 {deletingAccount ? (
                   <ActivityIndicator size="small" color="#ffffff" />
                 ) : (
-                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>
+                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
                     Delete Account
                   </Text>
                 )}
@@ -4407,7 +4536,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessPopup(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Changes made successfully!</Text>
               <TouchableOpacity
                 style={styles.bigCloseButton}
@@ -4415,7 +4544,7 @@ const AccountSettingsScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -4712,9 +4841,9 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 32 }}>
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: 'bold', padding: 8, marginRight: 8 }}>{'←'}</Text>
+              <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: '700', padding: 8, marginRight: 8 }}>{'←'}</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 28, fontWeight: 'bold', color: COLORS.text }}>Login Settings</Text>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: COLORS.text }}>Login Settings</Text>
           </View>
 
           {/* Show current email */}
@@ -4770,7 +4899,7 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessPopup(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Changes made successfully!</Text>
               <TouchableOpacity
                 style={styles.bigCloseButton}
@@ -4778,7 +4907,7 @@ export const LoginSettingsScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.bigCloseButtonText}>Close</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -5878,9 +6007,9 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
     const trialDay = item.trialDay;
     
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 16, padding: 16, marginVertical: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.background, borderRadius: 20, padding: 16, marginVertical: 8, shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: 'bold' }}>{item.message}</Text>
+          <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: '700' }}>{item.message}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
             <Text style={{ color: COLORS.placeholder, fontSize: 14 }}>
               {item.time} • {item.type === 'diet' ? 'From Diet PDF' : 'Custom'}
@@ -5932,7 +6061,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
       <View style={styles.settingsContainer}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: 'bold', padding: 8, marginRight: 8 }}>{'←'}</Text>
+            <Text style={{ color: COLORS.primary, fontSize: 32, fontWeight: '700', padding: 8, marginRight: 8 }}>{'←'}</Text>
           </TouchableOpacity>
           <Text style={[styles.screenTitle, { flex: 1, textAlign: 'center', marginLeft: -36 }]}>Notification Settings</Text>
           <View style={{ width: 40 }} />
@@ -6013,7 +6142,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                 keyExtractor={(item, index) => `${item.type}_${item.id}_${index}`}
                 renderItem={renderItem}
                 ListHeaderComponent={
-                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text, marginBottom: 16 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 16 }}>
                     All Notifications ({combinedNotifications.length})
                   </Text>
                 }
@@ -6037,7 +6166,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
-              <View style={styles.modalContainer}>
+              <PopIn style={styles.modalContainer}>
                 <Text style={styles.modalTitle}>{modalMode === 'add' ? 'Add Notification' : 'Edit Notification'}</Text>
                 <Text style={styles.modalLabel}>Message</Text>
                 <TextInput
@@ -6124,7 +6253,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={styles.modalButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </PopIn>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
@@ -6148,11 +6277,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                   marginTop: 24,
                   paddingVertical: 12,
                   paddingHorizontal: 24,
-                  borderRadius: 8,
+                  borderRadius: 10,
                   minWidth: 100,
                   alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.1,
+                  shadowColor: '#0F172A',
+                  shadowOpacity: 0.06,
                   shadowRadius: 4,
                   elevation: 3
                 }}
@@ -6187,11 +6316,11 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                   marginTop: 24,
                   paddingVertical: 12,
                   paddingHorizontal: 24,
-                  borderRadius: 8,
+                  borderRadius: 10,
                   minWidth: 100,
                   alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.1,
+                  shadowColor: '#0F172A',
+                  shadowOpacity: 0.06,
                   shadowRadius: 4,
                   elevation: 3
                 }}
@@ -6216,7 +6345,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
-              <View style={styles.modalContainer}>
+              <PopIn style={styles.modalContainer}>
                 <Text style={styles.modalTitle}>Edit Diet Notification</Text>
                 
                 <Text style={styles.modalLabel}>Message</Text>
@@ -6331,7 +6460,7 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
+              </PopIn>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
@@ -6385,7 +6514,7 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
               <View key={item.label} style={styles.summaryWidgetRow}>
                 <Text style={[styles.summaryWidgetLabel, { color: item.labelColor }]}>{item.label}</Text>
                 <View style={styles.summaryWidgetBarBg}>
-                  <View style={[styles.summaryWidgetBar, { backgroundColor: item.color, width: `${progress * 100}%` }]} />
+                  <AnimatedBar progress={progress} color={item.color} style={styles.summaryWidgetBar} />
                 </View>
               </View>
             );
@@ -6410,7 +6539,7 @@ const SummaryWidget = ({ todayData, targets, burnedToday, onPress }: any) => {
             <View key={item.label} style={styles.summaryWidgetRow}>
               <Text style={[styles.summaryWidgetLabel, { color: item.labelColor }]}>{item.label}</Text>
               <View style={styles.summaryWidgetBarBg}>
-                <View style={[styles.summaryWidgetBar, { backgroundColor: item.color, width: `${progress * 100}%` }]} />
+                <AnimatedBar progress={progress} color={item.color} style={styles.summaryWidgetBar} />
               </View>
             </View>
           );
@@ -6512,10 +6641,10 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
 
   // Chart colors
   const chartColors = {
-    calories: '#FF6B6B',
-    protein: '#4ECDC4', 
-    fat: '#FFD93D',
-    burned: '#FFA500'
+    calories: '#F97316',
+    protein: '#0D9488', 
+    fat: '#EAB308',
+    burned: '#F59E0B'
   };
 
   const renderChart = (data: any[], title: string, color: string, target: number, xLabels: string[]) => {
@@ -6561,7 +6690,7 @@ const TrackingDetailsScreen = ({ navigation, route }: { navigation: any, route: 
               ))}
             </View>
             {/* Simplified chart content for iOS */}
-            <View style={[styles.chartContent, { width: chartWidth, height: chartHeight, backgroundColor: '#f5f5f5', borderRadius: 8 }]}> 
+            <View style={[styles.chartContent, { width: chartWidth, height: chartHeight, backgroundColor: '#F6FAF7', borderRadius: 10 }]}> 
               {/* Goal line */}
               <View style={[styles.goalLine, { 
                 top: chartHeight - (target / maxValue) * chartHeight,
@@ -7012,9 +7141,9 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
           refreshing={refreshing}
           onRefresh={() => { setRefreshing(true); fetchRoutines(); }}
           renderItem={({ item }) => (
-            <View style={{ backgroundColor: COLORS.white, borderRadius: 18, padding: 18, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 }}>
+            <View style={{ backgroundColor: COLORS.white, borderRadius: 20, padding: 18, marginBottom: 14, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.text, flex: 1 }}>{item.name}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: COLORS.text, flex: 1 }}>{item.name}</Text>
                 <TouchableOpacity onPress={() => openEditModal(item)} style={{ marginRight: 12 }}>
                   <Pencil color={COLORS.primaryDark} size={26} />
                 </TouchableOpacity>
@@ -7023,14 +7152,14 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
                 </TouchableOpacity>
               </View>
               <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-                <Text style={{ color: COLORS.energy, fontWeight: 'bold', marginRight: 12 }}>Calories: {Math.round(item.calories)}</Text>
-                <Text style={{ color: COLORS.protein, fontWeight: 'bold', marginRight: 12 }}>Protein: {Math.round(item.protein)}</Text>
-                <Text style={{ color: COLORS.fat, fontWeight: 'bold', marginRight: 12 }}>Fat: {Math.round(item.fat)}</Text>
-                <Text style={{ color: COLORS.streakActive, fontWeight: 'bold' }}>Burned: {Math.round(item.burned)}</Text>
+                <Text style={{ color: COLORS.energy, fontWeight: '700', marginRight: 12 }}>Calories: {Math.round(item.calories)}</Text>
+                <Text style={{ color: COLORS.protein, fontWeight: '700', marginRight: 12 }}>Protein: {Math.round(item.protein)}</Text>
+                <Text style={{ color: COLORS.fat, fontWeight: '700', marginRight: 12 }}>Fat: {Math.round(item.fat)}</Text>
+                <Text style={{ color: COLORS.streakActive, fontWeight: '700' }}>Burned: {Math.round(item.burned)}</Text>
               </View>
               <View style={{ marginBottom: 8 }}>
                 {item.items.map((it, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingVertical: 8, paddingHorizontal: 8, backgroundColor: '#F7F7FA', borderRadius: 10 }}>
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingVertical: 8, paddingHorizontal: 8, backgroundColor: '#F6FAF7', borderRadius: 14 }}>
                     <Text style={{ color: COLORS.text, fontSize: 18, flex: 1, fontWeight: '500' }}>
                       {it.type === 'food' ? '🍎' : '🏋️‍♂️'} {it.name} {it.quantity ? `(${it.quantity}${it.type === 'food' ? 'g' : ' min'})` : ''}
                     </Text>
@@ -7044,7 +7173,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
                 title={loggingId === item.id ? 'Logging...' : 'Log Routine'}
                 onPress={() => handleLogRoutine(item.id)}
                 disabled={loggingId === item.id}
-                style={{ marginTop: 4, borderRadius: 12, backgroundColor: COLORS.primaryDark }}
+                style={{ marginTop: 4, borderRadius: 14, backgroundColor: COLORS.primaryDark }}
               />
             </View>
           )}
@@ -7110,7 +7239,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
+            <PopIn style={styles.modalContainer}>
               <Text style={styles.modalTitle}>{editingRoutine ? 'Edit Routine' : 'Create Routine'}</Text>
               <StyledInput
                 placeholder="Routine Name"
@@ -7119,13 +7248,13 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
               />
               <View style={{ flexDirection: 'row', marginBottom: 8 }}>
                 <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: itemType === 'food' ? COLORS.primary : COLORS.background, borderRadius: 8, padding: 10, marginRight: 4, alignItems: 'center' }}
+                  style={{ flex: 1, backgroundColor: itemType === 'food' ? COLORS.primary : COLORS.background, borderRadius: 10, padding: 10, marginRight: 4, alignItems: 'center' }}
                   onPress={() => setItemType('food')}
                 >
                   <Text style={{ color: itemType === 'food' ? COLORS.white : COLORS.text }}>Food</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: itemType === 'workout' ? COLORS.primary : COLORS.background, borderRadius: 8, padding: 10, marginLeft: 4, alignItems: 'center' }}
+                  style={{ flex: 1, backgroundColor: itemType === 'workout' ? COLORS.primary : COLORS.background, borderRadius: 10, padding: 10, marginLeft: 4, alignItems: 'center' }}
                   onPress={() => setItemType('workout')}
                 >
                   <Text style={{ color: itemType === 'workout' ? COLORS.white : COLORS.text }}>Workout</Text>
@@ -7158,7 +7287,7 @@ const RoutineScreen = ({ navigation }: { navigation: any }) => {
                 <StyledButton title="Save" onPress={handleSaveRoutine} disabled={saving} style={{ flex: 1, marginRight: 8 }} />
                 <StyledButton title="Cancel" onPress={closeModal} style={{ flex: 1, backgroundColor: COLORS.error, marginLeft: 8 }} />
               </View>
-            </View>
+            </PopIn>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
@@ -7648,7 +7777,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     if (item.type === 'date') {
       return (
         <View style={{ alignItems: 'center', marginVertical: 8 }}>
-          <Text style={{ color: '#444', fontWeight: 'bold', backgroundColor: '#E0E7FF', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 8, fontSize: 13 }}>
+          <Text style={{ color: '#64748B', fontWeight: '700', backgroundColor: '#D1FAE5', paddingHorizontal: 12, paddingVertical: 2, borderRadius: 10, fontSize: 13 }}>
             --- {item.heading} ---
           </Text>
         </View>
@@ -7676,7 +7805,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
         ]}>
           <Text style={[
             dieticianMessageStyles.messageText,
-            { color: isUserMessage ? '#111' : '#fff' }
+            { color: isUserMessage ? '#1E293B' : '#fff' }
           ]}>{item.text}</Text>
         </View>
         <Text style={[dieticianMessageStyles.timestampText, { alignSelf: isUserMessage ? 'flex-end' : 'flex-start', marginLeft: isUserMessage ? 0 : 12, marginRight: isUserMessage ? 12 : 0 }]}>{timeString}</Text>
@@ -7711,9 +7840,9 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
     return (
       <SafeAreaView style={dieticianMessageStyles.container}>
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: '#888', fontSize: 18, marginBottom: 20 }}>Select a user from the Messages list to start chatting.</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12, backgroundColor: '#6EE7B7', borderRadius: 8 }}>
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Back</Text>
+          <Text style={{ color: '#64748B', fontSize: 18, marginBottom: 20 }}>Select a user from the Messages list to start chatting.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12, backgroundColor: '#10B981', borderRadius: 10 }}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Back</Text>
           </TouchableOpacity>
               </View>
       </SafeAreaView>
@@ -7729,7 +7858,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
       >
         <View style={[dieticianMessageStyles.header, { paddingTop: topSpacing }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={dieticianMessageStyles.backButton}>
-            <ArrowLeft size={28} color="#6EE7B7" />
+            <ArrowLeft size={28} color="#10B981" />
           </TouchableOpacity>
           <Text style={dieticianMessageStyles.headerTitle}>{headerTitle}</Text>
         </View>
@@ -7746,14 +7875,14 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
             value={inputText}
             onChangeText={setInputText}
             placeholder="Type a message..."
-            placeholderTextColor="#A1A1AA"
+            placeholderTextColor="#94A3B8"
             editable={!loading && !!userId && !initializing}
             multiline
             onContentSizeChange={e => setInputHeight(e.nativeEvent.contentSize.height)}
             textAlignVertical="top"
           />
           <TouchableOpacity onPress={handleSend} style={dieticianMessageStyles.sendButton} disabled={loading || !userId || initializing || !inputText.trim()}>
-            <Send color="#6EE7B7" size={24} />
+            <Send color="#10B981" size={24} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -7764,7 +7893,7 @@ const DieticianMessageScreen = ({ navigation, route }: { navigation: any, route?
 const dieticianMessageStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0FFF4',
+    backgroundColor: '#F6FAF7',
     paddingTop: 0,
   },
   header: {
@@ -7772,9 +7901,9 @@ const dieticianMessageStyles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 10,
     paddingHorizontal: 10,
-    backgroundColor: '#F0FFF4',
+    backgroundColor: '#F6FAF7',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: '#E2ECE6',
   },
   backButton: {
     paddingRight: 16,
@@ -7782,8 +7911,8 @@ const dieticianMessageStyles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
+    fontWeight: '700',
+    color: '#1E293B',
     flex: 1,
     textAlign: 'center',
     marginRight: 32,
@@ -7793,53 +7922,55 @@ const dieticianMessageStyles = StyleSheet.create({
     paddingTop: 10,
     paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
     alignItems: 'center',
   },
   chatInput: {
     flex: 1,
     minHeight: 40,
     maxHeight: 120,
-    backgroundColor: '#F0FFF4',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     paddingHorizontal: 15,
     marginRight: 10,
-    fontSize: 16,
-    color: '#27272A',
-    borderWidth: 2,
-    borderColor: '#111',
+    fontSize: 15,
+    color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2ECE6',
   },
   sendButton: {
     padding: 5,
   },
   messageBubble: {
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 20,
     marginVertical: 4,
     maxWidth: '90%',
     flexWrap: 'wrap',
   },
   userMessage: {
-    backgroundColor: '#FFD700', // yellow for user messages
+    backgroundColor: '#D1FAE5', // soft emerald tint for user messages
     alignSelf: 'flex-end',
     borderBottomRightRadius: 4,
   },
   dieticianMessage: {
-    backgroundColor: '#3B82F6', // blue for dietician messages
+    backgroundColor: '#FFFFFF', // clean surface for dietician messages
+    borderWidth: 1,
+    borderColor: '#E2ECE6',
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 16,
-    color: '#111',
+    color: '#1E293B',
     flexWrap: 'wrap',
     width: 'auto',
     alignSelf: 'flex-start',
   },
   timestampText: {
     fontSize: 11,
-    color: '#444',
+    color: '#64748B',
     marginLeft: 8,
     marginTop: 2,
     marginBottom: 6,
@@ -7988,33 +8119,33 @@ const DieticianMessagesListScreen = ({ navigation }: { navigation: any }) => {
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity
-      style={{ padding: 18, borderBottomWidth: 1, borderColor: '#eee', backgroundColor: '#fff' }}
+      style={{ padding: 18, borderBottomWidth: 1, borderColor: '#EFF5F1', backgroundColor: '#fff' }}
       onPress={() => navigation.navigate('DieticianMessage', { userId: item.userId })}
     >
-      <Text style={{ fontWeight: 'bold', fontSize: 18, color: '#000' }}>
+      <Text style={{ fontWeight: '700', fontSize: 18, color: '#1E293B' }}>
         {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : (item.email || 'Unknown User')}
       </Text>
-      <Text style={{ color: '#888', marginTop: 4 }} numberOfLines={1}>
+      <Text style={{ color: '#64748B', marginTop: 4 }} numberOfLines={1}>
         {item.lastMessage || 'No messages yet'}
       </Text>
-      <Text style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+      <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 2 }}>
         {item.lastMessageTimestamp?.toDate ? item.lastMessageTimestamp.toDate().toLocaleString() : ''}
       </Text>
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F0FFF4' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6FAF7' }}>
       <View style={{ paddingTop: topSpacing, paddingHorizontal: 16, flex: 1 }}>
-        <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' }}>Messages</Text>
+        <Text style={{ fontSize: 28, fontWeight: '700', marginBottom: 20, textAlign: 'center', color: '#1E293B' }}>Messages</Text>
         {loading ? (
-          <ActivityIndicator size="large" color="#6EE7B7" style={{ marginTop: 40 }} />
+          <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={userList}
             renderItem={renderItem}
             keyExtractor={item => item.userId}
-            ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#888', marginTop: 40 }}>No users found.</Text>}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#64748B', marginTop: 40 }}>No users found.</Text>}
           />
             )}
           </View>
@@ -8040,13 +8171,13 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   addButton: {
     padding: 8,
     backgroundColor: COLORS.background,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.primary,
     justifyContent: 'center',
@@ -8068,7 +8199,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.background,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     flex: 1,
     marginRight: 8,
@@ -8085,7 +8216,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -8134,7 +8265,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   addFirstButtonText: {
     color: COLORS.white,
@@ -8143,17 +8274,17 @@ const styles = StyleSheet.create({
   },
   recipeCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
   recipeTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 4,
   },
@@ -8177,37 +8308,37 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     backgroundColor: COLORS.background,
-    borderRadius: 6,
+    borderRadius: 10,
     alignSelf: 'flex-start',
   },
   editButton: {
     marginTop: 8,
     alignSelf: 'flex-end',
     padding: 6,
-    borderRadius: 6,
+    borderRadius: 10,
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     minWidth: 300,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 8,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 12,
     textAlign: 'center',
@@ -8221,8 +8352,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#FF4444', // Red color
-    borderRadius: 8,
+    backgroundColor: '#DC2626', // Red color
+    borderRadius: 10,
     marginRight: 8,
     alignItems: 'center',
   },
@@ -8236,7 +8367,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     marginLeft: 8,
     alignItems: 'center',
   },
@@ -8248,7 +8379,7 @@ const styles = StyleSheet.create({
   modalInput: {
     borderWidth: 1,
     borderColor: COLORS.placeholder,
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 10,
     marginBottom: 10,
     fontSize: 16,
@@ -8262,14 +8393,14 @@ const styles = StyleSheet.create({
   modalButton: {
     flex: 1,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 10,
     marginHorizontal: 4,
     alignItems: 'center',
   },
   modalButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
   },
   errorText: {
@@ -8281,30 +8412,30 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: '#E2ECE6',
   },
   legalSectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 12,
   },
   legalLinkButton: {
-    backgroundColor: '#E6F0FF',
+    backgroundColor: '#CCFBF1',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 14,
     marginBottom: 10,
   },
   legalLinkText: {
-    color: '#1D4ED8',
+    color: '#0F766E',
     fontWeight: '600',
     textAlign: 'center',
   },
   daySelectorContainer: {
     marginTop: 8,
     backgroundColor: COLORS.white,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.placeholder,
     padding: 8,
@@ -8312,7 +8443,7 @@ const styles = StyleSheet.create({
   dayOption: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: 10,
     marginVertical: 2,
     backgroundColor: COLORS.background,
   },
@@ -8340,7 +8471,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     textAlign: 'center',
     marginBottom: 24,
@@ -8352,15 +8483,16 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '100%',
-    height: 50,
-    backgroundColor: COLORS.white,
-    borderColor: COLORS.primary,
+    height: 52,
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
     borderWidth: 1,
-    borderRadius: 12, // Softer corners
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    fontSize: 16,
+    borderRadius: RADII.md,
+    marginBottom: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    fontSize: 15,
     color: COLORS.text,
+    ...SHADOWS.subtle,
   },
   buttonContainer: {
     marginTop: 16,
@@ -8369,24 +8501,17 @@ const styles = StyleSheet.create({
   button: {
     width: '100%',
     backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12, // Softer corners
+    paddingVertical: 15,
+    borderRadius: RADII.md,
     alignItems: 'center',
     marginBottom: 12,
-    // Shadow for depth
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...SHADOWS.subtle,
   },
   buttonText: {
     color: COLORS.white,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   screenHeader: {
     flexDirection: 'row',
@@ -8394,8 +8519,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   screenTitle: {
-    fontSize: 34,
-    fontWeight: 'bold',
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.5,
     color: COLORS.text,
     textAlign: 'center',
     alignSelf: 'flex-start',
@@ -8422,10 +8548,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     marginHorizontal: 4,
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2.22,
@@ -8439,7 +8565,7 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 28,
     color: COLORS.text,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginVertical: 4,
   },
   summaryUnit: {
@@ -8447,9 +8573,11 @@ const styles = StyleSheet.create({
     color: COLORS.placeholder,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
     marginBottom: 16,
   },
 
@@ -8467,7 +8595,7 @@ const styles = StyleSheet.create({
   },
   bar: {
     width: '60%',
-    borderRadius: 6,
+    borderRadius: 10,
   },
   barLabel: {
     fontSize: 12,
@@ -8484,7 +8612,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   disabledButton: {
-    backgroundColor: '#A1A1AA',
+    backgroundColor: '#A7D9C4',
     flexDirection: 'row',
     justifyContent: 'center',
   },
@@ -8492,12 +8620,12 @@ const styles = StyleSheet.create({
   foodItem: {
     backgroundColor: COLORS.white,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2.22,
@@ -8517,11 +8645,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   logButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   genderContainer: {
     flexDirection: 'row',
@@ -8533,22 +8661,24 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: RADII.md,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
     marginHorizontal: 4,
     alignItems: 'center',
   },
   genderButtonSelected: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primary,
   },
   genderButtonText: {
-    color: COLORS.primary,
+    color: COLORS.textSecondary,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   genderButtonTextSelected: {
-    color: COLORS.white,
+    color: COLORS.primaryDark,
   },
   rememberMeContainer: {
     flexDirection: 'row',
@@ -8598,7 +8728,7 @@ const styles = StyleSheet.create({
   settingsAccountButton: {
     width: '100%',
     height: 100,
-    borderRadius: 24,
+    borderRadius: 28,
     backgroundColor: COLORS.logFood,
     alignItems: 'center',
     justifyContent: 'center',
@@ -8606,30 +8736,30 @@ const styles = StyleSheet.create({
     marginVertical: 0,
     shadowColor: COLORS.logFood,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   settingsAccountButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 28,
     letterSpacing: 1,
   },
   settingsLogoutButton: {
     width: '100%',
     height: 100,
-    borderRadius: 24,
-    backgroundColor: '#FF3B30', // vibrant red
+    borderRadius: 28,
+    backgroundColor: '#DC2626',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginVertical: 0,
     marginTop: 0,
     marginBottom: 0,
-    shadowColor: '#FF3B30',
+    shadowColor: '#DC2626',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
@@ -8639,30 +8769,23 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
   },
   errorPopup: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 24,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADII.xl,
+    padding: SPACING.xxl,
     width: '80%',
     alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...SHADOWS.floating,
   },
   errorTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#EF4444',
+    fontWeight: '700',
+    color: '#DC2626',
     marginBottom: 12,
   },
   errorMessage: {
@@ -8672,10 +8795,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   errorButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#DC2626',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   errorButtonText: {
     color: COLORS.white,
@@ -8692,7 +8815,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   retryButtonText: {
     color: COLORS.white,
@@ -8711,16 +8834,16 @@ const styles = StyleSheet.create({
   actionButton: {
     width: '30%',
     aspectRatio: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 3.84,
     elevation: 5,
   },
@@ -8738,10 +8861,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
+    letterSpacing: 0.2,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
     marginTop: 12,
   },
   inputDescription: {
@@ -8754,11 +8878,12 @@ const styles = StyleSheet.create({
     height: 56,
     width: '100%',
     borderWidth: 1,
-    borderColor: COLORS.placeholder,
-    borderRadius: 12,
+    borderColor: COLORS.border,
+    borderRadius: RADII.md,
     justifyContent: 'center',
     marginBottom: 8,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.surface,
+    ...SHADOWS.subtle,
   },
   picker: {
     width: '100%',
@@ -8773,7 +8898,7 @@ const styles = StyleSheet.create({
   accountBackArrow: {
     color: COLORS.primary,
     fontSize: 32,
-    fontWeight: 'bold',
+    fontWeight: '700',
     padding: 8,
     marginRight: 8,
   },
@@ -8781,7 +8906,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     marginLeft: -36,
   },
@@ -8793,7 +8918,7 @@ const styles = StyleSheet.create({
   },
   streakContainer: {
     backgroundColor: COLORS.streakRed,
-    borderRadius: 16,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -8802,21 +8927,21 @@ const styles = StyleSheet.create({
   },
   streakText: {
     color: COLORS.text,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 18,
     marginLeft: 6,
   },
   workoutResultBox: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     paddingVertical: 28,
     paddingHorizontal: 16,
     marginBottom: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -8826,29 +8951,29 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
   },
   successPopup: {
-    backgroundColor: '#22C55E', // green
-    borderRadius: 12,
+    backgroundColor: '#16A34A', // green
+    borderRadius: 14,
     padding: 24,
     width: '80%',
     alignItems: 'center',
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
   },
   successTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#fff',
     marginBottom: 12,
   },
@@ -8859,15 +8984,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   successButton: {
-    backgroundColor: '#34D399', // vibrant light green
+    backgroundColor: '#059669', // vibrant light green
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   successButtonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   chatbotContainer: {
     flex: 1,
@@ -8878,7 +9003,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: COLORS.placeholder,
-    borderRadius: 12,
+    borderRadius: 14,
     marginHorizontal: 10,
     marginVertical: 10,
     backgroundColor: COLORS.white,
@@ -8893,13 +9018,13 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     padding: 10,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: COLORS.primary,
     marginHorizontal: 5,
   },
   messageBubble: {
     padding: 10,
-    borderRadius: 12,
+    borderRadius: 14,
     marginVertical: 5,
   },
   userMessage: {
@@ -8930,13 +9055,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingVertical: 18,
     paddingHorizontal: 40,
-    borderRadius: 16,
+    borderRadius: 20,
     marginTop: 24,
     alignItems: 'center',
   },
   bigCloseButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 22,
     letterSpacing: 1,
   },
@@ -8953,7 +9078,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderColor: COLORS.primary,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 16,
     paddingHorizontal: 8,
   },
@@ -8963,42 +9088,42 @@ const styles = StyleSheet.create({
   loginSettingsButton: {
     width: '100%',
     height: 100,
-    borderRadius: 24,
-    backgroundColor: '#3B82F6', // blue
+    borderRadius: 28,
+    backgroundColor: '#0D9488', // deep teal, in the Green Diet family
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginVertical: 0,
-    shadowColor: '#3B82F6',
+    shadowColor: '#0D9488',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   loginSettingsButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 28,
     letterSpacing: 1,
   },
   notificationSettingsButton: {
     width: '100%',
     height: 110,
-    borderRadius: 24,
-    backgroundColor: '#22223B', // dark blue-gray, not used elsewhere
+    borderRadius: 28,
+    backgroundColor: '#1E293B', // dark blue-gray, not used elsewhere
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginVertical: 0,
-    shadowColor: '#22223B',
+    shadowColor: '#1E293B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   notificationSettingsButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 28,
     letterSpacing: 1,
     textAlign: 'center',
@@ -9008,21 +9133,21 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 70,
     borderRadius: 20,
-    backgroundColor: '#22223B',
+    backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginTop: 20,
     marginBottom: 8,
-    shadowColor: '#22223B',
+    shadowColor: '#1E293B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   addNotificationButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 26,
     letterSpacing: 1,
     textAlign: 'center',
@@ -9033,9 +9158,9 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     backgroundColor: COLORS.lightGreen,
     marginVertical: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 6,
   },
@@ -9049,14 +9174,14 @@ const styles = StyleSheet.create({
   },
   summaryWidgetLabel: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 4,
     letterSpacing: 0.5,
   },
   summaryWidgetBarBg: {
     width: '100%',
     height: 7,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#E2ECE6',
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -9066,10 +9191,10 @@ const styles = StyleSheet.create({
   },
   detailsCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -9077,7 +9202,7 @@ const styles = StyleSheet.create({
   },
   detailsCardTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 6,
     color: COLORS.primaryDark,
   },
@@ -9094,11 +9219,11 @@ const styles = StyleSheet.create({
   },
   statusCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     marginBottom: 8,
     width: '48%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
@@ -9106,7 +9231,7 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 4,
   },
   statusValue: {
@@ -9116,10 +9241,10 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 12,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -9127,7 +9252,7 @@ const styles = StyleSheet.create({
   },
   chartTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   chartArea: {
@@ -9173,7 +9298,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'right',
     paddingRight: 4,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   chartContent: {
     flex: 1,
@@ -9210,21 +9335,21 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 60,
     borderRadius: 20,
-    backgroundColor: '#22223B', // Unique dark blue-gray, not used elsewhere
+    backgroundColor: '#1E293B', // Unique dark blue-gray, not used elsewhere
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginTop: 10,
     marginBottom: 10,
-    shadowColor: '#22223B',
+    shadowColor: '#1E293B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   routinesButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 24,
     letterSpacing: 1,
     textAlign: 'center',
@@ -9257,7 +9382,7 @@ const styles = StyleSheet.create({
   },
   dieticianName: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primaryDark,
     marginBottom: 4,
     textAlign: 'center',
@@ -9271,11 +9396,11 @@ const styles = StyleSheet.create({
   },
   dieticianDescriptionContainer: {
     backgroundColor: COLORS.lightGreen,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -9297,8 +9422,8 @@ const styles = StyleSheet.create({
     lineHeight: 30,
   },
   dieticianHighlightBlack: {
-    fontWeight: 'bold',
-    color: '#111',
+    fontWeight: '700',
+    color: '#1E293B',
   },
   dieticianButtonRow: {
     flexDirection: 'row',
@@ -9311,7 +9436,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 130,
     height: 120,
-    borderRadius: 18,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 8,
@@ -9323,14 +9448,14 @@ const styles = StyleSheet.create({
   },
   dieticianButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 22,
   },
   timestampText: {
     fontSize: 11,
-    color: '#444',
+    color: '#64748B',
     marginLeft: 8,
     marginTop: 2,
     marginBottom: 6,
@@ -9339,12 +9464,12 @@ const styles = StyleSheet.create({
   // Schedule Appointment Screen Styles
   scheduleContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     marginBottom: 20,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -9362,7 +9487,7 @@ const styles = StyleSheet.create({
   },
   timeColumnHeaderText: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
   },
   dateColumnHeader: {
@@ -9378,19 +9503,19 @@ const styles = StyleSheet.create({
   },
   todayHeaderText: {
     color: COLORS.primary,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   todayIndicator: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 10,
     marginTop: 4,
   },
   todayIndicatorText: {
     color: COLORS.white,
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   timeRow: {
     flexDirection: 'row',
@@ -9411,7 +9536,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 40,
     backgroundColor: COLORS.background,
-    borderRadius: 8,
+    borderRadius: 10,
     marginHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -9423,12 +9548,12 @@ const styles = StyleSheet.create({
     borderColor: COLORS.placeholder + '40',
   },
   bookedTimeSlot: {
-    backgroundColor: '#9CA3AF', // Grey color for other users' appointments
-    borderColor: '#6B7280',
+    backgroundColor: '#94A3B8', // Grey color for other users' appointments
+    borderColor: '#64748B',
   },
   breakTimeSlot: {
-    backgroundColor: '#D1D5DB', // Light grey color for breaks
-    borderColor: '#9CA3AF',
+    backgroundColor: '#E2ECE6', // Light grey color for breaks
+    borderColor: '#94A3B8',
   },
   selectedTimeSlot: {
     backgroundColor: COLORS.primary,
@@ -9443,18 +9568,18 @@ const styles = StyleSheet.create({
     color: COLORS.placeholder,
   },
   bookedTimeSlotText: {
-    color: '#374151', // Dark grey text for other users' appointments
+    color: '#1E293B', // Dark grey text for other users' appointments
     fontSize: 10,
     fontWeight: '600',
   },
   breakTimeSlotText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   selectedTimeSlotText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   bookedUserText: {
     color: COLORS.placeholder,
@@ -9463,17 +9588,17 @@ const styles = StyleSheet.create({
   },
   appointmentSummary: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
   appointmentSummaryTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 8,
   },
@@ -9489,7 +9614,7 @@ const styles = StyleSheet.create({
   },
   bookedByMeTimeSlotText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   // Upload Diet Screen Styles
   uploadHeaderContainer: {
@@ -9512,19 +9637,19 @@ const styles = StyleSheet.create({
   uploadBackButtonText: {
     color: COLORS.white,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   uploadScreenTitle: {
     fontSize: 34,
-    fontWeight: 'bold',
-    color: '#000',
+    fontWeight: '700',
+    color: '#1E293B',
     textAlign: 'center',
   },
   uploadErrorContainer: {
     backgroundColor: '#FEE2E2',
     borderColor: '#FCA5A5',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
@@ -9534,10 +9659,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   uploadSuccessContainer: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
+    backgroundColor: '#D1FAE5',
+    borderColor: '#A7F3D0',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
@@ -9548,19 +9673,19 @@ const styles = StyleSheet.create({
   },
   userItem: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
   },
   selectedUserItem: {
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#CCFBF1',
     borderColor: COLORS.primary,
     borderWidth: 2,
   },
@@ -9569,7 +9694,7 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 4,
   },
@@ -9586,7 +9711,7 @@ const styles = StyleSheet.create({
   selectedIndicator: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -9595,7 +9720,7 @@ const styles = StyleSheet.create({
   selectedIndicatorText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   uploadButtonContainer: {
     paddingHorizontal: 16,
@@ -9603,7 +9728,7 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -9615,7 +9740,7 @@ const styles = StyleSheet.create({
   uploadButtonText: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   uploadModalSubtitle: {
     fontSize: 14,
@@ -9625,29 +9750,29 @@ const styles = StyleSheet.create({
   },
   uploadModalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
     minWidth: 300,
   },
   viewDietButton: {
-    backgroundColor: '#FFA500', // Orange color
+    backgroundColor: '#F59E0B', // Orange color
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   viewDietButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   // Subscription styles
   screenSubtitle: {
@@ -9660,7 +9785,7 @@ const styles = StyleSheet.create({
   subscriptionErrorContainer: {
     backgroundColor: COLORS.error,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 16,
   },
   plansContainer: {
@@ -9669,12 +9794,12 @@ const styles = StyleSheet.create({
   },
   planCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
     borderWidth: 2,
@@ -9692,13 +9817,13 @@ const styles = StyleSheet.create({
   },
   planName: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     flex: 1,
   },
   planPrice: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   planDuration: {
@@ -9724,14 +9849,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 14,
     alignSelf: 'flex-start',
     marginTop: 12,
   },
   planSelectedIndicatorText: {
     color: COLORS.white,
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   subscriptionButtonContainer: {
     paddingHorizontal: 20,
@@ -9752,13 +9877,13 @@ const styles = StyleSheet.create({
   },
   subscriptionCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 20,
     width: '100%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -9770,13 +9895,13 @@ const styles = StyleSheet.create({
   },
   subscriptionTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
   },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   activeBadge: {
     backgroundColor: COLORS.primary,
@@ -9785,12 +9910,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error,
   },
   freeBadge: {
-    backgroundColor: '#34D399',
+    backgroundColor: '#059669',
   },
   statusText: {
     color: COLORS.white,
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   subscriptionDetails: {
     gap: 12,
@@ -9814,12 +9939,12 @@ const styles = StyleSheet.create({
   },
   totalAmountText: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   renewalContainer: {
     backgroundColor: COLORS.lightGreen,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     alignItems: 'center',
   },
@@ -9833,7 +9958,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9858,22 +9983,22 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 32,
     paddingVertical: 16,
-    borderRadius: 24,
+    borderRadius: 28,
   },
   ourPlansContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginTop: 20,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
   ourPlansTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 16,
   },
@@ -9882,7 +10007,7 @@ const styles = StyleSheet.create({
   },
   planItem: {
     backgroundColor: COLORS.lightGreen,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
@@ -9895,12 +10020,12 @@ const styles = StyleSheet.create({
   },
   planItemName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
   },
   planItemPrice: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   planItemDuration: {
@@ -9917,9 +10042,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   errorContainer: {
-    backgroundColor: '#fee',
+    backgroundColor: '#FEE2E2',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 16,
   },
   emptyStateContainer: {
@@ -9937,18 +10062,18 @@ const styles = StyleSheet.create({
   },
   notificationItem: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
   unreadNotification: {
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
-    backgroundColor: '#f8f9ff',
+    backgroundColor: '#F0FDFA',
   },
   notificationHeader: {
     flexDirection: 'row',
@@ -9958,7 +10083,7 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     flex: 1,
     marginRight: 8,
@@ -9981,7 +10106,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 10,
   },
   notificationActionText: {
     fontSize: 12,
@@ -9989,7 +10114,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   deleteButton: {
-    backgroundColor: '#dc3545',
+    backgroundColor: '#DC2626',
   },
   deleteButtonText: {
     color: COLORS.white,
@@ -9998,7 +10123,7 @@ const styles = StyleSheet.create({
   mySubscriptionsButton: {
     width: '100%',
     height: 100,
-    borderRadius: 24,
+    borderRadius: 28,
     backgroundColor: COLORS.logFood,
     alignItems: 'center',
     justifyContent: 'center',
@@ -10006,13 +10131,13 @@ const styles = StyleSheet.create({
     marginVertical: 0,
     shadowColor: COLORS.logFood,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   mySubscriptionsButtonText: {
     color: COLORS.white,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 28,
     letterSpacing: 1,
   },
@@ -10020,12 +10145,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -10046,12 +10171,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: COLORS.white,
   },
   subscriptionHeaderTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     flex: 1,
     textAlign: 'center',
@@ -10067,41 +10192,41 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingHorizontal: 32,
     paddingVertical: 16,
-    borderRadius: 24,
-    shadowColor: '#000',
+    borderRadius: 28,
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   customGreenBlackButtonText: {
     color: COLORS.text,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     textAlign: 'center',
   },
   popupOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   popupContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     maxHeight: '80%',
     width: '90%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
   popupTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
     textAlign: 'center',
     marginBottom: 8,
@@ -10117,7 +10242,7 @@ const styles = StyleSheet.create({
   },
   popupPlanItem: {
     backgroundColor: COLORS.lightGreen,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 2,
@@ -10135,12 +10260,12 @@ const styles = StyleSheet.create({
   },
   popupPlanName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.text,
   },
   popupPlanPrice: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   popupPlanDuration: {
@@ -10159,7 +10284,7 @@ const styles = StyleSheet.create({
   },
   popupPlanSelectedText: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   popupButtons: {
@@ -10173,7 +10298,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.placeholder,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   popupCancelButtonText: {
@@ -10186,7 +10311,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   popupConfirmButtonDisabled: {
@@ -10200,20 +10325,20 @@ const styles = StyleSheet.create({
   // User Info Modal Styles
   userInfoModalContent: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     margin: 20,
     maxHeight: '80%',
     width: '90%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
   userInfoModalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
     textAlign: 'center',
     marginBottom: 20,
@@ -10250,23 +10375,23 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   paidButton: {
-    backgroundColor: '#FFD700', // Yellow color
+    backgroundColor: '#FBBF24', // Yellow color
   },
   paidButtonText: {
-    color: '#000000', // Black text for yellow background
+    color: '#1E293B', // Black text for yellow background
     fontSize: 16,
     fontWeight: '600',
   },
   lockButton: {
-    backgroundColor: '#FF4444',
+    backgroundColor: '#DC2626',
   },
   unlockButton: {
-    backgroundColor: '#34D399',
+    backgroundColor: '#059669',
   },
   lockButtonText: {
     color: COLORS.white,
@@ -10276,10 +10401,10 @@ const styles = StyleSheet.create({
   // Bar Graph Styles
   barGraphContainer: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -10287,7 +10412,7 @@ const styles = StyleSheet.create({
   },
   barGraphTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 16,
     color: COLORS.text,
     textAlign: 'center',
@@ -10563,7 +10688,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowSuccessPopup(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
             <Text style={styles.successTitle}>Consultation Period Confirmed! 🎉</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity
@@ -10573,7 +10698,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
                 navigation.navigate('MySubscriptions');
               }}
             >
-              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Continue</Text>
+              <Text style={[styles.successButtonText, { color: '#059669' }]}>Continue</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -10702,7 +10827,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
               <Text style={[styles.popupSubtitle, { color: COLORS.primary, fontWeight: '600', marginBottom: 8, fontSize: 16 }]}>
                 ⏰ Your free trial consultation period has ended
               </Text>
-              <View style={{ marginBottom: 16, padding: 12, backgroundColor: COLORS.lightGreen, borderRadius: 8 }}>
+              <View style={{ marginBottom: 16, padding: 12, backgroundColor: COLORS.lightGreen, borderRadius: 10 }}>
                 <Text style={[styles.popupPlanDescription, { marginBottom: 8, fontWeight: '600' }]}>
                   To continue accessing your consultation tools:
                 </Text>
@@ -10769,7 +10894,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
               marginBottom: 12,
               padding: 12,
               backgroundColor: COLORS.lightGreen,
-              borderRadius: 8,
+              borderRadius: 10,
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between'
@@ -11181,7 +11306,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                         title={cancellingSwitch ? 'Cancelling...' : 'Cancel Switch'}
                         onPress={handleCancelPlanSwitch}
                         disabled={cancellingSwitch}
-                        style={[styles.renewalButton, { backgroundColor: '#ff4444', flex: 1 }]}
+                        style={[styles.renewalButton, { backgroundColor: '#DC2626', flex: 1 }]}
                       />
                     </View>
                   </View>
@@ -11266,7 +11391,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                   <StyledButton
                     title="Cancel Consultation Period"
                     onPress={() => handleCancelSubscription()}
-                    style={[styles.renewalButton, { backgroundColor: '#ff4444', flex: 1 }]}
+                    style={[styles.renewalButton, { backgroundColor: '#DC2626', flex: 1 }]}
                   />
                 </View>
               </View>
@@ -11380,14 +11505,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowCancelSubscriptionModal(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#34D399', padding: 32, margin: 30 }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669', padding: 32, margin: 30 }]}>
             <Text style={styles.successTitle}>Cancel Consultation Period</Text>
             <Text style={styles.successMessage}>
               Are you sure you want to cancel your consultation period? Auto-renewal will be disabled, but you will retain access to consultation tools until your current consultation period ends. After that, you'll need to select a new consultation period to continue.
             </Text>
             <View style={[styles.modalButtonRow, { marginTop: 24 }]}>
               <TouchableOpacity
-                style={[styles.successButton, { backgroundColor: '#EF4444', marginRight: 12, flex: 1 }]}
+                style={[styles.successButton, { backgroundColor: '#DC2626', marginRight: 12, flex: 1 }]}
                 onPress={() => setShowCancelSubscriptionModal(false)}
               >
                 <Text style={[styles.successButtonText, { color: COLORS.white }]}>No, Keep It</Text>
@@ -11396,7 +11521,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 style={[styles.successButton, { backgroundColor: COLORS.white, marginLeft: 12, flex: 1 }]}
                 onPress={confirmCancelSubscription}
               >
-                <Text style={[styles.successButtonText, { color: '#34D399' }]}>Yes, Cancel</Text>
+                <Text style={[styles.successButtonText, { color: '#059669' }]}>Yes, Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -11411,7 +11536,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowCancelSuccessModal(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
             <Text style={styles.successTitle}>Consultation Period Cancelled! ✅</Text>
             <Text style={styles.successMessage}>{cancelSuccessMessage}</Text>
             <TouchableOpacity
@@ -11421,7 +11546,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 navigation.navigate('Main');
               }}
             >
-              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Continue</Text>
+              <Text style={[styles.successButtonText, { color: '#059669' }]}>Continue</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -11534,7 +11659,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowPlanSwitchSuccessPopup(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#34D399' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
             <Text style={styles.successTitle}>✅ Consultation Period Change Scheduled!</Text>
             <Text style={styles.successMessage}>{planSwitchSuccessMessage}</Text>
             <TouchableOpacity
@@ -11543,7 +11668,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 setShowPlanSwitchSuccessPopup(false);
               }}
             >
-              <Text style={[styles.successButtonText, { color: '#34D399' }]}>Got it!</Text>
+              <Text style={[styles.successButtonText, { color: '#059669' }]}>Got it!</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -12490,7 +12615,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
               const nextAppointment = userUpcomingAppointments[0];
               return (
                 <>
-                  <Text style={[styles.appointmentSummaryText, { color: '#000' }]}>
+                  <Text style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>
                     {formatDate(new Date(nextAppointment.date))} at {nextAppointment.timeSlot}
                   </Text>
                   <TouchableOpacity
@@ -12503,7 +12628,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
               );
             } else {
               return (
-                <Text style={[styles.appointmentSummaryText, { color: '#666' }]}>
+                <Text style={[styles.appointmentSummaryText, { color: '#64748B' }]}>
                   No upcoming appointments
                 </Text>
               );
@@ -12519,13 +12644,13 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowSuccess(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={styles.successPopup}>
+          <PopIn style={styles.successPopup}>
             <Text style={styles.successTitle}>Success</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity style={styles.successButton} onPress={() => { setShowSuccess(false); if (navigation.canGoBack()) navigation.goBack(); }}>
               <Text style={styles.successButtonText}>OK</Text>
             </TouchableOpacity>
-          </View>
+          </PopIn>
         </View>
       </Modal>
     </SafeAreaView>
@@ -13075,12 +13200,12 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         <View style={styles.appointmentSummary}>
           <Text style={styles.appointmentSummaryTitle}>Appointment Summary</Text>
           {appointments.length === 0 ? (
-            <Text style={[styles.appointmentSummaryText, { color: '#000' }]}>No appointments booked.</Text>
+            <Text style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>No appointments booked.</Text>
           ) : (
             appointments
               .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
               .map((appt, idx) => (
-                <Text key={idx} style={[styles.appointmentSummaryText, { color: '#000' }]}>
+                <Text key={idx} style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>
                   {`${formatDate(new Date(appt.date))} at ${appt.timeSlot} - ${appt.userName}`}
                 </Text>
               ))
@@ -13089,20 +13214,20 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         <View style={{ alignItems: 'center', marginVertical: 12 }}>
           <TouchableOpacity
             style={{ 
-              backgroundColor: breaksLoading ? '#ccc' : '#fbbf24', 
+              backgroundColor: breaksLoading ? '#E2ECE6' : '#fbbf24', 
               paddingVertical: 12, 
               paddingHorizontal: 32, 
-              borderRadius: 8,
-              shadowColor: '#000',
+              borderRadius: 10,
+              shadowColor: '#0F172A',
               shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.1,
+              shadowOpacity: 0.06,
               shadowRadius: 4,
               elevation: 3,
             }}
             onPress={() => setBreaksModalVisible(true)}
             disabled={breaksLoading}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
               {breaksLoading ? 'Processing...' : 'Manage Daily Breaks'}
             </Text>
           </TouchableOpacity>
@@ -13113,57 +13238,57 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           transparent={true}
           onRequestClose={() => setBreaksModalVisible(false)}
         >
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '90%', maxHeight: '80%' }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.3)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '90%', maxHeight: '80%' }}>
               <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
-                <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>Manage Daily Breaks</Text>
+                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 16, textAlign: 'center' }}>Manage Daily Breaks</Text>
                         {/* List of current breaks */}
         {(() => {
           console.log('[Break Management] Current breaks:', breaks);
           return null;
         })()}
         {breaks.length === 0 ? (
-          <Text style={{ color: '#888', marginBottom: 12, textAlign: 'center' }}>No breaks set.</Text>
+          <Text style={{ color: '#64748B', marginBottom: 12, textAlign: 'center' }}>No breaks set.</Text>
         ) : (
           breaks.map((breakItem, idx) => (
-            <View key={breakItem.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 8, backgroundColor: '#f8f9fa', borderRadius: 8, padding: 12 }}>
+            <View key={breakItem.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 8, backgroundColor: '#F6FAF7', borderRadius: 10, padding: 12 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#333' }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
                   {formatTimeDisplay(breakItem.fromTime)} - {formatTimeDisplay(breakItem.toTime)}
                 </Text>
-                <Text style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
                   {breakItem.specificDate ? `Specific: ${new Date(breakItem.specificDate).toLocaleDateString()}` : 'Daily Break'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => handleRemoveBreak(breakItem.id)} style={{ marginLeft: 8, padding: 8, backgroundColor: '#ff4444', borderRadius: 6 }}>
-                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>Remove</Text>
+              <TouchableOpacity onPress={() => handleRemoveBreak(breakItem.id)} style={{ marginLeft: 8, padding: 8, backgroundColor: '#DC2626', borderRadius: 10 }}>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Remove</Text>
               </TouchableOpacity>
             </View>
           ))
         )}
         {/* Add break UI */}
         <View style={{ marginTop: 24, marginBottom: 8, paddingHorizontal: 8 }}>
-          <Text style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: '600', color: '#333' }}>Add New Break:</Text>
+          <Text style={{ fontSize: 16, marginBottom: 16, textAlign: 'center', fontWeight: '600', color: '#1E293B' }}>Add New Break:</Text>
           
           <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 14, marginBottom: 8, color: '#555', fontWeight: '500' }}>From:</Text>
-            <View style={{ borderWidth: 1, borderColor: newBreakFromTime ? '#34D399' : '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fff' }}>
+            <Text style={{ fontSize: 14, marginBottom: 8, color: '#64748B', fontWeight: '500' }}>From:</Text>
+            <View style={{ borderWidth: 1, borderColor: newBreakFromTime ? '#059669' : '#E2ECE6', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' }}>
               <Picker
                 selectedValue={newBreakFromTime}
                 style={{ width: '100%', height: 50 }}
                 onValueChange={itemValue => setNewBreakFromTime(itemValue)}
-                itemStyle={{ fontSize: 16, color: '#333' }}
+                itemStyle={{ fontSize: 16, color: '#1E293B' }}
               >
-                <Picker.Item label="Select start time" value={null} color="#999" />
+                <Picker.Item label="Select start time" value={null} color="#64748B" />
                 {timeSlots.map(slot => (
-                  <Picker.Item key={slot} label={slot} value={slot} color="#333" />
+                  <Picker.Item key={slot} label={slot} value={slot} color="#1E293B" />
                 ))}
               </Picker>
             </View>
             {newBreakFromTime && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399', marginRight: 6 }} />
-                <Text style={{ fontSize: 12, color: '#34D399', fontWeight: '500' }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#059669', marginRight: 6 }} />
+                <Text style={{ fontSize: 12, color: '#059669', fontWeight: '500' }}>
                   Start time: {newBreakFromTime}
                 </Text>
               </View>
@@ -13171,24 +13296,24 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           </View>
           
           <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, marginBottom: 8, color: '#555', fontWeight: '500' }}>To:</Text>
-            <View style={{ borderWidth: 1, borderColor: newBreakToTime ? '#34D399' : '#ccc', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fff' }}>
+            <Text style={{ fontSize: 14, marginBottom: 8, color: '#64748B', fontWeight: '500' }}>To:</Text>
+            <View style={{ borderWidth: 1, borderColor: newBreakToTime ? '#059669' : '#E2ECE6', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' }}>
               <Picker
                 selectedValue={newBreakToTime}
                 style={{ width: '100%', height: 50 }}
                 onValueChange={itemValue => setNewBreakToTime(itemValue)}
-                itemStyle={{ fontSize: 16, color: '#333' }}
+                itemStyle={{ fontSize: 16, color: '#1E293B' }}
               >
-                <Picker.Item label="Select end time" value={null} color="#999" />
+                <Picker.Item label="Select end time" value={null} color="#64748B" />
                 {timeSlots.filter(slot => !newBreakFromTime || slot > newBreakFromTime).map(slot => (
-                  <Picker.Item key={slot} label={slot} value={slot} color="#333" />
+                  <Picker.Item key={slot} label={slot} value={slot} color="#1E293B" />
                 ))}
               </Picker>
             </View>
             {newBreakToTime && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399', marginRight: 6 }} />
-                <Text style={{ fontSize: 12, color: '#34D399', fontWeight: '500' }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#059669', marginRight: 6 }} />
+                <Text style={{ fontSize: 12, color: '#059669', fontWeight: '500' }}>
                   End time: {newBreakToTime}
                 </Text>
               </View>
@@ -13196,8 +13321,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           </View>
           
           {newBreakFromTime && newBreakToTime && (
-            <View style={{ backgroundColor: '#f0f9ff', padding: 12, borderRadius: 8, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: '#34D399' }}>
-              <Text style={{ fontSize: 14, color: '#0369a1', textAlign: 'center', fontWeight: '500' }}>
+            <View style={{ backgroundColor: '#F0FDFA', padding: 12, borderRadius: 10, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: '#059669' }}>
+              <Text style={{ fontSize: 14, color: '#0F766E', textAlign: 'center', fontWeight: '500' }}>
                 Break will be set from {newBreakFromTime} to {newBreakToTime}
               </Text>
             </View>
@@ -13205,21 +13330,21 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           
           <TouchableOpacity
             style={{ 
-              backgroundColor: (!newBreakFromTime || !newBreakToTime || breaksLoading) ? '#ccc' : '#34D399', 
+              backgroundColor: (!newBreakFromTime || !newBreakToTime || breaksLoading) ? '#E2ECE6' : '#059669', 
               paddingVertical: 12, 
               paddingHorizontal: 24, 
-              borderRadius: 8, 
+              borderRadius: 10, 
               alignItems: 'center',
-              shadowColor: '#000',
+              shadowColor: '#0F172A',
               shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.1,
+              shadowOpacity: 0.06,
               shadowRadius: 4,
               elevation: 3
             }}
             onPress={() => newBreakFromTime && newBreakToTime && handleAddBreak(newBreakFromTime, newBreakToTime)}
             disabled={!newBreakFromTime || !newBreakToTime || breaksLoading}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
               {breaksLoading ? 'Adding...' : 'Add Break'}
             </Text>
           </TouchableOpacity>
@@ -13228,7 +13353,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
                   style={{ marginTop: 20, alignItems: 'center' }}
                   onPress={() => setBreaksModalVisible(false)}
                 >
-                  <Text style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: 16 }}>Close</Text>
+                  <Text style={{ color: '#fbbf24', fontWeight: '700', fontSize: 16 }}>Close</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
@@ -13243,7 +13368,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowBreakConfirmation(false)}
         >
           <View style={styles.successPopupOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Confirm Break</Text>
               <Text style={styles.successMessage}>
                 {breakConfirmationSlot ? 
@@ -13253,19 +13378,19 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
               </Text>
               <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
                 <TouchableOpacity 
-                  style={[styles.successButton, { backgroundColor: '#ff4444', marginRight: 8 }]} 
+                  style={[styles.successButton, { backgroundColor: '#DC2626', marginRight: 8 }]} 
                   onPress={() => setShowBreakConfirmation(false)}
                 >
                   <Text style={styles.successButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.successButton, { backgroundColor: '#34D399' }]} 
+                  style={[styles.successButton, { backgroundColor: '#059669' }]} 
                   onPress={handleConfirmBreak}
                 >
                   <Text style={styles.successButtonText}>Confirm</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </PopIn>
           </View>
         </Modal>
         
@@ -13277,7 +13402,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           onRequestClose={() => setShowSuccessMessage(false)}
         >
           <View style={styles.successPopupOverlay}>
-            <View style={styles.successPopup}>
+            <PopIn style={styles.successPopup}>
               <Text style={styles.successTitle}>Success</Text>
               <Text style={styles.successMessage}>{successMessage}</Text>
               <TouchableOpacity 
@@ -13286,7 +13411,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
               >
                 <Text style={styles.successButtonText}>OK</Text>
               </TouchableOpacity>
-            </View>
+            </PopIn>
           </View>
         </Modal>
       </ScrollView>
@@ -13619,7 +13744,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               margin: 0; 
               padding: 0; 
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              background-color: #f5f5f5;
+              background-color: #F6FAF7;
               overflow: hidden;
             }
             .pdf-container {
@@ -13631,7 +13756,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             .pdf-header {
               background: #fff;
               padding: 10px;
-              border-bottom: 1px solid #e0e0e0;
+              border-bottom: 1px solid #E2ECE6;
               text-align: center;
               font-weight: bold;
               font-size: 16px;
@@ -13656,16 +13781,16 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             .pdf-fallback p {
               margin-bottom: 20px;
               font-size: 16px;
-              color: #666;
+              color: #64748B;
             }
             .pdf-fallback a {
-              color: #007AFF;
+              color: #0D9488;
               text-decoration: none;
               font-size: 16px;
               padding: 12px 24px;
-              background: #f0f0f0;
+              background: #EFF5F1;
               border-radius: 8px;
-              border: 1px solid #ddd;
+              border: 1px solid #E2ECE6;
             }
             .loading {
               display: flex;
@@ -13673,7 +13798,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               align-items: center;
               height: 100vh;
               font-size: 16px;
-              color: #666;
+              color: #64748B;
             }
           </style>
         </head>
@@ -13824,13 +13949,13 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
           keyExtractor={item => item.userId}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 20 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#888', marginTop: 40 }}>No users found.</Text>}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', color: '#64748B', marginTop: 40 }}>No users found.</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={{ 
                 padding: 18, 
                 borderBottomWidth: 1, 
-                borderColor: '#eee', 
+                borderColor: '#EFF5F1', 
                 backgroundColor: '#fff',
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -13839,10 +13964,10 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               onPress={() => handleUserSelect(item)}
             >
                           <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 18, color: '#000' }}>
+              <Text style={{ fontWeight: '700', fontSize: 18, color: '#1E293B' }}>
                 {(item.firstName && item.firstName !== 'User') || item.lastName ? `${item.firstName || ''} ${item.lastName || ''}`.trim() : 'Unknown User'}
               </Text>
-              <Text style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
+              <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 4 }}>
                 Days Until New Diet: {countdowns[item.userId] ? `${countdowns[item.userId].days} days ${countdowns[item.userId].hours} hours` : '-'}
               </Text>
             </View>
@@ -13852,7 +13977,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                 <TouchableOpacity
                   style={{ 
                     backgroundColor: COLORS.primaryDark, 
-                    borderRadius: 12, 
+                    borderRadius: 14, 
                     width: 24, 
                     height: 24, 
                     alignItems: 'center', 
@@ -13860,14 +13985,14 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   }}
                   onPress={() => handleInfoPress(item)}
                 >
-                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>i</Text>
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>i</Text>
                 </TouchableOpacity>
                 
                 {/* Plus icon */}
                 <TouchableOpacity
                   style={{ 
                     backgroundColor: COLORS.primary, 
-                    borderRadius: 12, 
+                    borderRadius: 14, 
                     width: 24, 
                     height: 24, 
                     alignItems: 'center', 
@@ -13875,7 +14000,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   }}
                   onPress={() => handleUserSelect(item)}
                 >
-                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>+</Text>
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>+</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -13932,14 +14057,14 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>Amount Due:</Text>
-                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.amountDue > 0 ? '#FF4444' : '#34D399' }]}>
+                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.amountDue > 0 ? '#DC2626' : '#059669' }]}>
                       ₹{selectedUserInfo.amountDue.toLocaleString()}
                     </Text>
                   </View>
                   
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>App Status:</Text>
-                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.isAppLocked ? '#FF4444' : '#34D399' }]}>
+                    <Text style={[styles.userInfoValue, { color: selectedUserInfo.isAppLocked ? '#DC2626' : '#059669' }]}>
                       {selectedUserInfo.isAppLocked ? 'Locked' : 'Unlocked'}
                     </Text>
                   </View>
@@ -13957,7 +14082,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                     style={[
                       styles.userInfoButton, 
                       styles.paidButton,
-                      { backgroundColor: actionLoading ? COLORS.placeholder : '#FFD700' }
+                      { backgroundColor: actionLoading ? COLORS.placeholder : '#FBBF24' }
                     ]}
                     onPress={handleMarkAsPaid}
                     disabled={actionLoading || selectedUserInfo.amountDue === 0}
@@ -13971,7 +14096,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                     style={[
                       styles.userInfoButton, 
                       selectedUserInfo.isAppLocked ? styles.unlockButton : styles.lockButton,
-                      { backgroundColor: actionLoading ? COLORS.placeholder : selectedUserInfo.isAppLocked ? '#34D399' : '#FF4444' }
+                      { backgroundColor: actionLoading ? COLORS.placeholder : selectedUserInfo.isAppLocked ? '#059669' : '#DC2626' }
                     ]}
                     onPress={handleToggleAppLock}
                     disabled={actionLoading}
@@ -14047,7 +14172,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
               <TouchableOpacity
                 style={[
                   styles.cancelButton,
-                  { backgroundColor: '#FF4444' } // Red color for cancel
+                  { backgroundColor: '#DC2626' } // Red color for cancel
                 ]}
                 onPress={() => {
                   setShowUploadModal(false);
@@ -14073,7 +14198,7 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
             <TouchableOpacity onPress={() => setShowPdfModal(false)} style={{ padding: 8, marginRight: 8 }}>
               <Text style={{ fontSize: 22, color: COLORS.primary }}>Close</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.text }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text }}>
               Diet PDF - {selectedUser?.firstName} {selectedUser?.lastName}
             </Text>
           </View>
