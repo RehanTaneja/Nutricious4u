@@ -1603,30 +1603,48 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         return;
       }
       
-      // Force refresh by adding cache busting parameter
-      const dietData = await getUserDiet(userId);
-      console.log('[DashboardScreen] Refreshed diet data:', dietData);
-      
-      // Always update local state with fresh data to ensure we have the latest
-      setDietPdfUrl(dietData.dietPdfUrl || null);
-      
-      if (dietData.dietPdfUrl) {
-        // Check subscription status to ensure user has access (trial or active subscription)
-        const subscriptionStatus = await getSubscriptionStatus(userId);
-        const canAccessDiet = subscriptionStatus.isTrialActive || 
-                              subscriptionStatus.isSubscriptionActive ||
-                              (dietData.dietPdfUrl && subscriptionStatus.subscriptionPlan === 'trial');
-        
-        if (!canAccessDiet) {
-          Alert.alert('Access Denied', 'Please activate your free trial consultation or start a consultation period to access your diet plan.');
+      // Force refresh by adding cache busting parameter. On transient failure
+      // (backend cold start, network blip) fall back to the last-known URL
+      // already loaded at dashboard mount instead of failing hard.
+      let latestDietPdfUrl: string | null = dietPdfUrl;
+      try {
+        const dietData = await getUserDiet(userId);
+        console.log('[DashboardScreen] Refreshed diet data:', dietData);
+        // Always update local state with fresh data to ensure we have the latest
+        latestDietPdfUrl = dietData.dietPdfUrl || null;
+        setDietPdfUrl(latestDietPdfUrl);
+      } catch (refreshError) {
+        console.warn('[DashboardScreen] Diet refresh failed, using last-known URL:', refreshError);
+        if (!latestDietPdfUrl) {
+          // No cached URL to fall back to - this is a genuine transient failure.
+          Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
           return;
         }
-        
+      }
+
+      if (latestDietPdfUrl) {
+        // Check subscription status to ensure user has access (trial or active
+        // subscription). On a transient failure fail open - do not lock a user
+        // out of their own diet because of a cold start.
+        try {
+          const subscriptionStatus = await getSubscriptionStatus(userId);
+          const canAccessDiet = subscriptionStatus.isTrialActive ||
+                                subscriptionStatus.isSubscriptionActive ||
+                                (latestDietPdfUrl && subscriptionStatus.subscriptionPlan === 'trial');
+
+          if (!canAccessDiet) {
+            Alert.alert('Access Denied', 'Please activate your free trial consultation or start a consultation period to access your diet plan.');
+            return;
+          }
+        } catch (subscriptionError) {
+          console.warn('[DashboardScreen] Subscription check failed, allowing diet open:', subscriptionError);
+        }
+
         // User has diet PDF (trial or paid) - open it
-        console.log('Opening diet PDF with URL:', dietData.dietPdfUrl);
-        
+        console.log('Opening diet PDF with URL:', latestDietPdfUrl);
+
         // Generate PDF URL with cache busting
-        const pdfUrl = getPdfUrlWithCacheBusting(dietData.dietPdfUrl);
+        const pdfUrl = getPdfUrlWithCacheBusting(latestDietPdfUrl);
         console.log('Final PDF URL for browser:', pdfUrl);
         
         if (pdfUrl) {
@@ -5672,10 +5690,10 @@ const NotificationSettingsScreen = ({ navigation }: { navigation: any }) => {
             return;
           }
           
-          // Use EXACT SAME logic as "My Diet" button for reliability
+          // Use EXACT SAME logic as "My Diet" button for reliability.
           console.log('[DIET NOTIFICATION CLICK] Fetching user diet using robust approach...');
           const dietData = await getUserDiet(userId);
-          
+
           if (dietData && dietData.dietPdfUrl) {
             console.log('[DIET NOTIFICATION CLICK] ✅ Found diet PDF:', dietData.dietPdfUrl);
             

@@ -199,8 +199,10 @@ class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
   private state = 'CLOSED';
-  private readonly failureThreshold = Platform.OS === 'ios' ? 3 : 5; // Lower threshold for iOS
-  private readonly resetTimeout = Platform.OS === 'ios' ? 60000 : 30000; // 60 seconds for iOS
+  // Tuned so a backend cold-start burst doesn't wall off the app for a minute:
+  // more failures required to trip, and a much shorter recovery window.
+  private readonly failureThreshold = 5;
+  private readonly resetTimeout = Platform.OS === 'ios' ? 20000 : 30000;
 
   async execute(fn: () => Promise<any>) {
     if (this.state === 'OPEN') {
@@ -850,7 +852,11 @@ export const getRecipes = async (): Promise<any[]> => {
 
 export const updateUserProfile = async (userId: string, profileUpdate: UpdateUserProfile): Promise<UserProfile> => {
   try {
-    const response = await enhancedApi.patch(`/users/${userId}/profile`, profileUpdate);
+    // Critical path for onboarding (quiz save): bypass the shared request queue
+    // and circuit breaker so a cold-start-induced OPEN breaker cannot instantly
+    // fail this write with "Service temporarily unavailable" (same precedent as
+    // createUserProfile above).
+    const response = await api.patch(`/users/${userId}/profile`, profileUpdate);
     return response.data;
   } catch (error) {
     logger.error('Error updating user profile:', error);
