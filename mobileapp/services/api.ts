@@ -62,7 +62,11 @@ class RequestQueue {
   private maxConcurrent = Platform.OS === 'ios' ? 1 : 3; // Single request at a time for iOS
   private activeRequests = 0;
   private lastRequestTime = 0;
-  private minRequestInterval = Platform.OS === 'ios' ? 2000 : 100; // 2 seconds minimum interval for iOS
+  // Was 2000ms on iOS: with ~8 startup requests at 2.5-5s backend latency each,
+  // the serialized queue stayed occupied for 30-70s after app open, starving
+  // user-initiated taps into the 45s timeout. 250ms keeps request pacing
+  // without the starvation.
+  private minRequestInterval = Platform.OS === 'ios' ? 250 : 100;
   private requestTimeout = Platform.OS === 'ios' ? 45000 : 15000; // 45 second timeout for iOS
 
   async add<T>(requestFn: () => Promise<T>): Promise<T> {
@@ -124,9 +128,10 @@ class RequestQueue {
     while (this.queue.length > 0 && this.activeRequests < this.maxConcurrent) {
       const requestFn = this.queue.shift();
       if (requestFn) {
-        // Add longer delay between requests on iOS to prevent connection issues
+        // Small delay between requests on iOS to prevent connection issues
+        // (was 2500ms - see minRequestInterval note above).
         if (Platform.OS === 'ios' && this.activeRequests > 0) {
-          await new Promise(resolve => setTimeout(resolve, 2500)); // Increased delay to 2.5 seconds
+          await new Promise(resolve => setTimeout(resolve, 250));
         }
         requestFn();
       }
@@ -999,7 +1004,11 @@ export const uploadDietPdf = async (userId: string, dieticianId: string, file: a
 
 // --- Get User Diet PDF and Countdown ---
 export const getUserDiet = async (userId: string) => {
-  const response = await enhancedApi.get(`/users/${userId}/diet`);
+  // Critical path for the user-initiated "My Diet" tap: bypass the shared
+  // request queue and circuit breaker so the tap never waits behind (or fails
+  // because of) background startup traffic. Same precedent as
+  // createUserProfile/updateUserProfile.
+  const response = await api.get(`/users/${userId}/diet`);
   return response.data;
 };
 
@@ -1079,6 +1088,14 @@ export const selectSubscription = async (userId: string, planId: string, autoRen
 
 export const getSubscriptionStatus = async (userId: string): Promise<SubscriptionStatus> => {
   const response = await enhancedApi.get(`/subscription/status/${userId}`);
+  return response.data;
+};
+
+// Direct (queue/breaker-bypassing) variant for user-initiated critical paths
+// like opening the diet, where the tap must not stall behind background
+// startup requests. All other callers keep the queued getSubscriptionStatus.
+export const getSubscriptionStatusDirect = async (userId: string): Promise<SubscriptionStatus> => {
+  const response = await api.get(`/subscription/status/${userId}`);
   return response.data;
 };
 

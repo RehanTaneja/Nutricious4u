@@ -74,7 +74,7 @@ import { dashboardCache } from './services/cache';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, getSubscriptionStatusDirect, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -1613,10 +1613,18 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         // Always update local state with fresh data to ensure we have the latest
         latestDietPdfUrl = dietData.dietPdfUrl || null;
         setDietPdfUrl(latestDietPdfUrl);
-      } catch (refreshError) {
+      } catch (refreshError: any) {
         console.warn('[DashboardScreen] Diet refresh failed, using last-known URL:', refreshError);
         if (!latestDietPdfUrl) {
           // No cached URL to fall back to - this is a genuine transient failure.
+          // Fire-and-forget telemetry so failures are diagnosable from backend logs.
+          try {
+            const { logFrontendEvent } = require('./services/api');
+            logFrontendEvent(userId, 'DIET_OPEN_FAILED', {
+              stage: 'refresh_no_cache',
+              message: refreshError?.message || String(refreshError),
+            }).catch(() => {});
+          } catch {}
           Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
           return;
         }
@@ -1624,10 +1632,10 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
 
       if (latestDietPdfUrl) {
         // Check subscription status to ensure user has access (trial or active
-        // subscription). On a transient failure fail open - do not lock a user
-        // out of their own diet because of a cold start.
+        // subscription). Direct transport (no queue/breaker) and fail open on a
+        // transient failure - do not lock a user out of their own diet.
         try {
-          const subscriptionStatus = await getSubscriptionStatus(userId);
+          const subscriptionStatus = await getSubscriptionStatusDirect(userId);
           const canAccessDiet = subscriptionStatus.isTrialActive ||
                                 subscriptionStatus.isSubscriptionActive ||
                                 (latestDietPdfUrl && subscriptionStatus.subscriptionPlan === 'trial');
@@ -1664,8 +1672,15 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
         // No diet PDF - show appropriate message
         Alert.alert('No Diet Available', 'You don\'t have a diet plan yet. Please contact your dietician or start a free trial consultation.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to open diet PDF:', e);
+      try {
+        const { logFrontendEvent } = require('./services/api');
+        logFrontendEvent(userId || 'unknown', 'DIET_OPEN_FAILED', {
+          stage: 'outer_catch',
+          message: e?.message || String(e),
+        }).catch(() => {});
+      } catch {}
       Alert.alert('Error', 'Failed to open diet PDF. Please try again.');
     }
   };
