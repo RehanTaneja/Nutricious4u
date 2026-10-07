@@ -1,6 +1,8 @@
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { 
   API_KEY, 
@@ -99,6 +101,39 @@ if (!API_KEY || !AUTH_DOMAIN || !PROJECT_ID || !STORAGE_BUCKET || !MESSAGING_SEN
     console.error('Firebase initialization error:', error);
     throw new Error(`Firebase initialization failed: ${error}`);
   }
+
+// Persist the signed-in user in AsyncStorage. Compat firebase.auth() on its own
+// falls back to in-memory persistence on React Native, which signed every user
+// out whenever the app was closed. Must run before firebase.auth(), which then
+// reuses this instance.
+// Firebase JSON.parses the stored session while starting up; an unreadable entry
+// would make auth initialization fail and onAuthStateChanged never fire (app stuck
+// loading). Treat an unreadable/corrupt entry as signed out instead.
+const authStorage = {
+  getItem: async (key: string) => {
+    try {
+      const value = await AsyncStorage.getItem(key);
+      if (value !== null) JSON.parse(value);
+      return value;
+    } catch (error) {
+      console.warn('[Auth] Ignoring unreadable saved session:', error);
+      AsyncStorage.removeItem(key).catch(() => {});
+      return null;
+    }
+  },
+  setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
+  removeItem: (key: string) => AsyncStorage.removeItem(key),
+};
+try {
+  initializeAuth((firebaseApp as any)._delegate ?? firebaseApp, {
+    persistence: getReactNativePersistence(authStorage),
+  });
+} catch (error: any) {
+  // Already initialized (e.g. Fast Refresh re-running this module)
+  if (error?.code !== 'auth/already-initialized') {
+    console.error('Firebase auth persistence setup failed:', error);
+  }
+}
 
 export const auth = firebase.auth();
 export const firestore = firebase.firestore();

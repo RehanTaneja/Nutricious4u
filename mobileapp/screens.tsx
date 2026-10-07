@@ -25,6 +25,7 @@ import {
   RefreshControl,
   Linking,
   Switch,
+  TextInputProps,
 } from 'react-native';
 import { auth } from './services/firebase';
 import { Home, BookOpen, Dumbbell, Settings, Flame, Search, MessageCircle, Send, Eye, EyeOff, Pencil, Trash2, ArrowLeft, Utensils } from 'lucide-react-native';
@@ -641,9 +642,11 @@ interface StyledInputProps {
   secureTextEntry?: boolean;
   keyboardType?: KeyboardTypeOptions;
   onFocus?: () => void;
+  textContentType?: TextInputProps['textContentType'];
+  autoComplete?: TextInputProps['autoComplete'];
 }
 
-const StyledInput = ({ placeholder, value, onChangeText, secureTextEntry = false, keyboardType = 'default', onFocus }: StyledInputProps) => (
+const StyledInput = ({ placeholder, value, onChangeText, secureTextEntry = false, keyboardType = 'default', onFocus, textContentType, autoComplete }: StyledInputProps) => (
   <TextInput
     style={styles.input}
     placeholder={placeholder}
@@ -654,6 +657,8 @@ const StyledInput = ({ placeholder, value, onChangeText, secureTextEntry = false
     autoCapitalize="none"
     keyboardType={placeholder.toLowerCase().includes('serving') || placeholder.toLowerCase().includes('quantity') || placeholder.toLowerCase().includes('duration') ? 'default' : keyboardType}
     onFocus={onFocus}
+    textContentType={textContentType}
+    autoComplete={autoComplete}
   />
 );
 
@@ -855,7 +860,9 @@ const LoginSignupScreen = () => {
   };
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    // Keyboard suggestions/autofill can append a trailing space to the email
+    const loginEmail = email.trim();
+    if (!loginEmail || !password) {
       setError('Please enter email and password');
       return;
     }
@@ -864,7 +871,7 @@ const LoginSignupScreen = () => {
     
     try {
       // Add iOS-specific timeout handling
-      const loginPromise = auth.signInWithEmailAndPassword(email, password);
+      const loginPromise = auth.signInWithEmailAndPassword(loginEmail, password);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Login timeout')), Platform.OS === 'ios' ? 30000 : 15000)
       );
@@ -872,7 +879,7 @@ const LoginSignupScreen = () => {
       await Promise.race([loginPromise, timeoutPromise]);
       
       if (rememberMe) {
-        await AsyncStorage.setItem('savedEmail', email);
+        await AsyncStorage.setItem('savedEmail', loginEmail);
         await AsyncStorage.setItem('savedPassword', password);
       } else {
         await AsyncStorage.removeItem('savedEmail');
@@ -1053,6 +1060,8 @@ const LoginSignupScreen = () => {
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
+              textContentType="username"
+              autoComplete="email"
             />
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.passwordInputWrapper}>
@@ -1061,6 +1070,10 @@ const LoginSignupScreen = () => {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
+                textContentType={isLogin ? 'password' : 'newPassword'}
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                autoCapitalize="none"
+                autoCorrect={false}
                 style={{ flex: 1, paddingVertical: 14, fontSize: 16, color: COLORS.text, backgroundColor: 'transparent', borderWidth: 0 }}
               />
               <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeIcon}>
