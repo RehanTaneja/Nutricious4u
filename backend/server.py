@@ -1468,6 +1468,12 @@ async def log_workout_item(log: dict):
         logger.error(f"Error logging workout: {e}")
         raise HTTPException(status_code=500, detail="Failed to log workout item.")
 
+# Bot bubbles the app adds locally (ChatbotScreen.tsx) that Gemini never said
+CHATBOT_CLIENT_PLACEHOLDER_MESSAGES = {
+    'Typing...',
+    'Sorry, there was an error connecting to the nutrition assistant.',
+}
+
 @api_router.post("/chatbot/message", response_model=ChatMessageResponse)
 async def chatbot_message(request: ChatMessageRequest):
     """
@@ -1507,8 +1513,9 @@ async def chatbot_message(request: ChatMessageRequest):
                 logger.warning(f"[CHATBOT] Failed to enhance prompt with diet PDF: {e}")
                 # Continue with original prompt if RAG enhancement fails
 
-        # Format chat history for Gemini using dicts (SDK may accept these directly)
-        # If the SDK requires Content objects, you may need to convert them here.
+        # Format prior turns for Gemini. The latest user message is NOT added here:
+        # chat.send_message() below sends it. Adding it to the history as well made
+        # Gemini receive it twice (merged as e.g. "2" -> "22"), causing confused replies.
         formatted_history = [
             {"role": "user", "parts": [{"text": system_prompt}]}
         ]
@@ -1520,11 +1527,15 @@ async def chatbot_message(request: ChatMessageRequest):
             if role == "user":
                 formatted_history.append({"role": "user", "parts": [{"text": text}]})
             elif role == "bot":
+                # Client-side placeholder/error bubbles are not real model replies
+                if text in CHATBOT_CLIENT_PLACEHOLDER_MESSAGES:
+                    continue
                 formatted_history.append({"role": "model", "parts": [{"text": text}]})
-        # Add the latest user message
-        formatted_history.append({"role": "user", "parts": [{"text": request.user_message}]})
-        # If the SDK requires Content objects, convert here (example):
-        # formatted_history = [genai.Content(**msg) for msg in formatted_history]
+        # Guard against a client that already includes the current message in chat_history
+        if (len(formatted_history) > 1
+                and formatted_history[-1]["role"] == "user"
+                and formatted_history[-1]["parts"][0]["text"] == request.user_message):
+            formatted_history.pop()
 
         # Call Gemini
         model = GenerativeModel('gemini-2.5-flash')
@@ -1533,7 +1544,12 @@ async def chatbot_message(request: ChatMessageRequest):
             chat = model.start_chat(history=content_history)
             return chat.send_message(request.user_message)
         response = await asyncio.get_event_loop().run_in_executor(None, get_response)
-        bot_text = response.text if hasattr(response, 'text') else str(response)
+        try:
+            bot_text = response.text
+        except ValueError as e:
+            # .text raises (not AttributeError) when Gemini returns no text parts
+            finish_reason = response.candidates[0].finish_reason if response.candidates else None
+            raise Exception(f"Gemini returned no text (finish_reason={finish_reason}): {e}")
         return ChatMessageResponse(bot_message=bot_text)
     except Exception as e:
         logger.error(f"[CHATBOT] Error: {e}", exc_info=True)
