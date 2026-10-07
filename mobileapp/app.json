@@ -60,7 +60,7 @@
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK"
       ],
-      "versionCode": 17
+      "versionCode": 18
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -77,7 +77,10 @@
           "android": {
             "enableProguardInReleaseBuilds": false,
             "enableSeparateBuildPerCPUArchitecture": false,
-            "hermesFlags": "enable-hermes"
+            "hermesFlags": "enable-hermes",
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
           },
           "ios": {
             "googleServicesFile": "./GoogleService-Info.plist"
@@ -92,7 +95,8 @@
           "mode": "production"
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      "./plugins/withDisablePredictiveBack"
     ],
     "extra": {
       "eas": {
