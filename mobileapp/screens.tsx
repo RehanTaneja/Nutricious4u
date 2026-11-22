@@ -10914,7 +10914,8 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
                 activeOpacity={0.7}
               >
                 <View style={styles.popupPlanHeader}>
-                  <Text style={styles.popupPlanName}>{plan.name}</Text>
+                  {/* flexShrink lets a long name wrap so the price keeps its full width */}
+                  <Text style={[styles.popupPlanName, { flexShrink: 1 }]}>{plan.name}</Text>
                   <Text style={styles.popupPlanPrice}>
                     ₹{plan.price.toLocaleString()}
                   </Text>
