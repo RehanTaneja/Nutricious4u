@@ -10775,6 +10775,7 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
     >
       <View style={styles.popupOverlay} pointerEvents="box-none">
         <View style={styles.popupContainer}>
+          <ScrollView>
           <Text style={styles.popupTitle}>Welcome to Nutricious4u! 🎉</Text>
           <Text style={styles.popupSubtitle}>
             Start with a free 3-day trial consultation period
@@ -10803,6 +10804,9 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
           <TouchableOpacity
             style={[
               styles.popupConfirmButton,
+              // popupConfirmButton is shared with side-by-side row buttons; drop its
+              // flex: 1 for this single, stacked button only (flex: 0 = no flex)
+              { flex: 0 },
               activating && styles.popupConfirmButtonDisabled
             ]}
             onPress={onActivate}
@@ -10817,6 +10821,7 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
               </Text>
             )}
           </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
