@@ -47,7 +47,7 @@ import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Dimensions } from 'react-native';
+import { Dimensions, useWindowDimensions } from 'react-native';
 
 // Fire a success haptic tick; purely additive feedback, never throws.
 const successHaptic = () => {
@@ -10856,6 +10856,11 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
   // Auto-renewal state (default to true)
   const [autoRenewalEnabled, setAutoRenewalEnabled] = useState(true);
   
+  // Android (old arch, RN 0.79): the Modal's first layout has no fixed height, so
+  // popupContainer's maxHeight '80%' resolves against content height and the card
+  // overflows the screen. Cap it against the window height instead.
+  const { height: windowHeight } = useWindowDimensions();
+
   // Reset auto-renewal to true when popup opens
   useEffect(() => {
     if (visible) {
@@ -10871,7 +10876,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
       onRequestClose={() => {}} // Prevent dismissal
     >
       <View style={styles.popupOverlay} pointerEvents="box-none">
-        <View style={styles.popupContainer}>
+        <View style={[styles.popupContainer, { maxHeight: windowHeight * 0.8 }]}>
           <ScrollView>
           <Text style={styles.popupTitle}>Select Consultation Period</Text>
           {isTrialEnd && (
