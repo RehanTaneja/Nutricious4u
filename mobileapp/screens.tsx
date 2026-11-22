@@ -10872,6 +10872,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
     >
       <View style={styles.popupOverlay} pointerEvents="box-none">
         <View style={styles.popupContainer}>
+          <ScrollView>
           <Text style={styles.popupTitle}>Select Consultation Period</Text>
           {isTrialEnd && (
             <>
@@ -10901,7 +10902,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
             {message || (isTrialEnd ? "" : "Choose a consultation period to continue your consultation services")}
           </Text>
           
-          <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             {paidPlans.map((plan) => (
               <TouchableOpacity
                 key={plan.planId}
@@ -10971,6 +10972,9 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
           <TouchableOpacity
             style={[
               styles.popupConfirmButton,
+              // popupConfirmButton is shared with side-by-side row buttons; drop its
+              // flex: 1 for this single, stacked button only (flex: 0 = no flex)
+              { flex: 0 },
               (!selectedPlan || confirming) && styles.popupConfirmButtonDisabled
             ]}
             onPress={() => onConfirm(autoRenewalEnabled)}
@@ -10985,6 +10989,7 @@ const MandatoryPlanSelectionPopup: React.FC<MandatoryPlanSelectionPopupProps> = 
               </Text>
             )}
           </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
