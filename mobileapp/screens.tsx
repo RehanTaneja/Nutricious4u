@@ -10766,6 +10766,11 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
   onActivate,
   activating
 }) => {
+  // Android (old arch, RN 0.79): the Modal's first layout has no fixed height, so
+  // popupContainer's maxHeight '80%' resolves against content height and the card
+  // overflows the screen. Cap it against the window height instead.
+  const { height: windowHeight } = useWindowDimensions();
+
   return (
     <Modal
       visible={visible}
@@ -10774,7 +10779,7 @@ const MandatoryTrialActivationPopup: React.FC<MandatoryTrialActivationPopupProps
       onRequestClose={() => {}} // Prevent dismissal
     >
       <View style={styles.popupOverlay} pointerEvents="box-none">
-        <View style={styles.popupContainer}>
+        <View style={[styles.popupContainer, { maxHeight: windowHeight * 0.8 }]}>
           <ScrollView>
           <Text style={styles.popupTitle}>Welcome to Nutricious4u! 🎉</Text>
           <Text style={styles.popupSubtitle}>
