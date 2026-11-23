@@ -76,6 +76,7 @@ import { dashboardCache } from './services/cache';
 import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
+import { parseServerDate, formatServerDate, DIETICIAN_TIMEZONE, zonedParts, dieticianDateKey, dieticianWeekDates, dieticianSlotDate, formatDieticianDay, formatPhoneTime24, phoneDiffersFromDietician, localTimeSuffix } from './utils/time';
 import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, getSubscriptionStatusDirect, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
@@ -1447,11 +1448,9 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
           const subscriptionStatus = await getSubscriptionStatus(userId);
           
           if (subscriptionStatus.isTrialActive && subscriptionStatus.trialEndDate) {
-            const rawTrialEndDate = subscriptionStatus.trialEndDate;
-            const hasTimezone = /(?:Z|[+\-]\d{2}:\d{2})$/i.test(rawTrialEndDate);
-            const trialEndDate = new Date(hasTimezone ? rawTrialEndDate : `${rawTrialEndDate}Z`);
+            const trialEndDate = parseServerDate(subscriptionStatus.trialEndDate);
             const now = new Date();
-            const diffMs = trialEndDate.getTime() - now.getTime();
+            const diffMs = trialEndDate ? trialEndDate.getTime() - now.getTime() : NaN;
             
             if (diffMs > 0) {
               const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -9611,6 +9610,17 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: '500',
   },
+  slotPhoneTimeText: {
+    fontSize: 8,
+    color: COLORS.placeholder,
+    marginTop: 1,
+  },
+  slotTimezoneNote: {
+    fontSize: 11,
+    color: COLORS.placeholder,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
   pastTimeSlotText: {
     color: COLORS.placeholder,
   },
@@ -11214,7 +11224,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      const date = new Date(dateString);
+      const date = parseServerDate(dateString);
+      if (!date) return 'Invalid Date';
       return date.toLocaleDateString('en-IN', {
         year: 'numeric',
         month: 'long',
@@ -11816,7 +11827,8 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
 
   const formatNotificationTime = (timestamp: string) => {
     try {
-      const date = new Date(timestamp);
+      const date = parseServerDate(timestamp);
+      if (!date) return 'Unknown time';
       const now = new Date();
       const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
       
@@ -12026,62 +12038,46 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     return slots;
   }, []);
 
-  // Generate week dates (7 days starting from today)
-  const weekDates = React.useMemo(() => {
-    const dates = [];
-    const today = new Date();
-    
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push(date);
-    }
-    return dates;
-  }, []);
+  // Week dates: 7 days starting today, on the dietician's calendar (slots are dietician time)
+  const weekDates = React.useMemo(() => dieticianWeekDates(7), []);
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric' 
-    });
+  const formatDate = (date: Date) => formatDieticianDay(date);
+
+  // Calendar day of a stored appointment on the dietician's calendar
+  const appointmentDayKey = (appointment: any) => {
+    const d = parseServerDate(appointment?.date);
+    return d ? dieticianDateKey(d) : '';
   };
 
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
+  const isToday = (date: Date) => dieticianDateKey(date) === dieticianDateKey(new Date());
+
+  const dayNumber = (date: Date) => {
+    const p = zonedParts(date, DIETICIAN_TIMEZONE);
+    return p.year * 10000 + p.month * 100 + p.day;
   };
 
-  const isPastDate = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    date.setHours(0, 0, 0, 0);
-    return date < today;
-  };
+  const isPastDate = (date: Date) => dayNumber(date) < dayNumber(new Date());
 
   const isPastTimeSlot = (timeSlot: string, date: Date) => {
     if (isPastDate(date)) return true;
     if (!isToday(date)) return false;
     
-    const now = new Date();
-    const currentHour = now.getHours();
+    const currentHour = zonedParts(new Date(), DIETICIAN_TIMEZONE).hour;
     const slotHour = parseInt(timeSlot.split(':')[0]);
     return slotHour <= currentHour;
   };
 
   const isSlotBooked = (timeSlot: string, date: Date) => {
-    const dateString = date.toDateString();
+    const dateString = dieticianDateKey(date);
     return appointments.some(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+      return appointmentDayKey(appointment) === dateString && appointment.timeSlot === timeSlot;
     });
   };
 
   const getBookedUserInfo = (timeSlot: string, date: Date) => {
-    const dateString = date.toDateString();
+    const dateString = dieticianDateKey(date);
     const appointment = appointments.find(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+      return appointmentDayKey(appointment) === dateString && appointment.timeSlot === timeSlot;
     });
     return appointment;
   };
@@ -12222,10 +12218,8 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         userName = auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown User';
       }
 
-      // Create appointment data
-      const appointmentDate = new Date(selectedDate);
-      const [hour] = selectedTimeSlot.split(':');
-      appointmentDate.setHours(parseInt(hour), 0, 0, 0);
+      // Create appointment data: the slot's moment on the dietician's clock
+      const appointmentDate = dieticianSlotDate(selectedDate, selectedTimeSlot);
       
       const appointmentData = {
         userId: userId,
@@ -12258,9 +12252,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       try {
         // Use atomic booking with server-side validation
         // First check if slot is available
-        const appointmentDate = new Date(selectedDate);
-        const [hour] = selectedTimeSlot.split(':');
-        appointmentDate.setHours(parseInt(hour), 0, 0, 0);
+        const appointmentDate = dieticianSlotDate(selectedDate, selectedTimeSlot);
         
         // Check for existing appointments at this time
         const existingAppointmentsSnapshot = await firestore
@@ -12275,7 +12267,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         
         // Check for breaks
         const breaksSnapshot = await firestore.collection('breaks').get();
-        const dateString = selectedDate.toDateString();
+        const dateString = dieticianDateKey(selectedDate);
         
         for (const doc of breaksSnapshot.docs) {
           const breakData = doc.data();
@@ -12311,7 +12303,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           const notificationPayload = {
             type: 'appointment_scheduled',
             userName: userName,
-            date: selectedDate.toLocaleDateString(),
+            date: formatDate(selectedDate),
             timeSlot: selectedTimeSlot
           };
           
@@ -12338,7 +12330,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           // Don't block appointment creation if notification fails
         }
         
-      setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
+      setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}${localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))}`);
       setShowSuccess(true);
       // Optionally, refresh appointments
         setAppointments([...appointments, { ...appointmentData, id: result }]);
@@ -12378,7 +12370,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
             const result = await response.json();
             console.log('[Appointment Debug] ✅ Appointment saved via backend API:', result);
             
-            setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}`);
+            setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}${localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))}`);
             setShowSuccess(true);
             setAppointments([...appointments, { ...appointmentData, id: result.id || Date.now().toString() }]);
             setSelectedTimeSlot(null);
@@ -12405,7 +12397,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
             console.error('[Appointment Debug] Failed to save to AsyncStorage:', storageError);
           }
           
-          setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot} (saved locally)`);
+          setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}${localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))} (saved locally)`);
           setShowSuccess(true);
           setAppointments([...appointments, localAppointment]);
           setSelectedTimeSlot(null);
@@ -12463,7 +12455,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           const notificationPayload = {
             type: 'appointment_cancelled',
             userName: appt.userName || 'User',
-            date: new Date(appt.date).toLocaleDateString(),
+            date: parseServerDate(appt.date) ? formatDate(parseServerDate(appt.date) as Date) : '',
             timeSlot: appt.timeSlot
           };
           
@@ -12518,7 +12510,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
 
   // Check if a time slot is within any break
   const isTimeSlotInBreak = (timeSlot: string, date?: Date) => {
-    const dateString = date ? date.toDateString() : null;
+    const dateString = date ? dieticianDateKey(date) : null;
     
     return breaks.some(breakItem => {
       const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
@@ -12541,17 +12533,19 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     const isPast = isPastTimeSlot(timeSlot, date);
     const isBooked = isSlotBooked(timeSlot, date);
     const isBookedByMe = appointments.some(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      return appointmentDate.toDateString() === date.toDateString() && appointment.timeSlot === timeSlot && appointment.userId === auth.currentUser?.uid;
+      return appointmentDayKey(appointment) === dieticianDateKey(date) && appointment.timeSlot === timeSlot && appointment.userId === auth.currentUser?.uid;
     });
-    const isSelected = selectedDate.toDateString() === date.toDateString() && selectedTimeSlot === timeSlot;
+    const isSelected = dieticianDateKey(selectedDate) === dieticianDateKey(date) && selectedTimeSlot === timeSlot;
+    // The slot on the phone's clock, shown when the phone is in another timezone
+    const slotMoment = dieticianSlotDate(date, timeSlot);
+    const phoneTime = phoneDiffersFromDietician(slotMoment) ? formatPhoneTime24(slotMoment) : null;
     const isBreak = isTimeSlotInBreak(timeSlot, date);
     const isBreaksLoading = breaksLoading; // Show loading state for breaks
     
     // Debug logging for time slot rendering
     console.log('[User Schedule] Rendering time slot:', {
       timeSlot,
-      date: date.toDateString(),
+      date: dieticianDateKey(date),
       isPast,
       isBooked,
       isBookedByMe,
@@ -12562,7 +12556,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
     
     return (
       <TouchableOpacity
-        key={`${date.toDateString()}-${timeSlot}`}
+        key={`${dieticianDateKey(date)}-${timeSlot}`}
         style={[
           styles.timeSlot,
           isPast && styles.pastTimeSlot,
@@ -12585,6 +12579,9 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         ]}>
           {isBreaksLoading ? '...' : isBreak ? 'Break' : isBooked ? (isBookedByMe ? 'Your Appt' : 'Booked') : timeSlot}
         </Text>
+        {phoneTime && !isBreaksLoading && !isBreak && !isBooked && (
+          <Text style={[styles.slotPhoneTimeText, isPast && styles.pastTimeSlotText, isSelected && styles.selectedTimeSlotText]}>{phoneTime}</Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -12613,13 +12610,16 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         }
       >
         <View style={styles.scheduleContainer}>
+          {phoneDiffersFromDietician() && (
+            <Text style={styles.slotTimezoneNote}>Times are India time (IST). The smaller time in each slot is your local time.</Text>
+          )}
           {/* Week Header */}
           <View style={styles.weekHeader}>
             <View style={styles.timeColumnHeader}>
               <Text style={styles.timeColumnHeaderText}>Time</Text>
             </View>
             {weekDates.map((date) => (
-              <View key={date.toDateString()} style={styles.dateColumnHeader}>
+              <View key={dieticianDateKey(date)} style={styles.dateColumnHeader}>
                 <Text style={[
                   styles.dateHeaderText,
                   isToday(date) && styles.todayHeaderText
@@ -12651,7 +12651,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.appointmentSummary}>
             <Text style={styles.appointmentSummaryTitle}>Selected Appointment</Text>
             <Text style={styles.appointmentSummaryText}>
-              {formatDate(selectedDate)} at {selectedTimeSlot}
+              {formatDate(selectedDate)} at {selectedTimeSlot}{localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))}
             </Text>
             <StyledButton
               title={loading ? "Scheduling..." : "Confirm Appointment"}
@@ -12673,9 +12673,9 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
             const userUpcomingAppointments = appointments
               .filter(appt => 
                 appt.userId === userId && 
-                new Date(appt.date) > now
+                (parseServerDate(appt.date)?.getTime() ?? 0) > now.getTime()
               )
-              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+              .sort((a, b) => (parseServerDate(a.date)?.getTime() ?? 0) - (parseServerDate(b.date)?.getTime() ?? 0));
             
             console.log('[ScheduleAppointment] Total appointments:', appointments.length, 'User upcoming:', userUpcomingAppointments.length);
             
@@ -12684,7 +12684,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
               return (
                 <>
                   <Text style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>
-                    {formatDate(new Date(nextAppointment.date))} at {nextAppointment.timeSlot}
+                    {formatDate(parseServerDate(nextAppointment.date) as Date)} at {nextAppointment.timeSlot}{localTimeSuffix(dieticianSlotDate(parseServerDate(nextAppointment.date) as Date, nextAppointment.timeSlot))}
                   </Text>
                   <TouchableOpacity
                     style={styles.cancelButton}
@@ -12844,16 +12844,8 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
 
 
   React.useEffect(() => {
-    // Generate week dates (7 days starting from today)
-    const dates = [];
-    const today = new Date();
-    
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push(date);
-    }
-    setWeekDates(dates);
+    // Week dates: 7 days starting today, on the dietician's calendar
+    setWeekDates(dieticianWeekDates(7));
   }, []);
 
   React.useEffect(() => {
@@ -12944,18 +12936,15 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     };
   }, [isFocused]); // Add isFocused dependency like user dashboard
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric' 
-    });
+  const formatDate = (date: Date) => formatDieticianDay(date);
+
+  // Calendar day of a stored appointment on the dietician's calendar
+  const appointmentDayKey = (appointment: any) => {
+    const d = parseServerDate(appointment?.date);
+    return d ? dieticianDateKey(d) : '';
   };
 
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
+  const isToday = (date: Date) => dieticianDateKey(date) === dieticianDateKey(new Date());
 
   // Helper function to get the next hour from a time slot
   const getNextHour = (timeSlot: string) => {
@@ -12965,18 +12954,16 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const isSlotBooked = (timeSlot: string, date: Date) => {
-    const dateString = date.toDateString();
+    const dateString = dieticianDateKey(date);
     return appointments.some(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+      return appointmentDayKey(appointment) === dateString && appointment.timeSlot === timeSlot;
     });
   };
 
   const getBookedUserInfo = (timeSlot: string, date: Date) => {
-    const dateString = date.toDateString();
+    const dateString = dieticianDateKey(date);
     const appointment = appointments.find(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+      return appointmentDayKey(appointment) === dateString && appointment.timeSlot === timeSlot;
     });
     return appointment;
   };
@@ -12986,14 +12973,14 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     const isBreak = isTimeSlotInBreak(timeSlot, date);
     const isProcessing = breaksLoading && breakConfirmationSlot !== null && 
       breakConfirmationSlot.timeSlot === timeSlot && 
-      breakConfirmationSlot.date.toDateString() === date.toDateString();
+      dieticianDateKey(breakConfirmationSlot.date) === dieticianDateKey(date);
     
     // Get user info for booked slots
     const bookedUserInfo = isBooked ? getBookedUserInfo(timeSlot, date) : null;
     
     return (
       <TouchableOpacity
-        key={`${date.toDateString()}-${timeSlot}`}
+        key={`${dieticianDateKey(date)}-${timeSlot}`}
         style={[
           styles.timeSlot,
           isBreak && styles.breakTimeSlot,
@@ -13088,7 +13075,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
 
   // Check if a time slot is within any break
   const isTimeSlotInBreak = (timeSlot: string, date?: Date) => {
-    const dateString = date ? date.toDateString() : null;
+    const dateString = date ? dieticianDateKey(date) : null;
     
     return breaks.some(breakItem => {
       const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
@@ -13114,7 +13101,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       // Find the break that contains this time slot for this specific date
       const breakItem = breaks.find(breakItem => {
         const timeInRange = timeSlot >= breakItem.fromTime && timeSlot <= breakItem.toTime;
-        const dateMatches = !breakItem.specificDate || breakItem.specificDate === date.toDateString();
+        const dateMatches = !breakItem.specificDate || breakItem.specificDate === dieticianDateKey(date);
         return timeInRange && dateMatches;
       });
       
@@ -13138,10 +13125,9 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
     
     try {
       // If booked, cancel appointment and notify user
-      const dateString = date.toDateString();
+      const dateString = dieticianDateKey(date);
       const appt = appointments.find(appointment => {
-        const appointmentDate = new Date(appointment.date);
-        return appointmentDate.toDateString() === dateString && appointment.timeSlot === timeSlot;
+        return appointmentDayKey(appointment) === dateString && appointment.timeSlot === timeSlot;
       });
       
       if (appt) {
@@ -13162,7 +13148,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
       
       // Add break for this single time slot on this specific date (1 hour duration)
       const endTime = getNextHour(timeSlot);
-      await handleAddBreak(timeSlot, endTime, date.toDateString());
+      await handleAddBreak(timeSlot, endTime, dieticianDateKey(date));
       
       console.log(`Added break from ${timeSlot} to ${endTime} on ${formatDate(date)}`);
       
@@ -13237,7 +13223,7 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
               <Text style={styles.timeColumnHeaderText}>Time</Text>
             </View>
             {weekDates.map((date) => (
-              <View key={date.toDateString()} style={styles.dateColumnHeader}>
+              <View key={dieticianDateKey(date)} style={styles.dateColumnHeader}>
                 <Text style={[
                   styles.dateHeaderText,
                   isToday(date) && styles.todayHeaderText
@@ -13271,10 +13257,10 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
             <Text style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>No appointments booked.</Text>
           ) : (
             appointments
-              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+              .sort((a, b) => (parseServerDate(a.date)?.getTime() ?? 0) - (parseServerDate(b.date)?.getTime() ?? 0))
               .map((appt, idx) => (
                 <Text key={idx} style={[styles.appointmentSummaryText, { color: '#1E293B' }]}>
-                  {`${formatDate(new Date(appt.date))} at ${appt.timeSlot} - ${appt.userName}`}
+                  {`${parseServerDate(appt.date) ? formatDate(parseServerDate(appt.date) as Date) : ''} at ${appt.timeSlot} - ${appt.userName}`}
                 </Text>
               ))
           )}
@@ -14112,14 +14098,14 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>Start Date:</Text>
                     <Text style={styles.userInfoValue}>
-                      {selectedUserInfo.startDate ? new Date(selectedUserInfo.startDate).toLocaleDateString('en-GB') : 'Not set'}
+                      {formatServerDate(selectedUserInfo.startDate, 'en-GB') || 'Not set'}
                     </Text>
                   </View>
                   
                   <View style={styles.userInfoRow}>
                     <Text style={styles.userInfoLabel}>End Date:</Text>
                     <Text style={styles.userInfoValue}>
-                      {selectedUserInfo.endDate ? new Date(selectedUserInfo.endDate).toLocaleDateString('en-GB') : 'Not set'}
+                      {formatServerDate(selectedUserInfo.endDate, 'en-GB') || 'Not set'}
                     </Text>
                   </View>
                   

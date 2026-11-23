@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { parseServerDate } from '../utils/time';
 import { Platform } from 'react-native';
 import { auth } from './firebase';
 import { logger } from '../utils/logger';
@@ -434,7 +435,7 @@ export class UnifiedNotificationService {
       // Get trial end date from user profile
       let trialEndDate: Date | null = null;
       if (userProfile?.freeTrialEndDate) {
-        trialEndDate = new Date(userProfile.freeTrialEndDate);
+        trialEndDate = (parseServerDate(userProfile.freeTrialEndDate) || new Date(NaN));
         console.log(`[FREE TRIAL] Trial ends at: ${trialEndDate.toISOString()}`);
       }
       

@@ -216,6 +216,9 @@ class UpdateUserProfile(BaseModel):
     lastDietUpload: Optional[str] = None
     dieticianId: Optional[str] = None
     dietCacheVersion: Optional[float] = None
+    # Phone timezone, saved by the app on launch
+    timezone: Optional[str] = None
+    utcOffsetMinutes: Optional[int] = None
 
 class ChatMessageRequest(BaseModel):
     userId: str
@@ -451,6 +454,105 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- Time helpers ---------------------------------------------------------------
+# Stored dates are naive ISO strings in UTC. A user's own calendar (day boundaries,
+# quiet hours, dates written in messages) comes from the timezone their app saves to
+# their profile: "timezone" (IANA name) or, failing that, "utcOffsetMinutes" (minutes
+# east of UTC). Users with neither (older app versions) keep the previous behaviour.
+from datetime import timezone as _dt_timezone
+from zoneinfo import ZoneInfo
+
+QUIET_HOURS_START = 21  # reminders are held from 9 pm ...
+QUIET_HOURS_END = 9     # ... until 9 am, user-local
+
+
+def utc_now():
+    """Current time as naive UTC, the format dates are stored in."""
+    return datetime.now(_dt_timezone.utc).replace(tzinfo=None)
+
+
+def valid_timezone_name(name):
+    """The IANA name if the server knows it, else None."""
+    if not isinstance(name, str) or not name or len(name) > 64:
+        return None
+    try:
+        ZoneInfo(name)
+        return name
+    except Exception:
+        return None
+
+
+def valid_utc_offset_minutes(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value) if -840 <= value <= 840 else None
+
+
+def user_zone(user_data):
+    """The user's tzinfo from their profile, or None when unknown."""
+    data = user_data or {}
+    name = valid_timezone_name(data.get("timezone"))
+    if name:
+        return ZoneInfo(name)
+    offset = valid_utc_offset_minutes(data.get("utcOffsetMinutes"))
+    if offset is not None:
+        return _dt_timezone(timedelta(minutes=offset))
+    return None
+
+
+def to_user_local(moment, user_data):
+    """A naive-UTC (or aware) datetime in the user's zone, or None when unknown."""
+    zone = user_zone(user_data)
+    if zone is None or moment is None:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_dt_timezone.utc)
+    return moment.astimezone(zone)
+
+
+def user_local_now(user_data):
+    return to_user_local(utc_now(), user_data)
+
+
+def format_user_date(moment, user_data, fmt='%B %d, %Y'):
+    """Format a stored date on the user's calendar (unchanged when their zone is unknown)."""
+    local = to_user_local(moment, user_data)
+    if local is not None:
+        return local.strftime(fmt)
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(_dt_timezone.utc).replace(tzinfo=None)
+    return moment.strftime(fmt)
+
+
+def user_today_start(user_data, js_offset_minutes=None):
+    """Midnight that began the user's current day, as a naive wall-clock datetime (the way
+    food logs store local time). Uses their stored zone, else a JavaScript
+    getTimezoneOffset() value from the request; None when neither is known."""
+    local = user_local_now(user_data)
+    if local is None and valid_utc_offset_minutes(js_offset_minutes) is not None:
+        local = utc_now() - timedelta(minutes=js_offset_minutes)
+    if local is None:
+        return None
+    return local.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+
+def get_profile_data(user_id):
+    """The user's profile dict, or {} if missing/unavailable (used for their timezone)."""
+    try:
+        doc = firestore_db.collection("user_profiles").document(user_id).get()
+        return (doc.to_dict() or {}) if doc.exists else {}
+    except Exception as e:
+        logger.warning(f"[TIME] Could not read profile for {user_id}: {e}")
+        return {}
+
+
+def in_quiet_hours(user_data, now=None):
+    """True while it is night for the user. Never true when their zone is unknown."""
+    local = to_user_local(now or utc_now(), user_data)
+    if local is None:
+        return False
+    return not (QUIET_HOURS_END <= local.hour < QUIET_HOURS_START)
+
 # Load environment variables
 env_path = Path(__file__).parent / '.env'
 
@@ -653,7 +755,7 @@ async def log_food_item(request: FoodLogRequest):
                 if last_food_log_date != today:
                     logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
                     # Reset daily data
-                    await reset_daily_data(user_id)
+                    await _reset_daily_data(user_id, request.timezoneOffset)
         except Exception as reset_error:
             logger.warning(f"[FOOD LOG] Error checking daily reset: {reset_error}")
             # Continue with food logging even if reset fails
@@ -758,8 +860,9 @@ async def get_food_log_summary(user_id: str):
             logger.error("[SUMMARY] Firebase is not available, returning service unavailable")
             raise HTTPException(status_code=503, detail="Database service is currently unavailable. Please try again later.")
         
-        # CRITICAL FIX: Use local time instead of UTC for consistent user experience
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # The user's day (food logs hold the user's local time); server day if their zone is unknown
+        profile_data = await asyncio.to_thread(get_profile_data, user_id)
+        today = user_today_start(profile_data) or datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logger.info(f"[SUMMARY] Using local time - today: {today}, start_of_week: {start_of_week}")
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
@@ -882,8 +985,9 @@ async def get_food_log_summary(user_id: str):
 async def _get_food_log_summary_internal(user_id: str, loop):
     """Internal function to get food log summary with better error handling"""
     try:
-        # CRITICAL FIX: Use local time consistently
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # The user's day (food logs hold the user's local time); server day if their zone is unknown
+        profile_data = await asyncio.to_thread(get_profile_data, user_id)
+        today = user_today_start(profile_data) or datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_week = today - timedelta(days=6)
         logger.info(f"[SUMMARY INTERNAL] Using local time - today: {today}, start_of_week: {start_of_week}")
         logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
@@ -1034,11 +1138,24 @@ async def get_workout_log_summary(user_id: str):
     loop = asyncio.get_event_loop()
     try:
         logger.info(f"[WORKOUT SUMMARY] Fetching workout summary for user: {user_id}")
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_week = today - timedelta(days=6)
+        # Workout logs hold server (UTC) time. When the user's zone is known, days are the
+        # user's days: the query starts at their local midnight and each log is dated locally.
+        profile_data = await asyncio.to_thread(get_profile_data, user_id)
+        zone = user_zone(profile_data)
+        if zone is not None:
+            today = user_today_start(profile_data)
+            start_of_week = today - timedelta(days=6)
+            query_start = start_of_week.replace(tzinfo=zone).astimezone(_dt_timezone.utc).replace(tzinfo=None)
+        else:
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            start_of_week = today - timedelta(days=6)
+            query_start = start_of_week
+        def local_day(moment):
+            local = to_user_local(moment, profile_data) if zone is not None else None
+            return (local or moment).strftime('%Y-%m-%d')
         logs_ref = firestore_db.collection("workout_logs")
         # Only logs for this user and in the last 7 days
-        query = logs_ref.where("userId", "==", user_id).where("date", ">=", start_of_week.isoformat())
+        query = logs_ref.where("userId", "==", user_id).where("date", ">=", query_start.isoformat())
         docs_stream = await loop.run_in_executor(executor, query.stream)
         history = {}
         all_logs = []
@@ -1051,11 +1168,11 @@ async def get_workout_log_summary(user_id: str):
             # Firestore may return a datetime or a string
             if isinstance(ts, str):
                 try:
-                    log_date = datetime.fromisoformat(ts).strftime('%Y-%m-%d')
+                    log_date = local_day(datetime.fromisoformat(ts))
                 except Exception:
                     continue
             elif isinstance(ts, datetime):
-                log_date = ts.strftime('%Y-%m-%d')
+                log_date = local_day(ts)
             else:
                 continue
             if log_date not in history:
@@ -1363,6 +1480,11 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile, h
     try:
         # Only the dietician may change subscription, payment and diet-assignment fields.
         update_dict = await strip_protected_fields(http_request, profile_update.model_dump(exclude_unset=True))
+        # Keep only a timezone the server can use; invalid values are ignored
+        if "timezone" in update_dict and not valid_timezone_name(update_dict["timezone"]):
+            update_dict.pop("timezone")
+        if "utcOffsetMinutes" in update_dict and valid_utc_offset_minutes(update_dict["utcOffsetMinutes"]) is None:
+            update_dict.pop("utcOffsetMinutes")
         if not update_dict:
             raise HTTPException(status_code=400, detail="No valid update fields provided")
         doc_ref = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id))
@@ -2747,7 +2869,7 @@ async def get_all_user_profiles():
             if free_trial_end_date and subscription_status == "trial":
                 try:
                     trial_end = datetime.fromisoformat(free_trial_end_date)
-                    if datetime.now() < trial_end:
+                    if utc_now() < trial_end:
                         has_active_trial = True
                 except:
                     pass  # If date parsing fails, assume no active trial
@@ -3631,12 +3753,18 @@ def _paid_period_transaction(transaction, doc_ref, now):
     legacy = not any(data.get(k) for k in ("feeAddedForPeriodEnd", "oneDayReminderForPeriodEnd", "oneWeekReminderForPeriodEnd"))
     old_flags = data.get("lastPaymentReminderSent") or {}
 
-    # 7-day reminder: once, while 159-171h remain (two 6-hourly runs to catch it; the
-    # text says "7 days", so it is skipped rather than sent late)
-    if timedelta(hours=159) < remaining <= timedelta(hours=171) and data.get("oneWeekReminderForPeriodEnd") != end_str:
-        updates["oneWeekReminderForPeriodEnd"] = end_str
-        if not (legacy and old_flags.get("oneWeek")):
-            actions.append(("reminder", 7))
+    # Reminders wait while it is night for the user (unknown zone: never held); their
+    # marker stays unset so a later run sends them. Fees and renewals are never held.
+    quiet = in_quiet_hours(data, now)
+
+    # 7-day reminder: once, while 147-171h remain (wide enough that a daytime run always
+    # falls inside it); the text gives the days actually left (6 or 7)
+    if timedelta(hours=147) < remaining <= timedelta(hours=171) and data.get("oneWeekReminderForPeriodEnd") != end_str:
+        if legacy and old_flags.get("oneWeek"):
+            updates["oneWeekReminderForPeriodEnd"] = end_str
+        elif not quiet:
+            updates["oneWeekReminderForPeriodEnd"] = end_str
+            actions.append(("reminder", round(remaining.total_seconds() / 86400)))
 
     # Fee for this period: once, from 25h before the end onwards (also catches up after expiry)
     if remaining <= timedelta(hours=25):
@@ -3649,8 +3777,10 @@ def _paid_period_transaction(transaction, doc_ref, now):
                 actions.append(("fee", amount))
             updates["feeAddedForPeriodEnd"] = end_str
         if remaining > timedelta(0) and data.get("oneDayReminderForPeriodEnd") != end_str:
-            updates["oneDayReminderForPeriodEnd"] = end_str
-            if not already_done:
+            if already_done:
+                updates["oneDayReminderForPeriodEnd"] = end_str
+            elif not quiet:
+                updates["oneDayReminderForPeriodEnd"] = end_str
                 actions.append(("reminder", 1))
 
     # Period over: activate a due plan switch, else auto-renew, else expire
@@ -3705,7 +3835,7 @@ async def process_paid_period(user_id: str):
     data, actions = None, None
     for attempt in range(4):  # extra retries on top of the transaction's own, for heavy contention
         try:
-            now = datetime.now()
+            now = utc_now()
             data, actions = await asyncio.to_thread(
                 lambda: _paid_period_transaction(firestore_db.transaction(max_attempts=15), doc_ref, now))
             break
@@ -3733,6 +3863,55 @@ async def process_paid_period(user_id: str):
     return actions
 
 
+@_firestore_transactional
+def _trial_period_transaction(transaction, doc_ref, now):
+    """Decide and record the trial's 1-day reminder atomically. Returns (pre_state, actions)."""
+    snap = doc_ref.get(transaction=transaction)
+    if not snap.exists:
+        return None, []
+    data = snap.to_dict() or {}
+    end_str = data.get("freeTrialEndDate")
+    if data.get("isDietician") or data.get("subscriptionStatus") != "trial" or not end_str:
+        return data, []
+    remaining = datetime.fromisoformat(end_str) - now
+    # 1-day reminder: once, from 25h before the trial ends until it ends, marked with
+    # the trial end date it was sent for
+    if timedelta(0) < remaining <= timedelta(hours=25) and data.get("trialReminderForEnd") != end_str:
+        if (data.get("lastPaymentReminderSent") or {}).get("oneDay"):
+            # already sent by the previous reminder code for this trial
+            transaction.update(doc_ref, {"trialReminderForEnd": end_str})
+            return data, []
+        if in_quiet_hours(data, now):
+            return data, []  # night for the user: a later run sends it
+        transaction.update(doc_ref, {"trialReminderForEnd": end_str})
+        return data, [("reminder", 1)]
+    return data, []
+
+
+async def process_trial_period(user_id: str):
+    """Send the trial's 1-day reminder exactly once (safe to call concurrently)."""
+    doc_ref = firestore_db.collection("user_profiles").document(user_id)
+    data, actions = None, None
+    for attempt in range(4):
+        try:
+            now = utc_now()
+            data, actions = await asyncio.to_thread(
+                lambda: _trial_period_transaction(firestore_db.transaction(max_attempts=15), doc_ref, now))
+            break
+        except Exception as e:
+            if attempt == 3:
+                logger.error(f"[TRIAL PERIOD] Error processing user {user_id}: {e}")
+                return None
+            await asyncio.sleep(0.2 + random.random() * 0.8)
+    for action in actions:
+        try:
+            if action[0] == "reminder":
+                await send_trial_reminder_notification(user_id, data, action[1])
+        except Exception as e:
+            logger.error(f"[TRIAL PERIOD] Notification step {action} failed for user {user_id}: {e}")
+    return actions
+
+
 async def check_subscription_reminders_job():
     """Check for subscription reminders and send notifications"""
     try:
@@ -3745,7 +3924,7 @@ async def check_subscription_reminders_job():
         # Get users with active trials (have freeTrialEndDate and subscriptionStatus == "trial")
         all_users = users_ref.stream()
         
-        current_time = datetime.now()
+        current_time = utc_now()
         processed_user_ids = set()
         
         # Process active subscription users
@@ -3783,31 +3962,10 @@ async def check_subscription_reminders_job():
                     end_date = datetime.fromisoformat(trial_end_date)
                     time_until_expiry = end_date - current_time
                     
-                    # Check for trial reminders (1 week and 1 day before)
-                    # 1 week (7 days) before expiration (165-171 hours remaining)
-                    if timedelta(hours=165) <= time_until_expiry <= timedelta(hours=171):
-                        last_reminders = user_data.get("lastPaymentReminderSent", {})
-                        if not last_reminders.get("oneWeek", False):
-                            await send_trial_reminder_notification(user_id, user_data, 7)  # 7 days
-                            firestore_db.collection("user_profiles").document(user_id).update({
-                                "lastPaymentReminderSent": {
-                                    **last_reminders,
-                                    "oneWeek": True
-                                }
-                            })
-                    
-                    # 1 day before expiration (23-25 hours remaining)
-                    elif timedelta(hours=23) <= time_until_expiry <= timedelta(hours=25):
-                        last_reminders = user_data.get("lastPaymentReminderSent", {})
-                        if not last_reminders.get("oneDay", False):
-                            await send_trial_reminder_notification(user_id, user_data, 1)  # 1 day
-                            firestore_db.collection("user_profiles").document(user_id).update({
-                                "lastPaymentReminderSent": {
-                                    **last_reminders,
-                                    "oneDay": True
-                                }
-                            })
-                    
+                    # 1-day trial reminder, once per trial
+                    if time_until_expiry > timedelta(0):
+                        await process_trial_period(user_id)
+
                     # Check if trial has expired
                     elif time_until_expiry <= timedelta(0):
                         # Mark trial as expired so we only send notification once (user stays in this state until they select a plan)
@@ -3895,7 +4053,7 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
             "title": title,
             "body": message,
             "type": "payment_reminder",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False
         }
         
@@ -3945,7 +4103,7 @@ async def send_trial_reminder_notification(user_id: str, user_data: dict, time_r
             "title": title,
             "body": message,
             "type": "trial_reminder",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False
         }
         
@@ -3981,7 +4139,7 @@ async def send_trial_expiry_notification(user_id: str, user_data: dict):
             "title": "Free Trial Ended",
             "body": f"Hi {user_name}, your free trial has ended. Select a plan to continue enjoying premium features like personalized diet plans, AI chatbot, and custom notifications.",
             "type": "trial_expired",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False
         }
         
@@ -4017,7 +4175,7 @@ async def send_subscription_reminder_notification(user_id: str, user_data: dict)
             "title": "Subscription Expiring Soon",
             "body": f"Hi {user_name}, your {subscription_plan} subscription will expire in 1 week. Renew now to continue your fitness journey!",
             "type": "subscription_reminder",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False
         }
         
@@ -4053,7 +4211,7 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         
         # Parse switch date (should be the end date of current plan)
         switch_date = datetime.fromisoformat(switch_date_str)
-        now = datetime.now()
+        now = utc_now()
         
         # Only activate if we're at or past the switch date
         if now < switch_date:
@@ -4116,7 +4274,7 @@ async def send_plan_switch_notifications(user_id: str, user_data: dict, new_plan
             "title": "Plan Switched",
             "body": f"Hi {user_name}, your {old_plan_name} has ended. Your subscription has been switched to {new_plan_name}. Your new plan is now active!",
             "type": "plan_switched",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False,
             "data": {
                 "oldPlan": user_data.get("subscriptionPlan"),
@@ -4187,7 +4345,7 @@ async def auto_renew_subscription(user_id: str, user_data: dict):
         # Calculate new subscription dates
         from datetime import datetime, timedelta
         
-        start_date = datetime.now()
+        start_date = utc_now()
         if current_plan == "1month":
             end_date = start_date + timedelta(days=30)  # 1 month = 30 days
         elif current_plan == "2months":
@@ -4273,7 +4431,7 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
             "title": title,
             "body": body,
             "type": f"user_{event_type}",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False,
             "data": notification_data
         }
@@ -4307,7 +4465,7 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
             "title": "Subscription Auto-Renewed",
             "body": f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly! Amount: ₹{amount:,.0f}",
             "type": "subscription_renewed",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False,
             "data": {
                 "planId": plan_id,
@@ -4372,7 +4530,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
             "title": "Consultation Period Ended",
             "body": f"Hi {user_name}, your {plan_name} consultation period has ended.{payment_info} Select a new consultation period to continue accessing your consultation tools like diet plans, messaging with your dietician, and appointment scheduling.",
             "type": "subscription_expired",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False,
             "data": {
                 "planId": subscription_plan,
@@ -4418,7 +4576,7 @@ async def send_new_subscription_notification(user_id: str, user_data: dict, plan
             "title": "New Subscription",
             "body": f"User {user_name} ({user_id}) has subscribed to {plan_name}.",
             "type": "new_subscription",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "read": False
         }
         
@@ -4610,7 +4768,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
         # Calculate subscription dates
         from datetime import datetime, timedelta
         
-        start_date = datetime.now()
+        start_date = utc_now()
         if request.planId == "1month":
             end_date = start_date + timedelta(days=30)  # 1 month = 30 days
         elif request.planId == "2months":
@@ -4685,7 +4843,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
             firestore_db.collection("user_profiles").document(request.userId).update(update_data)
             
             plan_name = get_plan_name(request.planId)
-            message = f"Consultation period change scheduled! Your {plan_name} consultation will activate after your current consultation period ends on {current_end_date.strftime('%B %d, %Y')}."
+            message = f"Consultation period change scheduled! Your {plan_name} consultation will activate after your current consultation period ends on {format_user_date(current_end_date, user_data)}."
             
             return SubscriptionResponse(
                 success=True,
@@ -4780,7 +4938,7 @@ async def get_subscription_status(userId: str):
         # 2. If trial expired and no active plan
         elif trial_end_date:
             trial_end = datetime.fromisoformat(trial_end_date)
-            if datetime.now() < trial_end:
+            if utc_now() < trial_end:
                 is_trial_active = True
             else:
                 # Trial expired, check if user has selected a plan
@@ -4817,7 +4975,7 @@ async def get_subscription_status(userId: str):
         # Check if subscription is still active
         if subscription_data["subscriptionEndDate"]:
             end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
-            if datetime.now() > end_date and subscription_data["subscriptionPlan"] in PAID_PLAN_DAYS:
+            if utc_now() > end_date and subscription_data["subscriptionPlan"] in PAID_PLAN_DAYS:
                 # Paid period over: add the fee if missing, then switch/renew/expire exactly
                 # once (same step as the scheduled job), and answer from the fresh state.
                 # Wait at most 8s so the app isn't held up under contention; the task is not
@@ -4839,7 +4997,7 @@ async def get_subscription_status(userId: str):
                     subscription_data["requiresPlanSelection"] = True
                     requires_plan_selection = True
                 end_date = None
-            if end_date is not None and datetime.now() > end_date:
+            if end_date is not None and utc_now() > end_date:
                 # Update subscription status to inactive
                 firestore_db.collection("user_profiles").document(userId).update({
                     "isSubscriptionActive": False,
@@ -4862,7 +5020,7 @@ async def get_subscription_status(userId: str):
         if subscription_data["subscriptionEndDate"] and subscription_data["subscriptionPlan"] not in ["free", "trial", None]:
             try:
                 paid_end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
-                has_unexpired_paid_period = datetime.now() <= paid_end_date
+                has_unexpired_paid_period = utc_now() <= paid_end_date
             except Exception:
                 has_unexpired_paid_period = False
 
@@ -4904,7 +5062,7 @@ async def cancel_subscription(userId: str):
         if subscription_end_date:
             try:
                 end_date = datetime.fromisoformat(subscription_end_date.replace('Z', '+00:00'))
-                end_date_str = end_date.strftime('%B %d, %Y')
+                end_date_str = format_user_date(end_date, user_data)
             except:
                 pass
         
@@ -5025,6 +5183,10 @@ async def reset_subscription(userId: str):
 @api_router.post("/user/{userId}/reset-daily", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def reset_daily_data(userId: str):
     """Reset daily tracking data for a user"""
+    return await _reset_daily_data(userId)
+
+
+async def _reset_daily_data(userId: str, js_offset_minutes=None):
     try:
         check_firebase_availability()
         
@@ -5033,8 +5195,8 @@ async def reset_daily_data(userId: str):
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get today's date in UTC
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Start of the user's day (food logs hold the user's local time); server day if unknown
+        today = user_today_start(user_doc.to_dict(), js_offset_minutes) or datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_str = today.strftime('%Y-%m-%d')
         
         # Clear today's food logs to reset daily nutritional values
@@ -5464,7 +5626,7 @@ def _claim_free_trial_transaction(transaction, doc_ref, start_date, end_date):
     if data.get("freeTrialUsed", False):
         end_str = data.get("freeTrialEndDate")
         try:
-            running = bool(end_str) and datetime.now() < datetime.fromisoformat(end_str)
+            running = bool(end_str) and utc_now() < datetime.fromisoformat(end_str)
         except ValueError:
             running = False
         on_trial = data.get("subscriptionPlan") == "trial" and data.get("subscriptionStatus") == "trial"
@@ -5492,7 +5654,7 @@ async def activate_free_trial(userId: str):
         check_firebase_availability()
 
         # Calculate trial dates (3 days)
-        start_date = datetime.now()
+        start_date = utc_now()
         end_date = start_date + timedelta(days=3)  # 3 days trial period
 
         # Claim the trial atomically so simultaneous requests can't activate it twice
@@ -5573,7 +5735,7 @@ async def get_trial_status(userId: str):
         if trial_end:
             from datetime import datetime
             end_date = datetime.fromisoformat(trial_end)
-            now = datetime.now()
+            now = utc_now()
             if now < end_date:
                 is_trial_active = True
                 time_remaining = int((end_date - now).total_seconds())

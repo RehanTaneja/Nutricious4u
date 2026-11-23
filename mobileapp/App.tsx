@@ -12,7 +12,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
 import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView } from 'react-native';
-import { getUserProfile, getUserProfileSafe, createUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
+import { getUserProfile, getUserProfileSafe, createUserProfile, updateUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
+import { deviceTimezone } from './utils/time';
 import { ChatbotScreen } from './ChatbotScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { 
@@ -217,6 +218,36 @@ const waitForSignupProfilePendingClear = async (userId: string, maxWaitMs: numbe
 
   console.warn('[Signup Gate] Timed out waiting for signup profile creation marker to clear');
 };
+
+// Save the phone's timezone to the profile so the server can hold reminders until
+// daytime and use the user's own calendar. Sent only when it changed since last time.
+async function savePhoneTimezone(uid: string) {
+  try {
+    const { timezone, utcOffsetMinutes } = deviceTimezone();
+    const value = JSON.stringify({ timezone, utcOffsetMinutes });
+    const key = `savedTimezone_${uid}`;
+    if ((await AsyncStorage.getItem(key)) === value) return;
+    await updateUserProfile(uid, timezone ? { timezone, utcOffsetMinutes } : { utcOffsetMinutes });
+    await AsyncStorage.setItem(key, value);
+  } catch (err) {
+    console.warn('[Timezone] Could not save phone timezone:', err);
+  }
+}
+
+// Older app versions scheduled plan/trial reminders on the phone; the server sends
+// them now, so cancel any still pending.
+async function cancelLegacySubscriptionReminders() {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      if ((n.content?.data as any)?.type === 'subscription_reminder') {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+  } catch (err) {
+    console.warn('[Subscription Reminders] Could not cancel old phone reminders:', err);
+  }
+}
 
 // Resolve quiz-completion status when the profile fetch fails. Only a definitive
 // 404 (profile genuinely absent/incomplete on the server) may demote the user to
@@ -676,6 +707,7 @@ function AppContent() {
 
       const initializeServices = async () => {
         try {
+          cancelLegacySubscriptionReminders();
           
           // Set up listener for local scheduled notifications (subscription reminders)
           localNotificationSubscription = Notifications.addNotificationReceivedListener(async (notification) => {
@@ -930,6 +962,7 @@ function AppContent() {
                     // Add EAS build-specific error handling
                     try {
                       profile = await getUserProfileSafe(firebaseUser.uid);
+                      if (profile) savePhoneTimezone(firebaseUser.uid);
                       // Check if profile has complete data (not just firstName)
                       // Profile is complete if it has currentWeight, goalWeight, height, dietaryPreference, activityLevel
                       const hasCompleteProfile = profile && 
@@ -1340,103 +1373,6 @@ function AppContent() {
     }
   };
 
-  // Schedule subscription reminder notifications
-  // EXACT MATCH to diet reminder implementation for reliability
-  const scheduleSubscriptionReminders = async (endDate: string, planName: string, isTrial: boolean = false, planAmount?: number) => {
-    try {
-      // Ensure local notification permission before scheduling
-      const hasPermission = await ensureLocalNotificationPermission();
-      if (!hasPermission) {
-        console.warn('[Subscription Reminders] Skipping scheduling because notification permission is not granted');
-        return;
-      }
-      
-      const endDateTime = new Date(endDate);
-      const now = new Date();
-      
-      // Calculate reminder times (7 days and 1 day before end)
-      const reminder7days = new Date(endDateTime.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const reminder1day = new Date(endDateTime.getTime() - 1 * 24 * 60 * 60 * 1000);
-      
-      const reminders = [
-        { time: reminder7days, days: 7 },
-        { time: reminder1day, days: 1 }
-      ];
-      
-      // Format amount for display
-      const amountText = planAmount ? `₹${planAmount.toLocaleString()}` : 'the plan amount';
-      
-      for (const reminder of reminders) {
-        // Only schedule if the reminder time is in the future
-        if (reminder.time > now) {
-          // EXACT MATCH: Use same calculation as diet reminders
-          const secondsUntilTrigger = Math.max(1, Math.floor((reminder.time.getTime() - now.getTime()) / 1000));
-          
-          if (secondsUntilTrigger > 0) {
-            let message = '';
-            if (isTrial) {
-              if (reminder.days === 7) {
-                message = `Your free trial consultation ends in 7 days! Select a consultation period now to continue accessing your consultation tools.`;
-            } else {
-                message = `Your free trial consultation ends in 1 day! Select a consultation period now to continue accessing your consultation tools.`;
-              }
-              } else {
-              if (reminder.days === 7) {
-                message = `Your ${planName} consultation period ends in 7 days. Consultation fee of ${amountText} will be added to your total. Your consultation access will continue if auto-renewal is enabled.`;
-              } else {
-                message = `Your ${planName} consultation period ends in 1 day. Consultation fee of ${amountText} will be added to your total. If auto-renewal is off, you'll need to select a new consultation period to continue.`;
-              }
-            }
-            
-            // EXACT MATCH: Use identical notification content structure as diet reminders
-            const notificationContent = {
-              title: isTrial ? (reminder.days === 1 ? 'Trial Consultation Ending Tomorrow' : 'Trial Consultation Ending Soon') : (reminder.days === 1 ? 'Consultation Period Ending Tomorrow' : 'Consultation Period Ending Soon'),
-              body: message,
-              sound: 'default',
-              priority: 'high',
-              autoDismiss: false,
-              sticky: false,
-              data: {
-                type: 'subscription_reminder',
-                daysRemaining: reminder.days,
-                isTrial: isTrial,
-                planName: planName,
-                scheduledFor: reminder.time.toISOString(),
-                platform: Platform.OS,
-                timestamp: new Date().toISOString()
-              }
-            };
-            
-            console.log('[Subscription Reminders] Scheduling notification for platform:', Platform.OS);
-            console.log('[Subscription Reminders] Notification content:', notificationContent);
-            console.log('[Subscription Reminders] Trigger seconds:', secondsUntilTrigger);
-            
-            // EXACT MATCH: Use identical trigger structure as diet reminders
-            const scheduledId = await Notifications.scheduleNotificationAsync({
-              content: notificationContent,
-              trigger: {
-                type: 'timeInterval',
-                seconds: secondsUntilTrigger,
-                repeats: false
-              } as any
-            });
-            
-            console.log('[Subscription Reminders] ✅ Notification scheduled successfully:', {
-              scheduledId,
-              days: reminder.days,
-              scheduledFor: reminder.time.toISOString(),
-              secondsUntilTrigger,
-              platform: Platform.OS
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[Subscription Reminders] Error scheduling reminders:', error);
-      // Don't fail trial/plan activation if reminder scheduling fails
-    }
-  };
-
   // Handler for trial activation
   const handleActivateTrial = async () => {
     if (!user?.uid) return;
@@ -1452,11 +1388,6 @@ function AppContent() {
       setHasActiveSubscription(true);
       setIsFreeUser(false);
       refreshSubscriptionStatus();
-
-      // Schedule reminder notifications if trial end date is available
-      if (trialEndDate) {
-        await scheduleSubscriptionReminders(trialEndDate, 'Free Trial', true);
-      }
 
       // CRITICAL: Refresh diet data after trial activation
       // The diet is assigned asynchronously, so wait for backend to finish
@@ -1528,18 +1459,6 @@ function AppContent() {
         setHasActiveSubscription(true);
         setIsFreeUser(false);
         refreshSubscriptionStatus();
-        
-        // Schedule reminder notifications if subscription end date is available
-        // Check both result.subscription.endDate and newStatus.subscriptionEndDate
-        const endDate = result.subscription?.endDate || newStatus?.subscriptionEndDate;
-        if (endDate) {
-          const planName = selectedPlanId === '1month' ? '1 Month Consultation' :
-                          selectedPlanId === '2months' ? '2 Months Consultation' :
-                          selectedPlanId === '3months' ? '3 Months Consultation' :
-                          selectedPlanId === '6months' ? '6 Months Consultation' : 'Consultation';
-          const planAmount = result.subscription?.amountPaid || newStatus?.currentSubscriptionAmount || 0;
-          await scheduleSubscriptionReminders(endDate, planName, false, planAmount);
-        }
         
         Alert.alert('Success', result.message);
       }

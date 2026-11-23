@@ -477,6 +477,9 @@ export interface QueuedPlan {
 }
 
 export interface UpdateUserProfile {
+  // Phone timezone (IANA name) and minutes east of UTC, saved on launch
+  timezone?: string;
+  utcOffsetMinutes?: number;
   firstName?: string;
   lastName?: string;
   age?: number;
