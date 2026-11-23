@@ -1255,6 +1255,56 @@ function AppContent() {
     }
   }, [user?.uid, isDietician]);
 
+  // Defined before the early returns below: the login and notification listeners are
+  // created during the first (loading) render and call these, so they must exist then.
+  // Function to check and show mandatory popups based on subscription status
+  const checkAndShowMandatoryPopups = async (subscriptionStatus: any) => {
+    if (!user?.uid || isDietician) return;
+    
+    setSubscriptionStatus(subscriptionStatus);
+    
+    // Check if subscription was cancelled or requires plan selection
+    const isCancelled = subscriptionStatus.subscriptionStatus === "cancelled";
+    const needsPlanSelection = subscriptionStatus.requiresPlanSelection || isCancelled;
+    
+    // Check if user is on free plan (not paid plan) and hasn't used free trial
+    const isOnFreePlan = subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive || 
+                        subscriptionStatus.subscriptionPlan === "free" || 
+                        !subscriptionStatus.subscriptionPlan;
+    
+    // Priority 1: If cancelled or requires plan selection, show plan selection popup
+    if (needsPlanSelection) {
+      console.log('[Mandatory Popup] User needs to select a plan (cancelled or expired), showing plan selection popup');
+      try {
+        const plans = await getSubscriptionPlans();
+        setAvailablePlans(plans);
+        setShowMandatoryPlanPopup(true);
+      } catch (planError) {
+        console.error('[Mandatory Popup] Failed to fetch plans:', planError);
+        setShowMandatoryPlanPopup(true);
+      }
+    }
+    // Priority 2: If on free plan and hasn't used trial, show trial activation popup
+    // BUT ONLY if user has completed the info form
+    else if (isOnFreePlan && !subscriptionStatus.freeTrialUsed && hasCompletedQuiz) {
+      console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
+      setShowMandatoryTrialPopup(true);
+    }
+  };
+
+  // Helper: ensure notification permissions for local scheduling (Android/iOS)
+  const ensureLocalNotificationPermission = async (): Promise<boolean> => {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status === 'granted') return true;
+      const req = await Notifications.requestPermissionsAsync();
+      return req.status === 'granted';
+    } catch (err) {
+      console.warn('[Subscription Reminders] Permission check failed:', err);
+      return false;
+    }
+  };
+
   // Show error screen if there's a critical error
   if (error) {
     return (
@@ -1303,41 +1353,6 @@ function AppContent() {
     loading
   });
 
-  // Function to check and show mandatory popups based on subscription status
-  const checkAndShowMandatoryPopups = async (subscriptionStatus: any) => {
-    if (!user?.uid || isDietician) return;
-    
-    setSubscriptionStatus(subscriptionStatus);
-    
-    // Check if subscription was cancelled or requires plan selection
-    const isCancelled = subscriptionStatus.subscriptionStatus === "cancelled";
-    const needsPlanSelection = subscriptionStatus.requiresPlanSelection || isCancelled;
-    
-    // Check if user is on free plan (not paid plan) and hasn't used free trial
-    const isOnFreePlan = subscriptionStatus.isFreeUser || !subscriptionStatus.isSubscriptionActive || 
-                        subscriptionStatus.subscriptionPlan === "free" || 
-                        !subscriptionStatus.subscriptionPlan;
-    
-    // Priority 1: If cancelled or requires plan selection, show plan selection popup
-    if (needsPlanSelection) {
-      console.log('[Mandatory Popup] User needs to select a plan (cancelled or expired), showing plan selection popup');
-      try {
-        const plans = await getSubscriptionPlans();
-        setAvailablePlans(plans);
-        setShowMandatoryPlanPopup(true);
-      } catch (planError) {
-        console.error('[Mandatory Popup] Failed to fetch plans:', planError);
-        setShowMandatoryPlanPopup(true);
-      }
-    }
-    // Priority 2: If on free plan and hasn't used trial, show trial activation popup
-    // BUT ONLY if user has completed the info form
-    else if (isOnFreePlan && !subscriptionStatus.freeTrialUsed && hasCompletedQuiz) {
-      console.log('[Mandatory Popup] User is on free plan and has not used free trial, showing trial activation popup');
-      setShowMandatoryTrialPopup(true);
-    }
-  };
-
   // Function to refresh subscription status and check for mandatory popups
   // This can be called after cancellation or other subscription changes
   const refreshSubscriptionAndCheckPopups = async () => {
@@ -1359,19 +1374,6 @@ function AppContent() {
       }
     } catch (error) {
       console.error('[Refresh Subscription] Error:', error);
-    }
-  };
-
-  // Helper: ensure notification permissions for local scheduling (Android/iOS)
-  const ensureLocalNotificationPermission = async (): Promise<boolean> => {
-    try {
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status === 'granted') return true;
-      const req = await Notifications.requestPermissionsAsync();
-      return req.status === 'granted';
-    } catch (err) {
-      console.warn('[Subscription Reminders] Permission check failed:', err);
-      return false;
     }
   };
 
@@ -1619,7 +1621,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>{notificationTitle}</Text>
             <Text style={styles.notificationMessage}>{notificationMessage}</Text>
             <TouchableOpacity 
@@ -1642,7 +1644,7 @@ function AppContent() {
       >
         <View style={styles.lockModalOverlay}>
           <View style={[styles.lockModalContainer, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.lockModalTitle}>Amount Due Not Paid</Text>
             <Text style={styles.lockModalSubtitle}>
               Your app has been locked due to unpaid amount
@@ -1745,7 +1747,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🎉 Free Trial Consultation Activated!</Text>
             <Text style={styles.notificationMessage}>{trialSuccessMessage}</Text>
             <TouchableOpacity 
@@ -1768,7 +1770,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
@@ -1791,7 +1793,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 
@@ -1814,7 +1816,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
@@ -1837,7 +1839,7 @@ function AppContent() {
       >
         <View style={styles.notificationOverlay}>
           <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 

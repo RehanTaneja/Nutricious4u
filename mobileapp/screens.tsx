@@ -3109,7 +3109,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             shadowRadius: 10,
             elevation: 10
           }}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             {/* Green Success Icon */}
             <View style={{
               width: 80,
@@ -10754,7 +10754,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Consultation Period Confirmed! 🎉</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity
@@ -11605,7 +11605,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#059669', padding: 32, margin: 30, maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Cancel Consultation Period</Text>
             <Text style={styles.successMessage}>
               Are you sure you want to cancel your consultation period? Auto-renewal will be disabled, but you will retain access to consultation tools until your current consultation period ends. After that, you'll need to select a new consultation period to continue.
@@ -11639,7 +11639,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Consultation Period Cancelled! ✅</Text>
             <Text style={styles.successMessage}>{cancelSuccessMessage}</Text>
             <TouchableOpacity
@@ -11769,7 +11769,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>✅ Consultation Period Change Scheduled!</Text>
             <Text style={styles.successMessage}>{planSwitchSuccessMessage}</Text>
             <TouchableOpacity
@@ -12747,7 +12747,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={styles.successPopupOverlay}>
           <PopIn style={[styles.successPopup, { maxHeight: windowHeight * 0.8 }]}>
-            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ alignSelf: 'stretch', flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Success</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity style={styles.successButton} onPress={() => { setShowSuccess(false); if (navigation.canGoBack()) navigation.goBack(); }}>
