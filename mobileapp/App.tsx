@@ -11,7 +11,7 @@ import { simpleNotificationHandler } from './services/simpleNotificationHandler'
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from './contexts/AppContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
-import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView } from 'react-native';
+import { ActivityIndicator, View, Alert, Modal, TouchableOpacity, Text, StyleSheet, ScrollView, Platform, SafeAreaView, useWindowDimensions } from 'react-native';
 import { getUserProfile, getUserProfileSafe, createUserProfile, updateUserProfile, clearProfileCache, resetDailyData, logFrontendEvent, getLogSummary } from './services/api';
 import { deviceTimezone } from './utils/time';
 import { ChatbotScreen } from './ChatbotScreen';
@@ -449,6 +449,8 @@ function AppContent() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingSubscription, setProcessingSubscription] = useState(false);
   const { showUpgradeModal, setShowUpgradeModal, isFreeUser, setIsFreeUser, refreshSubscriptionStatus } = useSubscription();
+  // Popups are capped against the window height (Android's first Modal layout has no fixed height)
+  const { height: windowHeight } = useWindowDimensions();
 
   // Effect to check for mandatory popups when subscription status changes
   // This runs after user logs in and when subscription status is updated
@@ -1616,7 +1618,8 @@ function AppContent() {
         onRequestClose={() => setShowNotification(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>{notificationTitle}</Text>
             <Text style={styles.notificationMessage}>{notificationMessage}</Text>
             <TouchableOpacity 
@@ -1625,6 +1628,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>OK</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1637,7 +1641,8 @@ function AppContent() {
         onRequestClose={() => {}} // Prevent closing by back button
       >
         <View style={styles.lockModalOverlay}>
-          <View style={styles.lockModalContainer}>
+          <View style={[styles.lockModalContainer, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.lockModalTitle}>Amount Due Not Paid</Text>
             <Text style={styles.lockModalSubtitle}>
               Your app has been locked due to unpaid amount
@@ -1667,6 +1672,7 @@ function AppContent() {
                 <Text style={styles.lockModalContactButtonText}>Contact Dietician</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1738,7 +1744,8 @@ function AppContent() {
         onRequestClose={() => setShowTrialSuccessPopup(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🎉 Free Trial Consultation Activated!</Text>
             <Text style={styles.notificationMessage}>{trialSuccessMessage}</Text>
             <TouchableOpacity 
@@ -1747,6 +1754,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1759,7 +1767,8 @@ function AppContent() {
         onRequestClose={() => setShowRenewalPopup(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
@@ -1768,6 +1777,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1780,7 +1790,8 @@ function AppContent() {
         onRequestClose={() => setShowPlanSwitchPopup(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 
@@ -1789,6 +1800,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1801,7 +1813,8 @@ function AppContent() {
         onRequestClose={() => setShowRenewalPopup(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>✅ Consultation Period Renewed!</Text>
             <Text style={styles.notificationMessage}>{renewalMessage}</Text>
             <TouchableOpacity 
@@ -1810,6 +1823,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1822,7 +1836,8 @@ function AppContent() {
         onRequestClose={() => setShowPlanSwitchPopup(false)}
       >
         <View style={styles.notificationOverlay}>
-          <View style={styles.notificationPopup}>
+          <View style={[styles.notificationPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.notificationTitle}>🔄 Consultation Period Changed!</Text>
             <Text style={styles.notificationMessage}>{planSwitchMessage}</Text>
             <TouchableOpacity 
@@ -1831,6 +1846,7 @@ function AppContent() {
             >
               <Text style={styles.notificationButtonText}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2103,7 +2119,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   lockModalAmountContainer: {
-    flexDirection: 'row',
+    // Label, amount on the line below
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -2118,7 +2134,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.text,
-    marginRight: 8,
+    marginBottom: 4,
   },
   lockModalAmount: {
     fontSize: 24,

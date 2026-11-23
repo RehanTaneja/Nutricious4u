@@ -1308,6 +1308,8 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const refresh = route?.params?.refresh;
   const { isFreeUser, setShowUpgradeModal } = useSubscription();
+  // Popups are capped against the window height (Android's first Modal layout has no fixed height)
+  const { height: windowHeight } = useWindowDimensions();
   const [showFoodModal, setShowFoodModal] = useState(false);
   const [showWorkoutModal, setShowWorkoutModal] = useState(false);
   const [foodName, setFoodName] = useState('');
@@ -3099,6 +3101,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             padding: 30,
             width: '100%',
             maxWidth: 350,
+            maxHeight: windowHeight * 0.8,
             alignItems: 'center',
             shadowColor: '#0F172A',
             shadowOffset: { width: 0, height: 10 },
@@ -3106,6 +3109,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
             shadowRadius: 10,
             elevation: 10
           }}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             {/* Green Success Icon */}
             <View style={{
               width: 80,
@@ -3139,15 +3143,13 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               Your dietician has uploaded a new diet plan. Would you like to automatically extract and schedule your diet reminders now?
             </Text>
             
+            {/* Stacked full-width buttons so the labels never get squeezed */}
             <View style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
               width: '100%',
-              gap: 15
+              gap: 12
             }}>
               <TouchableOpacity
                 style={{
-                  flex: 1,
                   backgroundColor: '#F6FAF7',
                   paddingVertical: 15,
                   borderRadius: 14,
@@ -3167,7 +3169,6 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
               
               <TouchableOpacity
                 style={{
-                  flex: 1,
                   backgroundColor: extractionLoading ? '#E2ECE6' : '#16A34A',
                   paddingVertical: 15,
                   borderRadius: 14,
@@ -3191,6 +3192,7 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
                 </View>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -10314,9 +10316,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fff4',
   },
   popupPlanHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    // Plan name, price on the line below
+    alignItems: 'flex-start',
+    gap: 4,
     marginBottom: 8,
   },
   popupPlanName: {
@@ -10593,6 +10595,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const { isFreeUser, refreshSubscriptionStatus } = useSubscription();
+  // Popups are capped against the window height (Android's first Modal layout has no fixed height)
+  const { height: windowHeight } = useWindowDimensions();
 
   // Only allow free users to access this screen
   useEffect(() => {
@@ -10749,7 +10753,8 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowSuccessPopup(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Consultation Period Confirmed! 🎉</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity
@@ -10761,6 +10766,7 @@ const SubscriptionSelectionScreen = ({ navigation }: { navigation: any }) => {
             >
               <Text style={[styles.successButtonText, { color: '#059669' }]}>Continue</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -11045,6 +11051,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
   const [showPlanSwitchSuccessPopup, setShowPlanSwitchSuccessPopup] = useState(false);
   const [planSwitchSuccessMessage, setPlanSwitchSuccessMessage] = useState('');
   const { refreshSubscriptionStatus } = useSubscription();
+  // Popups are capped against the window height (Android's first Modal layout has no fixed height)
+  const { height: windowHeight } = useWindowDimensions();
 
   useEffect(() => {
     fetchSubscriptionStatus();
@@ -11521,13 +11529,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowPlanPopup(false)}
       >
         <View style={styles.popupOverlay}>
-          <View style={styles.popupContainer}>
+          <View style={[styles.popupContainer, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.popupTitle}>Select Consultation Period</Text>
             <Text style={styles.popupSubtitle}>
               Choose a consultation period to continue your consultation services
             </Text>
             
-            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false} nestedScrollEnabled>
               {plans.map((plan) => (
                 <TouchableOpacity
                   key={plan.planId}
@@ -11553,9 +11562,11 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               ))}
             </ScrollView>
             
-            <View style={styles.popupButtons}>
+            {/* Stacked full-width buttons so the labels never get squeezed; flex: 0 because the
+                shared button styles use flex: 1, which collapses a button inside a column */}
+            <View style={[styles.popupButtons, { flexDirection: 'column' }]}>
               <TouchableOpacity
-                style={styles.popupCancelButton}
+                style={[styles.popupCancelButton, { flex: 0 }]}
                 onPress={() => {
                   setShowPlanPopup(false);
                   setSelectedPlan(null);
@@ -11567,6 +11578,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               <TouchableOpacity
                 style={[
                   styles.popupConfirmButton,
+                  { flex: 0 },
                   !selectedPlan && styles.popupConfirmButtonDisabled
                 ]}
                 onPress={() => selectedPlan && handlePlanSelection(selectedPlan)}
@@ -11577,6 +11589,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -11589,25 +11602,28 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowCancelSubscriptionModal(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#059669', padding: 32, margin: 30 }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669', padding: 32, margin: 30, maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Cancel Consultation Period</Text>
             <Text style={styles.successMessage}>
               Are you sure you want to cancel your consultation period? Auto-renewal will be disabled, but you will retain access to consultation tools until your current consultation period ends. After that, you'll need to select a new consultation period to continue.
             </Text>
-            <View style={[styles.modalButtonRow, { marginTop: 24 }]}>
+            {/* Stacked full-width buttons so the labels never get squeezed */}
+            <View style={[styles.modalButtonRow, { marginTop: 24, flexDirection: 'column', gap: 12, alignSelf: 'stretch' }]}>
               <TouchableOpacity
-                style={[styles.successButton, { backgroundColor: '#DC2626', marginRight: 12, flex: 1 }]}
+                style={[styles.successButton, { backgroundColor: '#DC2626', alignItems: 'center' }]}
                 onPress={() => setShowCancelSubscriptionModal(false)}
               >
                 <Text style={[styles.successButtonText, { color: COLORS.white }]}>No, Keep It</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.successButton, { backgroundColor: COLORS.white, marginLeft: 12, flex: 1 }]}
+                style={[styles.successButton, { backgroundColor: COLORS.white, alignItems: 'center' }]}
                 onPress={confirmCancelSubscription}
               >
                 <Text style={[styles.successButtonText, { color: '#059669' }]}>Yes, Cancel</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -11620,7 +11636,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowCancelSuccessModal(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Consultation Period Cancelled! ✅</Text>
             <Text style={styles.successMessage}>{cancelSuccessMessage}</Text>
             <TouchableOpacity
@@ -11632,6 +11649,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             >
               <Text style={[styles.successButtonText, { color: '#059669' }]}>Continue</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -11675,13 +11693,14 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowPlanSwitchPopup(false)}
       >
         <View style={styles.popupOverlay} pointerEvents="box-none">
-          <View style={styles.popupContainer}>
+          <View style={[styles.popupContainer, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.popupTitle}>Change Consultation Period</Text>
             <Text style={styles.popupSubtitle}>
               Your new plan will activate after your current plan ends
             </Text>
             
-            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false} nestedScrollEnabled>
               {plans.filter(plan => !plan.isFree).map((plan) => (
                 <TouchableOpacity
                   key={plan.planId}
@@ -11707,9 +11726,11 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               ))}
             </ScrollView>
             
-            <View style={styles.popupButtons}>
+            {/* Stacked full-width buttons so the labels never get squeezed; flex: 0 because the
+                shared button styles use flex: 1, which collapses a button inside a column */}
+            <View style={[styles.popupButtons, { flexDirection: 'column' }]}>
               <TouchableOpacity
-                style={styles.popupCancelButton}
+                style={[styles.popupCancelButton, { flex: 0 }]}
                 onPress={() => {
                   setShowPlanSwitchPopup(false);
                   setSelectedPlanForSwitch(null);
@@ -11721,6 +11742,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               <TouchableOpacity
                 style={[
                   styles.popupConfirmButton,
+                  { flex: 0 },
                   (!selectedPlanForSwitch || switchingPlan) && styles.popupConfirmButtonDisabled
                 ]}
                 onPress={handleConfirmPlanSwitch}
@@ -11731,6 +11753,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -11743,7 +11766,8 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowPlanSwitchSuccessPopup(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <View style={[styles.successPopup, { backgroundColor: '#059669' }]}>
+          <View style={[styles.successPopup, { backgroundColor: '#059669', maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>✅ Consultation Period Change Scheduled!</Text>
             <Text style={styles.successMessage}>{planSwitchSuccessMessage}</Text>
             <TouchableOpacity
@@ -11754,6 +11778,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             >
               <Text style={[styles.successButtonText, { color: '#059669' }]}>Got it!</Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -12011,6 +12036,8 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
   const [breakConfirmationSlot, setBreakConfirmationSlot] = React.useState<{timeSlot: string, date: Date} | null>(null);
   const [isAppointmentCancelledByBreak, setIsAppointmentCancelledByBreak] = React.useState(false);
   const [authReady, setAuthReady] = React.useState(false);
+  // Popups are capped against the window height (Android's first Modal layout has no fixed height)
+  const { height: windowHeight } = useWindowDimensions();
 
   // Check if user is authenticated
   const isAuthenticated = !!auth.currentUser?.uid;
@@ -12717,12 +12744,14 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setShowSuccess(false)}
       >
         <View style={styles.successPopupOverlay}>
-          <PopIn style={styles.successPopup}>
+          <PopIn style={[styles.successPopup, { maxHeight: windowHeight * 0.8 }]}>
+            <ScrollView style={{ alignSelf: 'stretch' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
             <Text style={styles.successTitle}>Success</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
             <TouchableOpacity style={styles.successButton} onPress={() => { setShowSuccess(false); if (navigation.canGoBack()) navigation.goBack(); }}>
               <Text style={styles.successButtonText}>OK</Text>
             </TouchableOpacity>
+            </ScrollView>
           </PopIn>
         </View>
       </Modal>

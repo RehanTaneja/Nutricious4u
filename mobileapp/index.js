@@ -1,4 +1,6 @@
 import 'react-native-gesture-handler';
+// Limit how far the phone's text-size setting can enlarge text (see utils/fontScaling.ts)
+import './utils/fontScaling';
 import { registerRootComponent } from 'expo';
 
 import App from './App';
