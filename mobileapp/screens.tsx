@@ -9945,9 +9945,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   subscriptionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    // Title on its own line, status badge underneath (badge never pushed off the card)
+    alignItems: 'flex-start',
+    gap: 8,
     marginBottom: 20,
   },
   subscriptionTitle: {
@@ -9982,6 +9982,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  detailStack: {
+    // Label on one line, value on the next, both full width (no mid-word breaks)
+    alignItems: 'stretch',
+    gap: 4,
+  },
   detailLabel: {
     fontSize: 16,
     color: COLORS.placeholder,
@@ -9991,8 +9996,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.text,
     fontWeight: '600',
-    textAlign: 'right',
-    flex: 1,
   },
   totalAmountText: {
     fontSize: 18,
@@ -10043,6 +10046,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   ourPlansContainer: {
+    alignSelf: 'stretch', // keep within the screen width (parent centres its children)
     backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 20,
@@ -10070,9 +10074,9 @@ const styles = StyleSheet.create({
     borderLeftColor: COLORS.primary,
   },
   planItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    // Plan name, price on the line below
+    alignItems: 'flex-start',
+    gap: 4,
     marginBottom: 8,
   },
   planItemName: {
@@ -11300,7 +11304,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             >
               <ArrowLeft color={COLORS.primary} size={24} />
             </TouchableOpacity>
-            <Text style={styles.screenTitle}>My Consultation</Text>
+            <Text style={[styles.screenTitle, { flexShrink: 1 }]}>My Consultation</Text>
           </View>
         
         {error && (
@@ -11325,7 +11329,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
               </View>
               
               <View style={styles.subscriptionDetails}>
-                <View style={styles.detailRow}>
+                <View style={styles.detailStack}>
                   <Text style={styles.detailLabel}>Consultation Period:</Text>
                   <Text style={styles.detailValue}>
                     {subscription.isTrialActive 
@@ -11342,7 +11346,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 
                 {/* Show trial end date if trial is active */}
                 {subscription.isTrialActive && subscription.trialEndDate && (
-                  <View style={styles.detailRow}>
+                  <View style={styles.detailStack}>
                     <Text style={styles.detailLabel}>Trial End Date:</Text>
                     <Text style={styles.detailValue}>
                       {formatDate(subscription.trialEndDate)}
@@ -11353,13 +11357,13 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 {/* Show subscription dates if not trial and not free user */}
                 {!subscription.isTrialActive && !subscription.isFreeUser && (
                   <>
-                    <View style={styles.detailRow}>
+                    <View style={styles.detailStack}>
                       <Text style={styles.detailLabel}>Start Date:</Text>
                       <Text style={styles.detailValue}>
                         {subscription.subscriptionStartDate ? formatDate(subscription.subscriptionStartDate) : 'N/A'}
                       </Text>
                     </View>
-                  <View style={styles.detailRow}>
+                  <View style={styles.detailStack}>
                     <Text style={styles.detailLabel}>End Date:</Text>
                     <Text style={styles.detailValue}>
                       {subscription.subscriptionEndDate ? formatDate(subscription.subscriptionEndDate) : 'N/A'}
@@ -11393,7 +11397,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                 
                 {/* Display auto-renewal info if no pending switch */}
                 {!subscription.pendingPlanSwitch && subscription.autoRenewalEnabled && subscription.isSubscriptionActive && !subscription.isFreeUser && (
-                  <View style={[styles.detailRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
+                  <View style={[styles.detailStack, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.placeholder + '30' }]}>
                     <Text style={[styles.detailLabel, { color: COLORS.primary, fontWeight: '600' }]}>
                       Auto-Renew Consultation:
                     </Text>
@@ -11403,7 +11407,7 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                 )}
                 
-                <View style={styles.detailRow}>
+                <View style={styles.detailStack}>
                   <Text style={styles.detailLabel}>Total Amount Due:</Text>
                   <Text style={[styles.detailValue, styles.totalAmountText]}>
                     ₹{subscription.totalAmountPaid.toLocaleString()}
@@ -11461,16 +11465,17 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
             {subscription.isSubscriptionActive && !subscription.isFreeUser && (
               <View style={styles.renewalContainer}>
                 <Text style={styles.renewalText}>Your consultation period is active</Text>
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                {/* Stacked full-width buttons so long labels wrap between words */}
+                <View style={{ alignSelf: 'stretch', marginTop: 12 }}>
                   <StyledButton
                     title="Change Consultation Period"
                     onPress={handlePlanSwitch}
-                    style={[styles.renewalButton, { flex: 1 }]}
+                    style={styles.renewalButton}
                   />
                   <StyledButton
                     title="Cancel Consultation Period"
                     onPress={() => handleCancelSubscription()}
-                    style={[styles.renewalButton, { backgroundColor: '#DC2626', flex: 1 }]}
+                    style={[styles.renewalButton, { backgroundColor: '#DC2626' }]}
                   />
                 </View>
               </View>
