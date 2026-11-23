@@ -1869,6 +1869,11 @@ async def log_routine(user_id: str, routine_id: str):
         # Convert items to RoutineItem objects if needed
         items = [RoutineItem(**item) if isinstance(item, dict) else item for item in routine_obj.items]
         now = datetime.utcnow()
+        # Food logs hold the user's local wall time (like /food/log); use the stored timezone
+        # when known, otherwise UTC as before (older app versions store no timezone)
+        profile_data = await asyncio.to_thread(get_profile_data, user_id)
+        local_now = to_user_local(now, profile_data)
+        food_time = local_now.replace(tzinfo=None) if local_now is not None else now
         # Calculate per-item nutrition from routine (split by type)
         food_items = [item for item in items if item.type == 'food']
         workout_items = [item for item in items if item.type == 'workout']
@@ -1886,7 +1891,7 @@ async def log_routine(user_id: str, routine_id: str):
                     "per_100g": True
                 },
                 "servingSize": item.quantity or "100",
-                "timestamp": now
+                "timestamp": food_time
             }
             firestore_db.collection(f"users/{user_id}/food_logs").add(food_log)
         # Log workout
@@ -5771,7 +5776,7 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         
         if not os.path.exists(trial_diet_path):
             logger.error(f"[DEFAULT DIET] Free trial diet PDF not found at {trial_diet_path}")
-            logger.error(f"[DEFAULT DIET] Backend dir: {backend_dir}, Project root: {project_root}")
+            logger.error(f"[DEFAULT DIET] Backend dir: {backend_dir}")
             return False
         
         # Read the PDF file
