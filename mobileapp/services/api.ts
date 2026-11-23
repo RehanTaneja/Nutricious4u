@@ -167,7 +167,6 @@ const axiosConfig = {
   ...(Platform.OS === 'ios' && {
     // Prevent connection reuse issues on iOS
     maxRedirects: 0,
-    validateStatus: (status: number) => status < 500, // Don't throw on 4xx errors
     // Add connection pooling settings
     httpAgent: undefined, // Let axios handle connection pooling
     httpsAgent: undefined,
@@ -225,8 +224,13 @@ class CircuitBreaker {
       const result = await fn();
       this.onSuccess();
       return result;
-    } catch (error) {
-      this.onFailure();
+    } catch (error: any) {
+      // Only server/network trouble counts towards opening the breaker; a 4xx is a normal
+      // answer (e.g. "no profile yet", "trial already used") and is passed to the caller
+      const status = error?.response?.status;
+      if (!(typeof status === 'number' && status >= 400 && status < 500)) {
+        this.onFailure();
+      }
       throw error;
     }
   }

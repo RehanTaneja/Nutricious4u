@@ -11259,7 +11259,9 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  const { isFreeUser } = useSubscription();
+  const { isFreeUser: contextIsFreeUser } = useSubscription();
+  // Use the status this screen fetched (trial users are not free users); fall back to the app-wide flag
+  const isFreeUser = subscription ? subscription.isFreeUser : contextIsFreeUser;
   
   const availablePlans = [
     {
