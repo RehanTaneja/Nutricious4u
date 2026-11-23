@@ -50,7 +50,7 @@ import {
   QnAScreen,
   AccountSettingsScreen
 } from './screens';
-import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getQueueStatus, activateFreeTrial, getTrialStatus } from './services/api';
+import { getSubscriptionPlans, selectSubscription, SubscriptionPlan, getUserLockStatus, API_URL, getSubscriptionStatus, getSubscriptionStatusDirect, getQueueStatus, activateFreeTrial, getTrialStatus } from './services/api';
 
 type User = firebase.User;
 
@@ -1441,45 +1441,66 @@ function AppContent() {
   const handleActivateTrial = async () => {
     if (!user?.uid) return;
     
+    const uid = user.uid;
+
+    // Steps after the trial is active (shared by the normal path and the recovery path)
+    const finishTrialActivation = async (message: string, trialEndDate?: string | null, dietAssigned?: boolean, knownStatus?: any) => {
+      setShowMandatoryTrialPopup(false);
+      // Refresh subscription status
+      const newStatus = knownStatus || await getSubscriptionStatus(uid);
+      setSubscriptionStatus(newStatus);
+      setHasActiveSubscription(true);
+      setIsFreeUser(false);
+      refreshSubscriptionStatus();
+
+      // Schedule reminder notifications if trial end date is available
+      if (trialEndDate) {
+        await scheduleSubscriptionReminders(trialEndDate, 'Free Trial', true);
+      }
+
+      // CRITICAL: Refresh diet data after trial activation
+      // The diet is assigned asynchronously, so wait for backend to finish
+      // then trigger dashboard refresh by navigating to it (which triggers focus event)
+      if (dietAssigned) {
+        setTimeout(() => {
+          console.log('[Trial Activation] Triggering dashboard refresh for diet data');
+          // Navigate to dashboard to trigger focus event and diet data refresh
+          if (navigationRef.current) {
+            navigationRef.current.navigate('Main', { screen: 'Dashboard' });
+          }
+        }, 3000); // Wait 3 seconds for backend diet assignment to complete
+      }
+
+      // Show custom success popup instead of Alert
+      setTrialSuccessMessage(message);
+      setShowTrialSuccessPopup(true);
+    };
+
     try {
       setActivatingTrial(true);
-      const result = await activateFreeTrial(user.uid);
-      
+      const result = await activateFreeTrial(uid);
+
       if (result.success) {
         console.log('[Trial Activation] Success:', result.message);
-        setShowMandatoryTrialPopup(false);
-        // Refresh subscription status
-        const newStatus = await getSubscriptionStatus(user.uid);
-        setSubscriptionStatus(newStatus);
-        setHasActiveSubscription(true);
-        setIsFreeUser(false);
-        refreshSubscriptionStatus();
-        
-        // Schedule reminder notifications if trial end date is available
-        if (result.trial?.endDate) {
-          await scheduleSubscriptionReminders(result.trial.endDate, 'Free Trial', true);
-        }
-        
-        // CRITICAL: Refresh diet data after trial activation
-        // The diet is assigned asynchronously, so wait for backend to finish
-        // then trigger dashboard refresh by navigating to it (which triggers focus event)
-        if (result.trial?.defaultDietAssigned) {
-          setTimeout(() => {
-            console.log('[Trial Activation] Triggering dashboard refresh for diet data');
-            // Navigate to dashboard to trigger focus event and diet data refresh
-            if (navigationRef.current) {
-              navigationRef.current.navigate('Main', { screen: 'Dashboard' });
-            }
-          }, 3000); // Wait 3 seconds for backend diet assignment to complete
-        }
-        
-        // Show custom success popup instead of Alert
-        setTrialSuccessMessage(result.message);
-        setShowTrialSuccessPopup(true);
+        await finishTrialActivation(result.message, result.trial?.endDate, result.trial?.defaultDietAssigned);
       }
     } catch (error: any) {
       console.error('[Trial Activation] Error:', error);
-      Alert.alert('Error', error.message || 'Failed to activate free trial');
+      // The request may have timed out on the phone while the server still activated
+      // the trial. Check directly (bypassing the request queue) before showing an error.
+      try {
+        const status = await getSubscriptionStatusDirect(uid);
+        if (status?.freeTrialUsed && status?.isTrialActive) {
+          console.log('[Trial Activation] Trial is active on the server; recovering');
+          await finishTrialActivation(
+            'Free trial activated successfully! You now have access to all premium features for 3 days.',
+            status.trialEndDate, true, status);
+          return;
+        }
+      } catch (checkError) {
+        console.error('[Trial Activation] Status re-check failed:', checkError);
+      }
+      Alert.alert('Error', "Couldn't activate your free trial. Please check your connection and try again.");
     } finally {
       setActivatingTrial(false);
     }

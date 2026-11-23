@@ -5446,59 +5446,89 @@ async def delete_user_account(userId: str):
 
 # --- Free Trial Endpoints ---
 
+TRIAL_SUCCESS_MESSAGE = "Free trial activated successfully! You now have access to all premium features for 3 days."
+
+
+@_firestore_transactional
+def _claim_free_trial_transaction(transaction, doc_ref, start_date, end_date):
+    """Atomically check eligibility and claim the trial. Returns (outcome, pre_state)."""
+    snap = doc_ref.get(transaction=transaction)
+    if not snap.exists:
+        return "not_found", None
+    data = snap.to_dict() or {}
+    # Check if user is a dietician (prevent dieticians from using trial)
+    if data.get("isDietician", False):
+        return "dietician", data
+    # Trial already used: a retry for a trial that is still running succeeds (so a
+    # timed-out first attempt can't leave the user stuck); an expired one stays refused
+    if data.get("freeTrialUsed", False):
+        end_str = data.get("freeTrialEndDate")
+        try:
+            running = bool(end_str) and datetime.now() < datetime.fromisoformat(end_str)
+        except ValueError:
+            running = False
+        on_trial = data.get("subscriptionPlan") == "trial" and data.get("subscriptionStatus") == "trial"
+        return ("already_active" if running and on_trial else "used"), data
+    # User is on paid plan if they have active subscription and plan is not "free" or "trial"
+    plan = data.get("subscriptionPlan")
+    if data.get("isSubscriptionActive", False) and plan and plan not in ["free", "trial"]:
+        return "paid", data
+    # Note: Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
+    transaction.update(doc_ref, {
+        "freeTrialUsed": True,
+        "freeTrialStartDate": start_date.isoformat(),
+        "freeTrialEndDate": end_date.isoformat(),
+        "subscriptionPlan": "trial",
+        "subscriptionStatus": "trial",
+        "isSubscriptionActive": True,  # Active for feature access during trial
+    })
+    return "claimed", data
+
+
 @api_router.post("/subscription/activate-trial/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def activate_free_trial(userId: str):
     """Activate free trial for a user (one-time only)"""
     try:
         check_firebase_availability()
-        
-        # Get user profile
-        user_doc = firestore_db.collection("user_profiles").document(userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        
-        # Check if user is a dietician (prevent dieticians from using trial)
-        if user_data.get("isDietician", False):
-            raise HTTPException(status_code=403, detail="Dieticians cannot activate free trials")
-        
-        # Check if trial was already used
-        if user_data.get("freeTrialUsed", False):
-            raise HTTPException(status_code=400, detail="Free trial has already been used. You can only use it once.")
-        
-        # Check if user is on a paid plan - only free plan users can activate trial
-        is_subscription_active = user_data.get("isSubscriptionActive", False)
-        subscription_plan = user_data.get("subscriptionPlan")
-        # User is on paid plan if they have active subscription and plan is not "free" or "trial"
-        if is_subscription_active and subscription_plan and subscription_plan not in ["free", "trial"]:
-            raise HTTPException(status_code=400, detail="You already have an active paid subscription. Free trial is only available for free plan users.")
-        
+
         # Calculate trial dates (3 days)
-        from datetime import datetime, timedelta
         start_date = datetime.now()
         end_date = start_date + timedelta(days=3)  # 3 days trial period
-        
+
+        # Claim the trial atomically so simultaneous requests can't activate it twice
+        doc_ref = firestore_db.collection("user_profiles").document(userId)
+        outcome, user_data = await asyncio.to_thread(
+            lambda: _claim_free_trial_transaction(firestore_db.transaction(max_attempts=15), doc_ref, start_date, end_date))
+
+        if outcome == "not_found":
+            raise HTTPException(status_code=404, detail="User not found")
+        if outcome == "dietician":
+            raise HTTPException(status_code=403, detail="Dieticians cannot activate free trials")
+        if outcome == "used":
+            raise HTTPException(status_code=400, detail="Free trial has already been used. You can only use it once.")
+        if outcome == "paid":
+            raise HTTPException(status_code=400, detail="You already have an active paid subscription. Free trial is only available for free plan users.")
+        if outcome == "already_active":
+            # Repeat of an activation that already went through (e.g. the app timed out
+            # and retried): report the existing trial, without assigning or notifying again
+            logger.info(f"[ACTIVATE TRIAL] Trial already active for user {userId}; returning existing trial")
+            return {
+                "success": True,
+                "message": TRIAL_SUCCESS_MESSAGE,
+                "trial": {
+                    "startDate": user_data.get("freeTrialStartDate"),
+                    "endDate": user_data.get("freeTrialEndDate"),
+                    "defaultDietAssigned": bool(user_data.get("dietPdfUrl"))
+                }
+            }
+
         # Assign default diet to user - pass start_date so countdown starts from trial start, not diet assignment
         default_diet_assigned = await assign_default_diet_to_user(userId, user_data, start_date)
-        
-        # Update user profile with trial information
-        # Note: Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
-        # Only set freeTrialStartDate and freeTrialEndDate
-        update_data = {
-            "freeTrialUsed": True,
-            "freeTrialStartDate": start_date.isoformat(),
-            "freeTrialEndDate": end_date.isoformat(),
-            "subscriptionPlan": "trial",
-            "subscriptionStatus": "trial",
-            "isSubscriptionActive": True,  # Active for feature access during trial
-            # Do NOT set subscriptionStartDate/subscriptionEndDate for trial users
-            # These should only be set for paid subscriptions
+
+        firestore_db.collection("user_profiles").document(userId).update({
             "new_diet_received": True  # Trigger new diet popup
-        }
-        
-        firestore_db.collection("user_profiles").document(userId).update(update_data)
-        
+        })
+
         # Send notification to dietician
         await send_dietician_subscription_notification(userId, user_data, "trial_started")
         
@@ -5506,7 +5536,7 @@ async def activate_free_trial(userId: str):
         
         return {
             "success": True,
-            "message": "Free trial activated successfully! You now have access to all premium features for 3 days.",
+            "message": TRIAL_SUCCESS_MESSAGE,
             "trial": {
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
