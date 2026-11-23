@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PRODUCTION_BACKEND_URL } from '@env';
 import { logger } from '../utils/logger';
+import { getIdTokenSafe } from './authToken';
 
 // Debug environment variables
 console.log('=== API CONFIG DEBUG ===');
@@ -349,6 +350,15 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+// Attach the signed-in user's Firebase ID token so the backend can verify the caller.
+api.interceptors.request.use(async config => {
+  const token = await getIdTokenSafe();
+  if (token) {
+    config.headers = { ...config.headers, Authorization: `Bearer ${token}` } as any;
+  }
+  return config;
+});
 
 // Enhanced API wrapper with request deduplication, circuit breaker, and queuing
 const enhancedApi = {

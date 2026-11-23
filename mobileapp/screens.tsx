@@ -48,6 +48,7 @@ import { useStandardTopSpacing, SPACING_PRESETS } from './utils/spacing';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Dimensions, useWindowDimensions } from 'react-native';
+import { withTokenParam } from './services/authToken';
 
 // Fire a success haptic tick; purely additive feedback, never throws.
 const successHaptic = () => {
@@ -110,7 +111,7 @@ const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
     const userId = firebase.auth().currentUser?.uid;
     const url = `${API_URL}/users/${userId}/diet/pdf`;
     console.log('Using backend endpoint for firestore URL:', url);
-    return url;
+    return withTokenParam(url);
   }
   
   // If it's just a filename or any other format, use the backend endpoint with cache busting
@@ -118,7 +119,7 @@ const getPdfUrlWithCacheBusting = (pdfUrl: string) => {
   const timestamp = Date.now(); // Add cache busting parameter
   const url = `${API_URL}/users/${userId}/diet/pdf?t=${timestamp}`;
   console.log('Using backend endpoint for filename with cache busting:', url);
-  return url;
+  return withTokenParam(url);
 };
 
 function calculateTargets({ weight, height, age, gender, activityLevel, goalWeight }:{ weight?: number, height?: number, age?: number, gender?: string, activityLevel?: string, goalWeight?: number }) {
@@ -1715,14 +1716,14 @@ const DashboardScreen = ({ navigation, route }: { navigation: any, route?: any }
       const userId = firebase.auth().currentUser?.uid;
       const url = `${API_URL}/users/${userId}/diet/pdf`;
       console.log('Using backend endpoint for firestore URL:', url);
-      return url;
+      return withTokenParam(url);
     }
     
     // If it's just a filename or any other format, use the backend endpoint
     const userId = firebase.auth().currentUser?.uid;
     const url = `${API_URL}/users/${userId}/diet/pdf`;
     console.log('Using backend endpoint for filename:', url);
-    return url;
+    return withTokenParam(url);
   };
 
   // Helper function to create a PDF viewer HTML
@@ -13788,13 +13789,13 @@ const UploadDietScreen = ({ navigation }: { navigation: any }) => {
     if (user.dietPdfUrl.startsWith('firestore://')) {
       const url = `${API_URL}/users/${user.userId}/diet/pdf`;
       console.log('[getPdfUrlForUser] Using backend endpoint for firestore URL:', url);
-      return url;
+      return withTokenParam(url);
     }
     
     // If it's just a filename or any other format, use the backend endpoint
     const url = `${API_URL}/users/${user.userId}/diet/pdf`;
     console.log('[getPdfUrlForUser] Using backend endpoint for filename:', url);
-    return url;
+    return withTokenParam(url);
   };
 
   // Helper function to create a simplified PDF viewer HTML for iOS compatibility
