@@ -1,9 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read/write their own profile
+    // Users can read their own user doc. Writes are backend-only (it holds isDietician,
+    // which the rules below trust for dietician access).
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
     }
     
     // Users can read/write their own food logs
@@ -30,10 +31,15 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId;
     }
     
-    // User profiles for push tokens
+    // User profiles: users read their own; the app may only write its push-token fields.
+    // Everything else (isDietician, subscription, trial, payment, diet fields) is backend-only.
     match /user_profiles/{userId} {
-      allow read, write: if request.auth != null && 
+      allow read: if request.auth != null &&
         request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly(['expoPushToken', 'platform', 'lastTokenUpdate']);
+      allow update: if request.auth != null && request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expoPushToken', 'platform', 'lastTokenUpdate']);
     }
     
     // Dietician can access all users for messaging

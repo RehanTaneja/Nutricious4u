@@ -67,6 +67,12 @@ from google.generativeai.client import configure
 from google.generativeai.types import ContentDict
 import tempfile
 from fastapi import Request, Response
+from services import auth_guard
+from services.auth_guard import (
+    require_login, require_dietician, require_self_or_dietician, require_doc_owner_or_dietician,
+    get_caller, caller_is_dietician, strip_protected_fields,
+)
+auth_guard.configure(lambda: firestore_db)
 from fastapi.responses import JSONResponse
 
 # Helper function to check Firebase availability
@@ -384,7 +390,7 @@ async def ios_connection_middleware(request, call_next):
 api_router = APIRouter(prefix='/api')
 
 # Add a simple test endpoint to verify deployment
-@api_router.get("/test-deployment")
+@api_router.get("/test-deployment", dependencies=[Depends(require_dietician())])
 async def test_deployment():
     """Test endpoint to verify backend deployment"""
     return {
@@ -395,7 +401,7 @@ async def test_deployment():
     }
 
 # Add a Firebase test endpoint
-@api_router.get("/test-firebase")
+@api_router.get("/test-firebase", dependencies=[Depends(require_dietician())])
 async def test_firebase():
     """Test endpoint to verify Firebase connection"""
     try:
@@ -571,7 +577,7 @@ async def get_workout_nutrition_from_gemini(workout_name, duration):
 async def root():
     return {"message": "Fitness Tracker API is running!"}
 
-@api_router.post("/status", response_model=StatusCheck)
+@api_router.post("/status", response_model=StatusCheck, dependencies=[Depends(require_dietician())])
 async def create_status_check(input: StatusCheckCreate):
     loop = asyncio.get_event_loop()
     try:
@@ -583,7 +589,7 @@ async def create_status_check(input: StatusCheckCreate):
         logger.error(f"Error creating status check: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to create status check")
 
-@api_router.get("/status", response_model=List[StatusCheck])
+@api_router.get("/status", response_model=List[StatusCheck], dependencies=[Depends(require_dietician())])
 async def get_status_checks():
     loop = asyncio.get_event_loop()
     try:
@@ -617,7 +623,7 @@ async def get_food_nutrition(food_name: str, quantity: str = "100"):
         logger.error(f"[NUTRITION] Error getting nutrition data: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get nutrition data: {e}")
 
-@api_router.post("/food/log", response_model=FoodLog)
+@api_router.post("/food/log", response_model=FoodLog, dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def log_food_item(request: FoodLogRequest):
     loop = asyncio.get_event_loop()
     try:
@@ -742,7 +748,7 @@ async def log_food_item(request: FoodLogRequest):
         logger.error(f"[FOOD LOG] Error logging food for user {request.userId}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to log food: {e}")
 
-@api_router.get("/food/log/summary/{user_id}", response_model=LogSummaryResponse)
+@api_router.get("/food/log/summary/{user_id}", response_model=LogSummaryResponse, dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_food_log_summary(user_id: str):
     try:
         logger.info(f"[SUMMARY] Fetching summary for user: {user_id}")
@@ -1023,7 +1029,7 @@ async def search_workouts(query: str = Query(..., min_length=1)):
         logger.error(f"Error searching for workout: {e}")
         raise HTTPException(status_code=500, detail="Failed to search for workout.")
 
-@api_router.get("/workout/log/summary/{user_id}", response_model=LogSummaryResponse)
+@api_router.get("/workout/log/summary/{user_id}", response_model=LogSummaryResponse, dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_workout_log_summary(user_id: str):
     loop = asyncio.get_event_loop()
     try:
@@ -1073,13 +1079,17 @@ async def get_workout_log_summary(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to retrieve workout summary.")
 
 # User Profile Endpoints
-@api_router.post("/users/profile", response_model=UserProfile)
-async def create_user_profile(profile: UserProfile):
+@api_router.post("/users/profile", response_model=UserProfile, dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
+async def create_user_profile(profile: UserProfile, http_request: Request):
     """Create a new user profile."""
     check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
-        profile_dict = profile.dict()
+        # Only the backend/dietician may set subscription, payment and role fields.
+        profile_dict = await strip_protected_fields(http_request, profile.dict())
+        caller = await get_caller(http_request)
+        # The dietician role is granted only from a verified token email, never from the body.
+        caller_has_dietician_email = bool(caller and caller.has_dietician_email)
         user_id = profile_dict.get("userId")
         if not user_id:
             raise HTTPException(status_code=400, detail="userId is required")
@@ -1123,7 +1133,7 @@ async def create_user_profile(profile: UserProfile):
             healed_profile = {**existing_profile, **profile_dict}
             healed_profile["isDietician"] = (
                 existing_profile.get("isDietician", False) or
-                healed_profile.get("email") == "nutricious4u@gmail.com"
+                caller_has_dietician_email
             )
 
             if not healed_profile.get("isDietician"):
@@ -1151,8 +1161,8 @@ async def create_user_profile(profile: UserProfile):
             logger.info(f"Healed incomplete profile for user {user_id} during signup")
             return healed_profile
 
-        # Add isDietician field based on email
-        if profile_dict.get("email") == "nutricious4u@gmail.com":
+        # Add isDietician field based on the caller's verified email
+        if caller_has_dietician_email:
             profile_dict["isDietician"] = True
         else:
             profile_dict["isDietician"] = False
@@ -1189,7 +1199,7 @@ async def create_user_profile(profile: UserProfile):
         logger.error(f"Error creating user profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to create user profile.")
 
-@api_router.get("/users/{user_id}/profile", response_model=UserProfile)
+@api_router.get("/users/{user_id}/profile", response_model=UserProfile, dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_user_profile(user_id: str, request: Request):
     """Get a user's profile."""
     logger.info(f"[PROFILE_FETCH] Starting profile fetch for user_id: {user_id}")
@@ -1345,13 +1355,14 @@ async def _get_user_profile_internal(user_id: str, loop):
         logger.error(f"[PROFILE_FETCH INTERNAL] Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@api_router.patch("/users/{user_id}/profile", response_model=UserProfile)
-async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
+@api_router.patch("/users/{user_id}/profile", response_model=UserProfile, dependencies=[Depends(require_self_or_dietician("user_id"))])
+async def update_user_profile(user_id: str, profile_update: UpdateUserProfile, http_request: Request):
     """Update a user's profile. If not found, create it with defaults."""
     check_firebase_availability()
     loop = asyncio.get_event_loop()
     try:
-        update_dict = profile_update.model_dump(exclude_unset=True)
+        # Only the dietician may change subscription, payment and diet-assignment fields.
+        update_dict = await strip_protected_fields(http_request, profile_update.model_dump(exclude_unset=True))
         if not update_dict:
             raise HTTPException(status_code=400, detail="No valid update fields provided")
         doc_ref = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id))
@@ -1413,7 +1424,7 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile):
         logger.error(f"Error updating user profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to update user profile")
 
-@api_router.post("/workout/log")
+@api_router.post("/workout/log", dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def log_workout_item(log: dict):
     loop = asyncio.get_event_loop()
     try:
@@ -1474,7 +1485,7 @@ CHATBOT_CLIENT_PLACEHOLDER_MESSAGES = {
     'Sorry, there was an error connecting to the nutrition assistant.',
 }
 
-@api_router.post("/chatbot/message", response_model=ChatMessageResponse)
+@api_router.post("/chatbot/message", response_model=ChatMessageResponse, dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def chatbot_message(request: ChatMessageRequest):
     """
     Accepts chat history, user profile, and user message. Returns Gemini's response.
@@ -1582,7 +1593,7 @@ class RoutineUpdateRequest(BaseModel):
     items: Optional[List[RoutineItem]] = None
 
 # --- Routine Endpoints ---
-@api_router.get("/users/{user_id}/routines", response_model=List[Routine])
+@api_router.get("/users/{user_id}/routines", response_model=List[Routine], dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def list_routines(user_id: str):
     loop = asyncio.get_event_loop()
     try:
@@ -1611,7 +1622,7 @@ async def list_routines(user_id: str):
         logger.error(f"Error listing routines: {e}")
         raise HTTPException(status_code=500, detail="Failed to list routines")
 
-@api_router.post("/users/{user_id}/routines", response_model=Routine)
+@api_router.post("/users/{user_id}/routines", response_model=Routine, dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def create_routine(user_id: str, req: RoutineCreateRequest):
     loop = asyncio.get_event_loop()
     try:
@@ -1645,7 +1656,7 @@ async def create_routine(user_id: str, req: RoutineCreateRequest):
         logger.error(f"Error creating routine: {e}")
         raise HTTPException(status_code=500, detail="Failed to create routine")
 
-@api_router.patch("/users/{user_id}/routines/{routine_id}", response_model=Routine)
+@api_router.patch("/users/{user_id}/routines/{routine_id}", response_model=Routine, dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def update_routine(user_id: str, routine_id: str, req: RoutineUpdateRequest):
     loop = asyncio.get_event_loop()
     try:
@@ -1707,7 +1718,7 @@ async def update_routine(user_id: str, routine_id: str, req: RoutineUpdateReques
         logger.error(f"Error updating routine: {e}")
         raise HTTPException(status_code=500, detail="Failed to update routine")
 
-@api_router.delete("/users/{user_id}/routines/{routine_id}")
+@api_router.delete("/users/{user_id}/routines/{routine_id}", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def delete_routine(user_id: str, routine_id: str):
     loop = asyncio.get_event_loop()
     try:
@@ -1719,7 +1730,7 @@ async def delete_routine(user_id: str, routine_id: str):
         logger.error(f"Error deleting routine: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete routine")
 
-@api_router.post("/users/{user_id}/routines/{routine_id}/log")
+@api_router.post("/users/{user_id}/routines/{routine_id}/log", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def log_routine(user_id: str, routine_id: str):
     loop = asyncio.get_event_loop()
     try:
@@ -1787,7 +1798,7 @@ async def log_routine(user_id: str, routine_id: str):
         raise HTTPException(status_code=500, detail="Failed to log routine")
 
 # --- Diet PDF Upload Endpoint (Dietician Only) ---
-@api_router.post("/users/{user_id}/diet/upload")
+@api_router.post("/users/{user_id}/diet/upload", dependencies=[Depends(require_dietician())])
 async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dietician_id: str = Form(...)):
     """
     Dietician uploads a new diet PDF for a user. Replaces previous diet, updates timestamp, and returns the new URL.
@@ -2049,7 +2060,7 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Check Users with 1 Day Remaining (for scheduled jobs) ---
-@api_router.post("/diet/check-reminders")
+@api_router.post("/diet/check-reminders", dependencies=[Depends(require_dietician())])
 async def check_diet_reminders():
     """
     DEPRECATED: This endpoint is deprecated. Use the scheduled job instead.
@@ -2063,7 +2074,7 @@ async def check_diet_reminders():
     }
 
 # --- Get User Diet PDF and Countdown ---
-@api_router.get("/users/{user_id}/diet")
+@api_router.get("/users/{user_id}/diet", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_user_diet(user_id: str):
     """
     Returns the user's diet PDF URL and days left until new diet.
@@ -2149,7 +2160,7 @@ async def get_user_diet(user_id: str):
         logger.error(f"Error getting diet for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve diet information. Please try again.")
 
-@api_router.get("/users/{user_id}/new-diet-popup-trigger")
+@api_router.get("/users/{user_id}/new-diet-popup-trigger", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_new_diet_popup_trigger(user_id: str):
     """
     Check if new diet popup should be shown for the user.
@@ -2200,7 +2211,7 @@ async def get_new_diet_popup_trigger(user_id: str):
         logger.error(f"Error checking new diet popup trigger: {e}")
         return {"showPopup": False, "reason": f"Error: {e}"}
 
-@api_router.get("/debug/user-token/{user_id}")
+@api_router.get("/debug/user-token/{user_id}", dependencies=[Depends(require_dietician())])
 async def debug_user_token(user_id: str):
     """Debug endpoint to check user's notification token status"""
     print(f"[DEBUG ENDPOINT] ===== DEBUGGING USER TOKEN =====")
@@ -2330,7 +2341,7 @@ async def debug_user_token(user_id: str):
             "document_exists": False
         }
 
-@api_router.get("/debug/test-notification/{user_id}")
+@api_router.get("/debug/test-notification/{user_id}", dependencies=[Depends(require_dietician())])
 async def debug_test_notification(user_id: str):
     """Debug endpoint to test sending a notification to a user"""
     print(f"[TEST NOTIFICATION] ===== TESTING NOTIFICATION SEND =====")
@@ -2400,7 +2411,7 @@ async def debug_test_notification(user_id: str):
         }
 
 # --- Appointment Management Endpoints ---
-@api_router.post("/appointments", response_model=AppointmentResponse)
+@api_router.post("/appointments", response_model=AppointmentResponse, dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def create_appointment(appointment: AppointmentRequest):
     """Create a new appointment"""
     try:
@@ -2442,7 +2453,7 @@ async def create_appointment(appointment: AppointmentRequest):
         logger.error(f"Error creating appointment: {e}")
         raise HTTPException(status_code=500, detail="Failed to create appointment")
 
-@api_router.get("/appointments", response_model=List[AppointmentResponse])
+@api_router.get("/appointments", response_model=List[AppointmentResponse], dependencies=[Depends(require_login())])
 async def get_appointments(user_id: Optional[str] = None):
     """Get all appointments or appointments for a specific user"""
     try:
@@ -2464,7 +2475,7 @@ async def get_appointments(user_id: Optional[str] = None):
         logger.error(f"Error fetching appointments: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch appointments")
 
-@api_router.delete("/appointments/{appointment_id}")
+@api_router.delete("/appointments/{appointment_id}", dependencies=[Depends(require_doc_owner_or_dietician("appointments", "appointment_id"))])
 async def delete_appointment(appointment_id: str):
     """Delete an appointment"""
     try:
@@ -2483,7 +2494,7 @@ async def delete_appointment(appointment_id: str):
         logger.error(f"Error deleting appointment: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete appointment")
 
-@api_router.get("/breaks", response_model=List[dict])
+@api_router.get("/breaks", response_model=List[dict], dependencies=[Depends(require_login())])
 async def get_breaks():
     """Get all breaks"""
     try:
@@ -2499,7 +2510,7 @@ async def get_breaks():
         logger.error(f"Error fetching breaks: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch breaks")
 
-@api_router.post("/breaks", response_model=dict)
+@api_router.post("/breaks", response_model=dict, dependencies=[Depends(require_dietician())])
 async def create_break(break_request: BreakRequest):
     """Create a new break"""
     try:
@@ -2529,7 +2540,7 @@ async def create_break(break_request: BreakRequest):
         raise HTTPException(status_code=500, detail="Failed to create break")
 
 # --- Serve PDF from Firestore ---
-@api_router.get("/users/{user_id}/diet/pdf")
+@api_router.get("/users/{user_id}/diet/pdf", dependencies=[Depends(require_self_or_dietician("user_id", allow_query_token=True))])
 async def get_user_diet_pdf(user_id: str, t: str = None):
     """
     Serves the PDF data from Firebase Storage for viewing.
@@ -2630,7 +2641,7 @@ async def get_user_diet_pdf(user_id: str, t: str = None):
         raise HTTPException(status_code=500, detail="Failed to serve PDF.")
 
 # --- List All Users Except Dietician (for Dietician Upload Screen) ---
-@api_router.get("/users/non-dietician")
+@api_router.get("/users/non-dietician", dependencies=[Depends(require_dietician())])
 async def get_non_dietician_users():
     """
     Returns a list of user profiles where isDietician is not True.
@@ -2638,7 +2649,7 @@ async def get_non_dietician_users():
     """
     return list_non_dietician_users()
 
-@api_router.post("/users/refresh-free-plans")
+@api_router.post("/users/refresh-free-plans", dependencies=[Depends(require_dietician())])
 async def refresh_free_plans():
     """
     Refresh all users with "Not set" or missing subscription plans to free plan.
@@ -2689,7 +2700,7 @@ async def refresh_free_plans():
         logger.error(f"Error refreshing free plans: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to refresh free plans: {e}")
 
-@api_router.get("/users/all-profiles")
+@api_router.get("/users/all-profiles", dependencies=[Depends(require_dietician())])
 async def get_all_user_profiles():
     """
     Returns a list of all user profiles (including dieticians) for the messages screen.
@@ -2754,7 +2765,7 @@ async def get_all_user_profiles():
         raise HTTPException(status_code=500, detail="Failed to get user profiles")
 
 # --- Diet Notification Endpoints ---
-@api_router.post("/users/{user_id}/diet/notifications/extract")
+@api_router.post("/users/{user_id}/diet/notifications/extract", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def extract_diet_notifications(user_id: str):
     """
     Extract timed activities from user's diet PDF and create notifications.
@@ -2838,7 +2849,7 @@ async def extract_diet_notifications(user_id: str):
         logger.error(f"[DIET EXTRACTION] Full traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {str(e)}")
 
-@api_router.get("/users/{user_id}/diet/notifications")
+@api_router.get("/users/{user_id}/diet/notifications", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_diet_notifications(user_id: str):
     """
     Get all diet notifications for a user.
@@ -2863,7 +2874,7 @@ async def get_diet_notifications(user_id: str):
         logger.error(f"Error getting diet notifications for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get diet notifications: {e}")
 
-@api_router.get("/users/{user_id}/diet/raw-text")
+@api_router.get("/users/{user_id}/diet/raw-text", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_diet_raw_text(user_id: str):
     """
     Get raw extracted text from diet PDF for debugging.
@@ -2893,7 +2904,7 @@ async def get_diet_raw_text(user_id: str):
 
 
 
-@api_router.post("/users/{user_id}/diet/notifications/test")
+@api_router.post("/users/{user_id}/diet/notifications/test", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def test_diet_notification(user_id: str):
     """
     Send a test notification to verify the user's notification setup.
@@ -2934,8 +2945,8 @@ async def test_diet_notification(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to send test notification: {e}")
 
 # --- Simple Notification System Endpoints ---
-@api_router.post("/notifications/send")
-async def send_notification(request: dict):
+@api_router.post("/notifications/send", dependencies=[Depends(require_login())])
+async def send_notification(request: dict, http_request: Request):
     """
     Unified notification endpoint - handles all notification types.
     Simple, reliable, based on how popular apps handle notifications.
@@ -2943,17 +2954,24 @@ async def send_notification(request: dict):
     try:
         logger.info(f"[SIMPLE NOTIFICATION] ===== NOTIFICATION REQUEST =====")
         logger.info(f"[SIMPLE NOTIFICATION] Request: {json.dumps(request, indent=2)}")
-        
+
         # Validate required fields
         recipient_id = request.get("recipientId")
         notification_type = request.get("type")
-        
+
         if not recipient_id:
             raise HTTPException(status_code=400, detail="recipientId is required")
-        
+
         if not notification_type:
             raise HTTPException(status_code=400, detail="type is required")
-        
+
+        # Regular users may only notify the dietician or themselves; the deprecated
+        # "message"/"appointment" types are no-ops here and stay allowed.
+        caller = await get_caller(http_request)
+        if caller is not None and not await caller_is_dietician(caller):
+            if notification_type not in ("message", "appointment") and recipient_id not in ("dietician", caller.uid):
+                raise HTTPException(status_code=403, detail="Not allowed to notify this recipient")
+
         # Get notification service
         notification_service = get_notification_service(firestore_db)
         
@@ -3000,7 +3018,7 @@ async def send_notification(request: dict):
         logger.error(f"[SIMPLE NOTIFICATION] Error sending notification: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send notification: {e}")
 
-@api_router.get("/notifications/test/{user_id}")
+@api_router.get("/notifications/test/{user_id}", dependencies=[Depends(require_dietician())])
 async def test_notification(user_id: str):
     """
     Test endpoint to verify notification system is working.
@@ -3030,8 +3048,8 @@ async def test_notification(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to test notification: {e}")
 
 # --- NEW PUSH NOTIFICATIONS API ---
-@api_router.post("/push-notifications/send")
-async def send_push_notification_new(request: dict):
+@api_router.post("/push-notifications/send", dependencies=[Depends(require_login())])
+async def send_push_notification_new(request: dict, http_request: Request):
     """
     New clean push notification endpoint.
     Handles: messages, appointments, diet_countdown
@@ -3039,14 +3057,20 @@ async def send_push_notification_new(request: dict):
     try:
         notification_type = request.get("type")
         logger.info(f"[PUSH NOTIFICATION] Received request type: {notification_type}")
-        
+
         if notification_type == "message":
             # Message: user -> dietician OR dietician -> user
             recipient_id = request.get("recipientId")
             sender_name = request.get("senderName")
             message = request.get("message")
             is_from_dietician = request.get("isFromDietician", False)
-            
+
+            # Regular users may only message the dietician, and never as the dietician.
+            caller = await get_caller(http_request)
+            if caller is not None and not await caller_is_dietician(caller):
+                if recipient_id != "dietician" or is_from_dietician:
+                    raise HTTPException(status_code=403, detail="Not allowed to notify this recipient")
+
             logger.info(f"[PUSH NOTIFICATION] Message notification: {sender_name} -> {recipient_id}")
             
             notification_service = get_notification_service(firestore_db)
@@ -3103,7 +3127,7 @@ async def send_push_notification_new(request: dict):
         logger.error(f"[PUSH NOTIFICATION] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/notifications/debug/token/{user_id}")
+@api_router.get("/notifications/debug/token/{user_id}", dependencies=[Depends(require_dietician())])
 async def debug_token_status(user_id: str):
     """
     Debug endpoint to check token status for a user or dietician.
@@ -3174,7 +3198,7 @@ async def debug_token_status(user_id: str):
         logger.error(f"[DEBUG TOKEN] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to debug token: {e}")
 
-@api_router.post("/users/{user_id}/diet/notifications/schedule")
+@api_router.post("/users/{user_id}/diet/notifications/schedule", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def schedule_diet_notifications(user_id: str):
     """
     Schedule diet notifications for a user based on their day preferences.
@@ -3198,7 +3222,7 @@ async def schedule_diet_notifications(user_id: str):
         logger.error(f"Error scheduling notifications for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule notifications: {e}")
 
-@api_router.post("/users/{user_id}/diet/notifications/cancel")
+@api_router.post("/users/{user_id}/diet/notifications/cancel", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def cancel_diet_notifications(user_id: str):
     """
     Cancel all scheduled diet notifications for a user.
@@ -3221,7 +3245,7 @@ async def cancel_diet_notifications(user_id: str):
         logger.error(f"Error cancelling notifications for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel notifications: {e}")
 
-@api_router.put("/users/{user_id}/diet/notifications/{notification_id}")
+@api_router.put("/users/{user_id}/diet/notifications/{notification_id}", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def update_diet_notification(user_id: str, notification_id: str, notification_update: dict):
     """
     Update a specific diet notification including its day preferences.
@@ -3265,7 +3289,7 @@ async def update_diet_notification(user_id: str, notification_id: str, notificat
         logger.error(f"Error updating notification for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update notification: {e}")
 
-@api_router.delete("/users/{user_id}/diet/notifications/{notification_id}")
+@api_router.delete("/users/{user_id}/diet/notifications/{notification_id}", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def delete_diet_notification(user_id: str, notification_id: str):
     """
     Delete a specific diet notification.
@@ -3434,7 +3458,7 @@ async def get_workout(workout_id: str):
             return workout
     raise HTTPException(status_code=404, detail="Workout not found")
 
-@app.post("/api/workouts/log")
+@app.post("/api/workouts/log", dependencies=[Depends(require_login())])
 async def log_workout(workout: dict):
     """Log a workout session"""
     try:
@@ -4462,7 +4486,7 @@ async def get_subscription_plans():
         logger.error(f"[GET SUBSCRIPTION PLANS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subscription plans")
 
-@api_router.post("/subscription/select")
+@api_router.post("/subscription/select", dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def select_subscription(request: SelectSubscriptionRequest):
     """Select a subscription plan for a user"""
     try:
@@ -4631,7 +4655,7 @@ async def select_subscription(request: SelectSubscriptionRequest):
         logger.error(f"[SELECT SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to select subscription")
 
-@api_router.get("/subscription/status/{userId}")
+@api_router.get("/subscription/status/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def get_subscription_status(userId: str):
     """Get subscription status for a user"""
     try:
@@ -4742,7 +4766,7 @@ async def get_subscription_status(userId: str):
         logger.error(f"[GET SUBSCRIPTION STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get subscription status")
 
-@api_router.post("/subscription/cancel/{userId}")
+@api_router.post("/subscription/cancel/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def cancel_subscription(userId: str):
     """Cancel a user's consultation period by disabling auto-renewal (access continues until period ends)"""
     try:
@@ -4794,7 +4818,7 @@ async def cancel_subscription(userId: str):
         logger.error(f"[CANCEL SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel subscription")
 
-@api_router.post("/subscription/cancel-plan-switch/{userId}")
+@api_router.post("/subscription/cancel-plan-switch/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def cancel_plan_switch(userId: str):
     """Cancel a pending plan switch"""
     try:
@@ -4830,7 +4854,7 @@ async def cancel_plan_switch(userId: str):
         logger.error(f"[CANCEL PLAN SWITCH] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel plan switch")
 
-@api_router.post("/subscription/toggle-auto-renewal/{userId}")
+@api_router.post("/subscription/toggle-auto-renewal/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def toggle_auto_renewal(userId: str, enabled: bool = True):
     """Toggle auto-renewal setting for a user"""
     try:
@@ -4854,7 +4878,7 @@ async def toggle_auto_renewal(userId: str, enabled: bool = True):
         logger.error(f"[TOGGLE AUTO RENEWAL] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to toggle auto-renewal")
 
-@api_router.post("/subscription/reset/{userId}")
+@api_router.post("/subscription/reset/{userId}", dependencies=[Depends(require_dietician())])
 async def reset_subscription(userId: str):
     """Reset subscription data for a user (for testing purposes)"""
     try:
@@ -4882,7 +4906,7 @@ async def reset_subscription(userId: str):
         logger.error(f"[RESET SUBSCRIPTION] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset subscription")
 
-@api_router.post("/user/{userId}/reset-daily")
+@api_router.post("/user/{userId}/reset-daily", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def reset_daily_data(userId: str):
     """Reset daily tracking data for a user"""
     try:
@@ -4923,7 +4947,7 @@ async def reset_daily_data(userId: str):
         logger.error(f"[DAILY RESET] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset daily data")
 
-@api_router.post("/subscription/add-amount/{userId}")
+@api_router.post("/subscription/add-amount/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def add_subscription_amount(userId: str, planId: str):
     """Add subscription amount to total due (only called from popup)"""
     try:
@@ -4969,7 +4993,7 @@ async def add_subscription_amount(userId: str, planId: str):
         logger.error(f"[ADD SUBSCRIPTION AMOUNT] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to add subscription amount")
 
-@api_router.delete("/users/{userId}/account")
+@api_router.delete("/users/{userId}/account", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def delete_user_account(userId: str):
     """Delete a user account completely. Dietician accounts cannot be deleted."""
     try:
@@ -5306,7 +5330,7 @@ async def delete_user_account(userId: str):
 
 # --- Free Trial Endpoints ---
 
-@api_router.post("/subscription/activate-trial/{userId}")
+@api_router.post("/subscription/activate-trial/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def activate_free_trial(userId: str):
     """Activate free trial for a user (one-time only)"""
     try:
@@ -5380,7 +5404,7 @@ async def activate_free_trial(userId: str):
         logger.error(f"[ACTIVATE TRIAL] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to activate free trial")
 
-@api_router.get("/subscription/trial-status/{userId}")
+@api_router.get("/subscription/trial-status/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def get_trial_status(userId: str):
     """Get free trial status for a user"""
     try:
@@ -5538,7 +5562,7 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         logger.error(f"[DEFAULT DIET] Traceback: {traceback.format_exc()}")
         return False
 
-@api_router.get("/notifications/{userId}")
+@api_router.get("/notifications/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
 async def get_user_notifications(userId: str):
     """Get notifications for a user"""
     try:
@@ -5566,7 +5590,7 @@ async def get_user_notifications(userId: str):
         logger.error(f"[GET NOTIFICATIONS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get notifications")
 
-@api_router.put("/notifications/{notificationId}/read")
+@api_router.put("/notifications/{notificationId}/read", dependencies=[Depends(require_doc_owner_or_dietician("notifications", "notificationId"))])
 async def mark_notification_read(notificationId: str):
     """Mark a notification as read"""
     try:
@@ -5582,7 +5606,7 @@ async def mark_notification_read(notificationId: str):
         logger.error(f"[MARK NOTIFICATION READ] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark notification as read")
 
-@api_router.delete("/notifications/{notificationId}")
+@api_router.delete("/notifications/{notificationId}", dependencies=[Depends(require_doc_owner_or_dietician("notifications", "notificationId"))])
 async def delete_notification(notificationId: str):
     """Delete a notification"""
     try:
@@ -5655,7 +5679,7 @@ print("🔕 Backend notification scheduler DISABLED - using local scheduling onl
 
 # Include the router in the main app (after all endpoints are defined)
 # Add new endpoints for dietician user management
-@api_router.get("/users/{user_id}/details")
+@api_router.get("/users/{user_id}/details", dependencies=[Depends(require_dietician())])
 async def get_user_details(user_id: str):
     """Get detailed user information for dietician view"""
     try:
@@ -5712,7 +5736,7 @@ async def get_user_details(user_id: str):
         logger.error(f"[GET USER DETAILS] Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user details")
 
-@api_router.post("/users/{user_id}/mark-paid")
+@api_router.post("/users/{user_id}/mark-paid", dependencies=[Depends(require_dietician())])
 async def mark_user_paid(user_id: str):
     """Mark user's amount as paid (set totalAmountPaid to 0)"""
     try:
@@ -5740,7 +5764,7 @@ async def mark_user_paid(user_id: str):
         logger.error(f"[MARK PAID] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark user as paid")
 
-@api_router.post("/users/{user_id}/lock-app")
+@api_router.post("/users/{user_id}/lock-app", dependencies=[Depends(require_dietician())])
 async def lock_user_app(user_id: str):
     """Lock user's app"""
     try:
@@ -5768,7 +5792,7 @@ async def lock_user_app(user_id: str):
         logger.error(f"[LOCK APP] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to lock user app")
 
-@api_router.post("/users/{user_id}/unlock-app")
+@api_router.post("/users/{user_id}/unlock-app", dependencies=[Depends(require_dietician())])
 async def unlock_user_app(user_id: str):
     """Unlock user's app"""
     try:
@@ -5797,7 +5821,7 @@ async def unlock_user_app(user_id: str):
         logger.error(f"[UNLOCK APP] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to unlock user app")
 
-@api_router.get("/users/{user_id}/lock-status")
+@api_router.get("/users/{user_id}/lock-status", dependencies=[Depends(require_self_or_dietician("user_id"))])
 async def get_user_lock_status(user_id: str):
     """Get user's app lock status"""
     try:
@@ -5823,7 +5847,7 @@ async def get_user_lock_status(user_id: str):
         logger.error(f"[GET LOCK STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user lock status")
 
-@api_router.get("/users/{user_id}/test")
+@api_router.get("/users/{user_id}/test", dependencies=[Depends(require_dietician())])
 async def test_user_exists(user_id: str):
     """Test endpoint to check if user exists in Firestore"""
     try:
@@ -5860,7 +5884,7 @@ async def test_user_exists(user_id: str):
         }
 
 # Add a comprehensive test endpoint for iOS connection and diet functionality
-@api_router.get("/test-ios-diet")
+@api_router.get("/test-ios-diet", dependencies=[Depends(require_dietician())])
 async def test_ios_diet_functionality():
     """Test endpoint for iOS diet functionality"""
     try:
@@ -5897,7 +5921,7 @@ async def get_recipes():
         logger.error(f"Error fetching recipes: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch recipes: {str(e)}")
 
-@api_router.get("/debug-recipes")
+@api_router.get("/debug-recipes", dependencies=[Depends(require_dietician())])
 async def debug_recipes():
     """Debug endpoint to check recipes collection"""
     try:
@@ -5975,7 +5999,7 @@ def get_recipes_from_firestore():
         return []
 
 # --- Notification Scheduler Endpoints ---
-@api_router.post("/notifications/check-due")
+@api_router.post("/notifications/check-due", dependencies=[Depends(require_dietician())])
 async def check_due_notifications():
     """
     Check and send due notifications.
@@ -6000,7 +6024,7 @@ async def check_due_notifications():
         logger.error(f"Error checking due notifications: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to check due notifications: {str(e)}")
 
-@api_router.post("/notifications/schedule-user/{user_id}")
+@api_router.post("/notifications/schedule-user/{user_id}", dependencies=[Depends(require_dietician())])
 async def schedule_user_notifications_manual(user_id: str):
     """
     Manually trigger notification scheduling for a specific user.

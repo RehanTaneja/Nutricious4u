@@ -2,11 +2,13 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow diet PDF uploads and downloads
+    // Diet PDFs are written and served only by the backend (Admin SDK + signed URLs,
+    // both of which bypass these rules). The app never accesses Storage directly,
+    // so no client access is allowed.
     match /diets/{userId}/{fileName} {
-      allow read, write: if true; // Allow public access for diet PDFs
+      allow read, write: if false;
     }
-    
+
     // Default rule - deny all other access
     match /{allPaths=**} {
       allow read, write: if false;
