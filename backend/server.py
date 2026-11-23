@@ -3596,6 +3596,143 @@ async def check_diet_countdown_job():
     except Exception as e:
         logger.error(f"[DIET COUNTDOWN] ❌ Error in job: {e}")
 
+# --- Paid-period processing (fee accrual, reminders, renewal/switch/expiry) ---
+# Each step is recorded with a per-period marker (the subscriptionEndDate it was done
+# for), so it happens exactly once per period even if a job run is missed, and stale
+# flags from a trial or an earlier period can never block it.
+PAID_PLAN_DAYS = {"1month": 30, "2months": 60, "3months": 90, "6months": 180}
+PAID_PLAN_PRICES = {"1month": 5000.0, "2months": 9000.0, "3months": 12000.0, "6months": 20000.0}
+
+import random
+from google.cloud.firestore import transactional as _firestore_transactional
+
+_paid_period_tasks = set()  # background processing started by status calls
+
+
+@_firestore_transactional
+def _paid_period_transaction(transaction, doc_ref, now):
+    """Decide and write this period's due steps atomically. Returns (pre_state, actions)."""
+    snap = doc_ref.get(transaction=transaction)
+    if not snap.exists:
+        return None, []
+    data = snap.to_dict() or {}
+    plan = data.get("subscriptionPlan")
+    end_str = data.get("subscriptionEndDate")
+    # Only active paid plans; plans already marked expired are left untouched.
+    if data.get("isDietician") or plan not in PAID_PLAN_DAYS or not end_str or not data.get("isSubscriptionActive"):
+        return data, []
+    if data.get("subscriptionStatus") == "expired":
+        return data, []
+    end = datetime.fromisoformat(end_str)
+    remaining = end - now
+    updates, actions = {}, []
+    # Records from before per-period markers existed: trust the old done-flags for the
+    # current period only (prevents a second charge/reminder on deploy day).
+    legacy = not any(data.get(k) for k in ("feeAddedForPeriodEnd", "oneDayReminderForPeriodEnd", "oneWeekReminderForPeriodEnd"))
+    old_flags = data.get("lastPaymentReminderSent") or {}
+
+    # 7-day reminder: once, while 159-171h remain (two 6-hourly runs to catch it; the
+    # text says "7 days", so it is skipped rather than sent late)
+    if timedelta(hours=159) < remaining <= timedelta(hours=171) and data.get("oneWeekReminderForPeriodEnd") != end_str:
+        updates["oneWeekReminderForPeriodEnd"] = end_str
+        if not (legacy and old_flags.get("oneWeek")):
+            actions.append(("reminder", 7))
+
+    # Fee for this period: once, from 25h before the end onwards (also catches up after expiry)
+    if remaining <= timedelta(hours=25):
+        already_done = legacy and old_flags.get("oneDay")
+        if data.get("feeAddedForPeriodEnd") != end_str:
+            if not already_done:
+                amount = data.get("currentSubscriptionAmount", 0.0) or 0.0
+                if amount > 0:
+                    updates["totalAmountPaid"] = (data.get("totalAmountPaid", 0.0) or 0.0) + amount
+                actions.append(("fee", amount))
+            updates["feeAddedForPeriodEnd"] = end_str
+        if remaining > timedelta(0) and data.get("oneDayReminderForPeriodEnd") != end_str:
+            updates["oneDayReminderForPeriodEnd"] = end_str
+            if not already_done:
+                actions.append(("reminder", 1))
+
+    # Period over: activate a due plan switch, else auto-renew, else expire
+    if remaining <= timedelta(0):
+        pending = data.get("pendingPlanSwitch") or {}
+        new_plan = pending.get("newPlanId")
+        switch_str = pending.get("switchDate")
+        switch_date = None
+        if new_plan in PAID_PLAN_DAYS and switch_str:
+            try:
+                switch_date = datetime.fromisoformat(switch_str)
+            except ValueError:
+                switch_date = None
+        reset_flags = {"oneWeek": False, "twoDays": False, "oneDay": False}
+        if switch_date is not None and now >= switch_date:
+            updates.update({
+                "subscriptionPlan": new_plan,
+                "subscriptionStartDate": switch_date.isoformat(),
+                "subscriptionEndDate": (switch_date + timedelta(days=PAID_PLAN_DAYS[new_plan])).isoformat(),
+                "currentSubscriptionAmount": pending.get("amount", 0.0),
+                "isSubscriptionActive": True,
+                "subscriptionStatus": "active",
+                "pendingPlanSwitch": None,
+                "nextPlanId": None,
+                "lastPaymentReminderSent": reset_flags,
+            })
+            actions.append(("switch", new_plan))
+        elif data.get("autoRenewalEnabled", True):
+            updates.update({
+                "subscriptionStartDate": now.isoformat(),
+                "subscriptionEndDate": (now + timedelta(days=PAID_PLAN_DAYS[plan])).isoformat(),
+                "currentSubscriptionAmount": PAID_PLAN_PRICES[plan],
+                "isSubscriptionActive": True,
+                "subscriptionStatus": "active",
+                "lastPaymentReminderSent": reset_flags,
+            })
+            actions.append(("renew", plan))
+        else:
+            updates.update({"isSubscriptionActive": False, "subscriptionStatus": "expired"})
+            actions.append(("expire", plan))
+
+    if updates:
+        transaction.update(doc_ref, updates)
+    return data, actions
+
+
+async def process_paid_period(user_id: str):
+    """Run due fee/reminder/renewal steps for one user, then send their notifications.
+    Safe to call concurrently (job and status endpoint): the transaction makes each
+    step happen once, and only the call that made a change sends its notifications."""
+    doc_ref = firestore_db.collection("user_profiles").document(user_id)
+    data, actions = None, None
+    for attempt in range(4):  # extra retries on top of the transaction's own, for heavy contention
+        try:
+            now = datetime.now()
+            data, actions = await asyncio.to_thread(
+                lambda: _paid_period_transaction(firestore_db.transaction(max_attempts=15), doc_ref, now))
+            break
+        except Exception as e:
+            if attempt == 3:
+                logger.error(f"[PAID PERIOD] Error processing user {user_id}: {e}")
+                return None
+            await asyncio.sleep(0.2 + random.random() * 0.8)
+    for action in actions:
+        try:
+            kind = action[0]
+            if kind == "reminder":
+                await send_payment_reminder_notification(user_id, data, action[1])
+            elif kind == "fee":
+                logger.info(f"[PAYMENT ADD] Added ₹{action[1]:,.0f} to total for user {user_id} (period ending {data.get('subscriptionEndDate')})")
+            elif kind == "switch":
+                await send_plan_switch_notifications(user_id, data, action[1])
+            elif kind == "renew":
+                await send_subscription_renewal_notifications(user_id, data, action[1], PAID_PLAN_PRICES[action[1]])
+                logger.info(f"[AUTO RENEWAL] Renewed {action[1]} for user {user_id}")
+            elif kind == "expire":
+                await send_subscription_expiry_notifications(user_id, data)
+        except Exception as e:
+            logger.error(f"[PAID PERIOD] Notification step {action} failed for user {user_id}: {e}")
+    return actions
+
+
 async def check_subscription_reminders_job():
     """Check for subscription reminders and send notifications"""
     try:
@@ -3620,63 +3757,10 @@ async def check_subscription_reminders_job():
                 # Skip if user is a dietician
                 if user_data.get("isDietician", False):
                     continue
-                
-                subscription_end_date = user_data.get("subscriptionEndDate")
-                if not subscription_end_date:
-                    continue
-                
-                end_date = datetime.fromisoformat(subscription_end_date)
-                time_until_expiry = end_date - current_time
-                
-                # Check for payment reminders and add payment before plan ends
-                # 1 week (7 days) before expiration (165-171 hours remaining)
-                if timedelta(hours=165) <= time_until_expiry <= timedelta(hours=171):
-                    last_reminders = user_data.get("lastPaymentReminderSent", {})
-                    if not last_reminders.get("oneWeek", False):
-                        await send_payment_reminder_notification(user_id, user_data, 7)  # 7 days
-                        firestore_db.collection("user_profiles").document(user_id).update({
-                            "lastPaymentReminderSent": {
-                                **last_reminders,
-                                "oneWeek": True
-                            }
-                        })
-                
-                # 1 day before expiration (23-25 hours remaining) - Add payment here
-                elif timedelta(hours=23) <= time_until_expiry <= timedelta(hours=25):
-                    # Add payment to totalAmountPaid (only once)
-                    last_reminders = user_data.get("lastPaymentReminderSent", {})
-                    if not last_reminders.get("oneDay", False):
-                        await add_payment_on_plan_end(user_id, user_data)
-                        # Mark reminder as sent
-                        firestore_db.collection("user_profiles").document(user_id).update({
-                            "lastPaymentReminderSent": {
-                                **last_reminders,
-                                "oneDay": True
-                            }
-                        })
-                        # Send 1 day reminder notification (only once, same as payment add)
-                        await send_payment_reminder_notification(user_id, user_data, 1)  # 1 day
-                
-                # Check if consultation period has expired
-                elif time_until_expiry <= timedelta(0):
-                    # First check if there's a pending plan switch - activate it
-                    pending_switch = user_data.get("pendingPlanSwitch")
-                    if pending_switch:
-                        logger.info(f"[SUBSCRIPTION REMINDER] Activating pending plan switch for user {user_id}")
-                        switch_activated = await activate_pending_plan_switch(user_id, user_data)
-                        if switch_activated:
-                            continue  # Plan switch activated, skip renewal/expiry logic
-                    
-                    # Check if auto-renewal is enabled and handle accordingly
-                    auto_renewal_enabled = user_data.get("autoRenewalEnabled", True)  # Default to True
-                    
-                    if auto_renewal_enabled:
-                        # Auto-renew the consultation period
-                        await auto_renew_subscription(user_id, user_data)
-                    else:
-                        # Send expiry notification to both user and dietician
-                        await send_subscription_expiry_notifications(user_id, user_data)
-                    
+
+                # Fee, reminders and renewal/switch/expiry, each once per period
+                await process_paid_period(user_id)
+
             except Exception as e:
                 logger.error(f"[SUBSCRIPTION REMINDER] Error processing user {user_doc.id}: {e}")
                 continue
@@ -4010,12 +4094,23 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         }
         
         firestore_db.collection("user_profiles").document(user_id).update(update_data)
-        
+
+        await send_plan_switch_notifications(user_id, user_data, new_plan_id)
+        logger.info(f"[PLAN SWITCH] Successfully activated {new_plan_id} plan for user {user_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[PLAN SWITCH] Error activating pending plan switch for user {user_id}: {e}")
+        return False
+
+async def send_plan_switch_notifications(user_id: str, user_data: dict, new_plan_id: str):
+    """Notify user and dietician that a pending plan switch was activated (user_data = state before the switch)"""
+    try:
         # Send notification about plan switch
         user_name = get_user_first_name(user_data)
         old_plan_name = get_plan_name(user_data.get("subscriptionPlan", "Unknown Plan"))
         new_plan_name = get_plan_name(new_plan_id)
-        
+
         notification_data = {
             "userId": user_id,
             "title": "Plan Switched",
@@ -4056,13 +4151,9 @@ async def activate_pending_plan_switch(user_id: str, user_data: dict):
         if updated_user_doc.exists:
             updated_user_data = updated_user_doc.to_dict()
             await send_dietician_subscription_notification(user_id, updated_user_data, "plan_switched", new_plan_name, 0.0, old_plan_name)
-        
-        logger.info(f"[PLAN SWITCH] Successfully activated {new_plan_id} plan for user {user_id}")
-        return True
-        
+
     except Exception as e:
-        logger.error(f"[PLAN SWITCH] Error activating pending plan switch for user {user_id}: {e}")
-        return False
+        logger.error(f"[PLAN SWITCH] Error sending plan switch notifications for user {user_id}: {e}")
 
 async def auto_renew_subscription(user_id: str, user_data: dict):
     """Automatically renew a user's subscription when it expires"""
@@ -4622,7 +4713,10 @@ async def select_subscription(request: SelectSubscriptionRequest):
             "subscriptionStatus": "active",
             "autoRenewalEnabled": auto_renewal,  # Set auto-renewal preference
             "pendingPlanSwitch": None,  # Clear any pending switch
-            "nextPlanId": None
+            "nextPlanId": None,
+            # Reset reminder flags left over from a trial or earlier plan, so they can't
+            # be mistaken for this new plan's fee/reminders (same as renewal and switch)
+            "lastPaymentReminderSent": {"oneWeek": False, "twoDays": False, "oneDay": False}
         }
         
         firestore_db.collection("user_profiles").document(request.userId).update(update_data)
@@ -4723,7 +4817,29 @@ async def get_subscription_status(userId: str):
         # Check if subscription is still active
         if subscription_data["subscriptionEndDate"]:
             end_date = datetime.fromisoformat(subscription_data["subscriptionEndDate"])
-            if datetime.now() > end_date:
+            if datetime.now() > end_date and subscription_data["subscriptionPlan"] in PAID_PLAN_DAYS:
+                # Paid period over: add the fee if missing, then switch/renew/expire exactly
+                # once (same step as the scheduled job), and answer from the fresh state.
+                # Wait at most 8s so the app isn't held up under contention; the task is not
+                # cancelled, so it always finishes (including notifications) in the background.
+                task = asyncio.ensure_future(process_paid_period(userId))
+                _paid_period_tasks.add(task)  # strong reference until done (asyncio only keeps weak ones)
+                task.add_done_callback(_paid_period_tasks.discard)
+                await asyncio.wait({task}, timeout=8)
+                fresh = firestore_db.collection("user_profiles").document(userId).get().to_dict() or {}
+                for key in ("subscriptionPlan", "subscriptionStartDate", "subscriptionEndDate",
+                            "currentSubscriptionAmount", "totalAmountPaid", "isSubscriptionActive",
+                            "autoRenewalEnabled", "pendingPlanSwitch", "nextPlanId", "subscriptionStatus"):
+                    subscription_data[key] = fresh.get(key, subscription_data.get(key))
+                # Only the transaction may expire a paid plan. If it is expired now, ask for a
+                # new plan; otherwise (renewed/switched, or processing will be retried by the
+                # next call or job run) keep access instead of falling through to the
+                # unconditional expiry below.
+                if not subscription_data.get("isSubscriptionActive") or subscription_data.get("subscriptionStatus") == "expired":
+                    subscription_data["requiresPlanSelection"] = True
+                    requires_plan_selection = True
+                end_date = None
+            if end_date is not None and datetime.now() > end_date:
                 # Update subscription status to inactive
                 firestore_db.collection("user_profiles").document(userId).update({
                     "isSubscriptionActive": False,
