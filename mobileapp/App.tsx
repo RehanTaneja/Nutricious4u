@@ -46,6 +46,7 @@ import {
   RecipesScreen, // <-- import the new recipes screen
   SubscriptionSelectionScreen, // <-- import subscription selection screen
   MySubscriptionsScreen, // <-- import my subscriptions screen
+  NotificationsScreen,
   MandatoryTrialActivationPopup, // <-- import mandatory trial activation popup
   MandatoryPlanSelectionPopup, // <-- import mandatory plan selection popup
   QnAScreen,
@@ -1603,6 +1604,7 @@ function AppContent() {
               <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="LoginSettings" component={LoginSettingsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="TrackingDetails" component={TrackingDetailsScreen} options={{ headerShown: false }} />
               <Stack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: false }} />
               <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} options={{ headerShown: false }} />

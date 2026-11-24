@@ -3875,7 +3875,7 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: topSpacing, paddingHorizontal: 16 }]}> 
-      <View style={styles.settingsContainer}>
+      <ScrollView style={styles.settingsContainer} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.screenTitle}>Settings</Text>
         {error ? (
           <Text style={styles.errorText}>{error}</Text>
@@ -3898,6 +3898,15 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 activeOpacity={0.85}
               >
                 <Text style={styles.loginSettingsButtonText}>Login Settings</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.settingsButtonRow}>
+              <TouchableOpacity
+                style={styles.notificationSettingsButton}
+                onPress={() => navigation.navigate('Notifications')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.notificationSettingsButtonText}>Notifications</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.settingsButtonRow}>
@@ -3929,6 +3938,16 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
         ) : (
           <>
             {isDietician ? (
+              <>
+              <View style={styles.settingsButtonRow}>
+                <TouchableOpacity
+                  style={styles.notificationSettingsButton}
+                  onPress={() => navigation.navigate('Notifications')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.notificationSettingsButtonText}>Notifications</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.settingsButtonRow}>
                 <StyledButton 
                   title="Logout" 
@@ -3936,12 +3955,13 @@ const SettingsScreen = ({ navigation }: { navigation: any }) => {
                   style={styles.settingsLogoutButton}
                 />
               </View>
+              </>
             ) : (
               <Text style={styles.noDataText}>No profile found. Please create your profile.</Text>
             )}
           </>
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -8880,8 +8900,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   actionButton: {
-    width: '30%',
-    aspectRatio: 1,
+    width: '48%',
+    minHeight: 96,
     borderRadius: 14,
     padding: 12,
     alignItems: 'center',
@@ -9513,7 +9533,8 @@ const styles = StyleSheet.create({
   scheduleContainer: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     marginBottom: 20,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
@@ -9529,7 +9550,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   timeColumnHeader: {
-    width: 60,
+    width: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9540,6 +9561,7 @@ const styles = StyleSheet.create({
   },
   dateColumnHeader: {
     flex: 1,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9555,7 +9577,7 @@ const styles = StyleSheet.create({
   },
   todayIndicator: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingVertical: 2,
     borderRadius: 10,
     marginTop: 4,
@@ -9571,7 +9593,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timeColumn: {
-    width: 60,
+    width: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9585,7 +9607,7 @@ const styles = StyleSheet.create({
     height: 40,
     backgroundColor: COLORS.background,
     borderRadius: 10,
-    marginHorizontal: 2,
+    marginHorizontal: 1,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -10580,6 +10602,7 @@ export {
   RecipesScreen, // <-- export RecipesScreen
   SubscriptionSelectionScreen, // <-- export subscription selection screen
   MySubscriptionsScreen, // <-- export my subscriptions screen
+  NotificationsScreen,
   MandatoryTrialActivationPopup, // <-- export mandatory trial activation popup
   MandatoryPlanSelectionPopup // <-- export mandatory plan selection popup
 };
@@ -11389,17 +11412,17 @@ const MySubscriptionsScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.renewalText, { fontSize: 14, color: COLORS.placeholder, marginBottom: 12, marginTop: 4 }]}>
                       {getPlanName(subscription.subscriptionPlan || '')} → {getPlanName(subscription.pendingPlanSwitch.newPlanId)}
                     </Text>
-                    <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                    <View style={{ width: '100%' }}>
                       <StyledButton
                         title="Change"
                         onPress={handlePlanSwitch}
-                        style={[styles.renewalButton, { flex: 1 }]}
+                        style={styles.renewalButton}
                       />
                       <StyledButton
                         title={cancellingSwitch ? 'Cancelling...' : 'Cancel Switch'}
                         onPress={handleCancelPlanSwitch}
                         disabled={cancellingSwitch}
-                        style={[styles.renewalButton, { backgroundColor: '#DC2626', flex: 1 }]}
+                        style={[styles.renewalButton, { backgroundColor: '#DC2626' }]}
                       />
                     </View>
                   </View>
@@ -11808,7 +11831,7 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
       // Check if user is dietician (using email or special logic)
       const userProfile = await getUserProfileSafe(currentUser.uid);
       const userEmail = currentUser.email;
-      const isDietician = userEmail === "dietician@nutricious4u.com" || userEmail?.includes("dietician");
+      const isDietician = userEmail === 'nutricious4u@gmail.com';
       const userId = isDietician ? "dietician" : currentUser.uid;
       
       const response = await getUserNotifications(userId);
@@ -11900,7 +11923,13 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
         }
       >
         <View style={styles.settingsContainer}>
-          <Text style={styles.screenTitle}>Notifications</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
+              <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
+            </TouchableOpacity>
+            <Text style={[styles.screenTitle, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>Notifications</Text>
+            <View style={{ minWidth: 40 }} />
+          </View>
           
           {error && (
             <View style={styles.errorContainer}>
@@ -12610,11 +12639,11 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
           isBooked && !isBookedByMe && !isBreak && styles.bookedTimeSlotText,
           isBookedByMe && !isBreak && styles.bookedByMeTimeSlotText,
           isSelected && styles.selectedTimeSlotText
-        ]}>
+        ]} numberOfLines={isBookedByMe && !isBreak ? 2 : 1} adjustsFontSizeToFit>
           {isBreaksLoading ? '...' : isBreak ? 'Break' : isBooked ? (isBookedByMe ? 'Your Appt' : 'Booked') : timeSlot}
         </Text>
         {phoneTime && !isBreaksLoading && !isBreak && !isBooked && (
-          <Text style={[styles.slotPhoneTimeText, isPast && styles.pastTimeSlotText, isSelected && styles.selectedTimeSlotText]}>{phoneTime}</Text>
+          <Text style={[styles.slotPhoneTimeText, isPast && styles.pastTimeSlotText, isSelected && styles.selectedTimeSlotText]} numberOfLines={1} adjustsFontSizeToFit>{phoneTime}</Text>
         )}
       </TouchableOpacity>
     );
@@ -12626,7 +12655,7 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, minWidth: 40, alignItems: 'flex-start' }}>
           <Text style={{ fontSize: 22, color: COLORS.primaryDark }}>{'<'} </Text>
         </TouchableOpacity>
-        <Text style={styles.screenTitle}>Schedule Appointment</Text>
+        <Text style={[styles.screenTitle, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>Schedule Appointment</Text>
         <View style={{ minWidth: 40 }} />
       </View>
 
@@ -12657,12 +12686,12 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={[
                   styles.dateHeaderText,
                   isToday(date) && styles.todayHeaderText
-                ]}>
+                ]} numberOfLines={2} adjustsFontSizeToFit>
                   {formatDate(date)}
                 </Text>
                 {isToday(date) && (
                   <View style={styles.todayIndicator}>
-                    <Text style={styles.todayIndicatorText}>Today</Text>
+                    <Text style={styles.todayIndicatorText} numberOfLines={1} adjustsFontSizeToFit>Today</Text>
                   </View>
                 )}
               </View>
@@ -13031,11 +13060,11 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
           styles.timeSlotText,
           isBreak && styles.breakTimeSlotText,
           (isBooked && !isBreak) && styles.bookedTimeSlotText
-        ]}>
+        ]} numberOfLines={1} adjustsFontSizeToFit>
           {isProcessing ? '...' : isBreak ? 'Break' : isBooked ? 'Booked' : timeSlot}
         </Text>
         {isBooked && !isBreak && bookedUserInfo && (
-          <Text style={styles.bookedUserText}>
+          <Text style={styles.bookedUserText} numberOfLines={1} adjustsFontSizeToFit>
             {bookedUserInfo.userName || 'Unknown User'}
           </Text>
         )}
@@ -13269,12 +13298,12 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={[
                   styles.dateHeaderText,
                   isToday(date) && styles.todayHeaderText
-                ]}>
+                ]} numberOfLines={2} adjustsFontSizeToFit>
                   {formatDate(date)}
                 </Text>
                 {isToday(date) && (
                   <View style={styles.todayIndicator}>
-                    <Text style={styles.todayIndicatorText}>Today</Text>
+                    <Text style={styles.todayIndicatorText} numberOfLines={1} adjustsFontSizeToFit>Today</Text>
                   </View>
                 )}
               </View>
