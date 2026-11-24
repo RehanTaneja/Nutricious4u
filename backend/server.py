@@ -190,6 +190,7 @@ class UserProfile(BaseModel):
 class UpdateUserProfile(BaseModel):
     firstName: Optional[str] = None
     lastName: Optional[str] = None
+    email: Optional[str] = None
     age: Optional[int] = None
     gender: Optional[str] = None
     currentWeight: Optional[float] = None
@@ -1503,7 +1504,16 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile, h
             update_dict.pop("timezone")
         if "utcOffsetMinutes" in update_dict and valid_utc_offset_minutes(update_dict["utcOffsetMinutes"]) is None:
             update_dict.pop("utcOffsetMinutes")
+        # The email may only be the caller's own verified sign-in email, unless the dietician sets it
+        caller = await get_caller(http_request)
+        if "email" in update_dict and (update_dict["email"] is None or not await caller_is_dietician(caller)):
+            own_email = caller.email if caller is not None and caller.uid == user_id and caller.email_verified else None
+            if own_email is None or update_dict["email"] != own_email:
+                update_dict.pop("email")
         if not update_dict:
+            # Old apps (no token) keep getting 500: old iPhones treat a 400 as success
+            if caller is None:
+                raise HTTPException(status_code=500, detail="Failed to update user profile")
             raise HTTPException(status_code=400, detail="No valid update fields provided")
         doc_ref = await loop.run_in_executor(executor, lambda: firestore_db.collection("user_profiles").document(user_id))
         doc = await loop.run_in_executor(executor, doc_ref.get)
@@ -1560,6 +1570,8 @@ async def update_user_profile(user_id: str, profile_update: UpdateUserProfile, h
         if "dietCacheVersion" in update_dict:
             profile["dietCacheVersion"] = update_dict["dietCacheVersion"]
         return profile
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating user profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to update user profile")
