@@ -1147,6 +1147,22 @@ export const getTrialStatus = async (userId: string): Promise<{ hasUsedTrial: bo
 };
 
 // --- Notification Management ---
+export interface AppointmentBooking {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  date: string;
+  timeSlot: string;
+  status: string;
+}
+
+// Books a slot. A 409 error's detail is "slot_taken" or "slot_in_break". Safe to repeat:
+// the server returns the same booking if this user already has the slot.
+export const bookAppointment = async (booking: AppointmentBooking): Promise<AppointmentBooking & { id: string }> => {
+  const response = await api.post('/appointments/book', booking);
+  return response.data;
+};
+
 export const getUserNotifications = async (userId: string): Promise<{ notifications: Notification[] }> => {
   const response = await enhancedApi.get(`/notifications/${userId}`);
   return response.data;

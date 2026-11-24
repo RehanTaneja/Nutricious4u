@@ -77,7 +77,7 @@ import Markdown from 'react-native-markdown-display';
 import { firestore } from './services/firebase';
 import { format, isToday, isYesterday } from 'date-fns';
 import { parseServerDate, formatServerDate, DIETICIAN_TIMEZONE, zonedParts, dieticianDateKey, dieticianWeekDates, dieticianSlotDate, formatDieticianDay, formatPhoneTime24, phoneDiffersFromDietician, localTimeSuffix } from './utils/time';
-import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, getSubscriptionStatusDirect, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount } from './services/api';
+import { uploadDietPdf, listNonDieticianUsers, refreshFreePlans, getAllUserProfiles, getUserDiet, extractDietNotifications, getDietNotifications, deleteDietNotification, updateDietNotification, scheduleDietNotifications, cancelDietNotifications, getSubscriptionPlans, selectSubscription, getSubscriptionStatus, getSubscriptionStatusDirect, addSubscriptionAmount, cancelSubscription, toggleAutoRenewal, cancelPlanSwitch, SubscriptionPlan, SubscriptionStatus, getUserNotifications, markNotificationRead, deleteNotification, Notification, getUserDetails, markUserPaid, lockUserApp, unlockUserApp, testUserExists, clearProfileCache, checkNewDietPopupTrigger, deleteUserAccount, bookAppointment } from './services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import { WebView } from 'react-native-webview';
 
@@ -9663,7 +9663,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bookedUserText: {
-    color: COLORS.placeholder,
+    color: '#1E293B', // same dark text as "Booked" (the cell itself is grey)
     fontSize: 8,
     marginTop: 2,
   },
@@ -11880,6 +11880,13 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  const confirmDeleteNotification = (notificationId: string) => {
+    Alert.alert('Delete notification?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => handleDeleteNotification(notificationId) },
+    ]);
+  };
+
   const formatNotificationTime = (timestamp: string) => {
     try {
       const date = parseServerDate(timestamp);
@@ -11972,7 +11979,7 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
                     
                     <TouchableOpacity
                       style={[styles.notificationActionButton, styles.deleteButton]}
-                      onPress={() => handleDeleteNotification(notification.id)}
+                      onPress={() => confirmDeleteNotification(notification.id)}
                     >
                       <Text style={[styles.notificationActionText, styles.deleteButtonText]}>Delete</Text>
                     </TouchableOpacity>
@@ -12309,49 +12316,11 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
         match: appointmentData.userId === auth.currentUser?.uid
       });
 
-      // Save appointment using atomic transaction
-      console.log('[Appointment Debug] Attempting to save appointment with atomic transaction:', appointmentData);
-      
+      // Book through the server: it checks the slot and the dietician's breaks and saves in one
+      // transaction, so only one person can get a slot
       try {
-        // Use atomic booking with server-side validation
-        // First check if slot is available
-        const appointmentDate = dieticianSlotDate(selectedDate, selectedTimeSlot);
-        
-        // Check for existing appointments at this time
-        const existingAppointmentsSnapshot = await firestore
-          .collection('appointments')
-          .where('date', '==', appointmentDate.toISOString())
-          .where('timeSlot', '==', selectedTimeSlot)
-          .get();
-        
-        if (!existingAppointmentsSnapshot.empty) {
-          throw new Error('Time slot is no longer available');
-        }
-        
-        // Check for breaks
-        const breaksSnapshot = await firestore.collection('breaks').get();
-        const dateString = dieticianDateKey(selectedDate);
-        
-        for (const doc of breaksSnapshot.docs) {
-          const breakData = doc.data();
-          const timeInRange = selectedTimeSlot >= breakData.fromTime && selectedTimeSlot <= breakData.toTime;
-          
-          if (timeInRange) {
-            if (!breakData.specificDate || breakData.specificDate === dateString) {
-              throw new Error('Time slot is during a break');
-            }
-          }
-        }
-        
-        // If we get here, slot is available - create appointment
-        console.log('[Appointment Debug] About to save to Firestore...');
-        console.log('[Appointment Debug] Collection path: appointments');
-        console.log('[Appointment Debug] Data to save:', JSON.stringify(appointmentData, null, 2));
-        
-        const appointmentRef = await firestore.collection('appointments').add(appointmentData);
-        const result = appointmentRef.id;
-        
-        console.log('[Appointment Debug] ✅ Appointment saved successfully with atomic transaction, ID:', result);
+        const result = (await bookAppointment(appointmentData)).id;
+        console.log('[Appointment Debug] ✅ Appointment booked, ID:', result);
         
         // Send push notification to dietician
         console.log('═══════════════════════════════════════════════════════════════');
@@ -12398,74 +12367,20 @@ const ScheduleAppointmentScreen = ({ navigation }: { navigation: any }) => {
       // Optionally, refresh appointments
         setAppointments([...appointments, { ...appointmentData, id: result }]);
       setSelectedTimeSlot(null);
-      } catch (firestoreError) {
-        console.error('[Appointment Debug] Firestore save failed:', firestoreError);
-        
-        // Fallback: Try to save via backend API
-        try {
-          console.log('[Appointment Debug] Attempting backend API fallback...');
-          const backendUrl = process.env.PRODUCTION_BACKEND_URL || 'https://nutricious4u-production.up.railway.app';
-          
-          // Try the appointments endpoint first
-          let response = await fetch(`${backendUrl}/api/appointments`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
-            },
-            body: JSON.stringify(appointmentData)
-          });
-          
-          if (!response.ok) {
-            // Try alternative endpoint
-            console.log('[Appointment Debug] First endpoint failed, trying alternative...');
-            response = await fetch(`${backendUrl}/api/users/${userId}/appointments`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
-              },
-              body: JSON.stringify(appointmentData)
-            });
-          }
-          
-          if (response.ok) {
-            const result = await response.json();
-            console.log('[Appointment Debug] ✅ Appointment saved via backend API:', result);
-            
-            setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}${localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))}`);
-            setShowSuccess(true);
-            setAppointments([...appointments, { ...appointmentData, id: result.id || Date.now().toString() }]);
-            setSelectedTimeSlot(null);
-          } else {
-            console.error('[Appointment Debug] Backend API failed with status:', response.status);
-            throw new Error(`Backend API failed: ${response.status}`);
-          }
-        } catch (apiError) {
-          console.error('[Appointment Debug] Both Firestore and API failed:', apiError);
-          
-          // Final fallback: Save locally and show success
-          console.log('[Appointment Debug] Using local fallback...');
-          const localAppointmentId = `local_${Date.now()}`;
-          const localAppointment = { ...appointmentData, id: localAppointmentId };
-          
-          // Save to AsyncStorage as backup
-          try {
-            const existingLocalAppointments = await AsyncStorage.getItem('localAppointments');
-            const localAppointments = existingLocalAppointments ? JSON.parse(existingLocalAppointments) : [];
-            localAppointments.push(localAppointment);
-            await AsyncStorage.setItem('localAppointments', JSON.stringify(localAppointments));
-            console.log('[Appointment Debug] ✅ Local appointment saved to AsyncStorage');
-          } catch (storageError) {
-            console.error('[Appointment Debug] Failed to save to AsyncStorage:', storageError);
-          }
-          
-          setSuccessMessage(`Your appointment has been scheduled for ${formatDate(selectedDate)} at ${selectedTimeSlot}${localTimeSuffix(dieticianSlotDate(selectedDate, selectedTimeSlot))} (saved locally)`);
-          setShowSuccess(true);
-          setAppointments([...appointments, localAppointment]);
+      } catch (bookingError: any) {
+        console.error('[Appointment Debug] Booking failed:', bookingError);
+        const reason = bookingError?.response?.data?.detail;
+        if (reason === 'slot_taken' || reason === 'slot_in_break') {
           setSelectedTimeSlot(null);
-          return; // Don't throw error, we've handled it locally
         }
+        Alert.alert(
+          'Appointment not booked',
+          reason === 'slot_taken'
+            ? 'That slot was just taken. Please pick another one.'
+            : reason === 'slot_in_break'
+              ? 'The dietician is on a break at that time. Please pick another slot.'
+              : "We couldn't reach the server, so your appointment was not booked. Please try again."
+        );
       }
     } catch (error) {
       console.error('[Appointment Debug] ❌ Error scheduling appointment:', error);
