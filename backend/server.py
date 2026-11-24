@@ -405,7 +405,7 @@ async def test_deployment():
 
 # Add a Firebase test endpoint
 @api_router.get("/test-firebase", dependencies=[Depends(require_dietician())])
-async def test_firebase():
+def test_firebase():
     """Test endpoint to verify Firebase connection"""
     try:
         check_firebase_availability()
@@ -2306,7 +2306,7 @@ async def get_user_diet(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to retrieve diet information. Please try again.")
 
 @api_router.get("/users/{user_id}/new-diet-popup-trigger", dependencies=[Depends(require_self_or_dietician("user_id"))])
-async def get_new_diet_popup_trigger(user_id: str):
+def get_new_diet_popup_trigger(user_id: str):
     """
     Check if new diet popup should be shown for the user.
     For existing users without the attribute, set it to True by default.
@@ -2357,7 +2357,7 @@ async def get_new_diet_popup_trigger(user_id: str):
         return {"showPopup": False, "reason": f"Error: {e}"}
 
 @api_router.get("/debug/user-token/{user_id}", dependencies=[Depends(require_dietician())])
-async def debug_user_token(user_id: str):
+def debug_user_token(user_id: str):
     """Debug endpoint to check user's notification token status"""
     print(f"[DEBUG ENDPOINT] ===== DEBUGGING USER TOKEN =====")
     print(f"[DEBUG ENDPOINT] User ID: {user_id}")
@@ -2599,7 +2599,7 @@ async def create_appointment(appointment: AppointmentRequest):
         raise HTTPException(status_code=500, detail="Failed to create appointment")
 
 @api_router.get("/appointments", response_model=List[AppointmentResponse], dependencies=[Depends(require_login())])
-async def get_appointments(user_id: Optional[str] = None):
+def get_appointments(user_id: Optional[str] = None):
     """Get all appointments or appointments for a specific user"""
     try:
         if user_id:
@@ -2621,7 +2621,7 @@ async def get_appointments(user_id: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Failed to fetch appointments")
 
 @api_router.delete("/appointments/{appointment_id}", dependencies=[Depends(require_doc_owner_or_dietician("appointments", "appointment_id"))])
-async def delete_appointment(appointment_id: str):
+def delete_appointment(appointment_id: str):
     """Delete an appointment"""
     try:
         doc_ref = firestore_db.collection("appointments").document(appointment_id)
@@ -2640,7 +2640,7 @@ async def delete_appointment(appointment_id: str):
         raise HTTPException(status_code=500, detail="Failed to delete appointment")
 
 @api_router.get("/breaks", response_model=List[dict], dependencies=[Depends(require_login())])
-async def get_breaks():
+def get_breaks():
     """Get all breaks"""
     try:
         docs = firestore_db.collection("breaks").stream()
@@ -2686,7 +2686,7 @@ async def create_break(break_request: BreakRequest):
 
 # --- Serve PDF from Firestore ---
 @api_router.get("/users/{user_id}/diet/pdf", dependencies=[Depends(require_self_or_dietician("user_id", allow_query_token=True))])
-async def get_user_diet_pdf(user_id: str, t: str = None):
+def get_user_diet_pdf(user_id: str, t: str = None):
     """
     Serves the PDF data from Firebase Storage for viewing.
     t: Cache busting parameter (timestamp)
@@ -2846,7 +2846,7 @@ async def refresh_free_plans():
         raise HTTPException(status_code=500, detail=f"Failed to refresh free plans: {e}")
 
 @api_router.get("/users/all-profiles", dependencies=[Depends(require_dietician())])
-async def get_all_user_profiles():
+def get_all_user_profiles():
     """
     Returns a list of all user profiles (including dieticians) for the messages screen.
     This endpoint is used by the dietician messages screen to show all users.
@@ -2995,7 +2995,7 @@ async def extract_diet_notifications(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to extract diet notifications: {str(e)}")
 
 @api_router.get("/users/{user_id}/diet/notifications", dependencies=[Depends(require_self_or_dietician("user_id"))])
-async def get_diet_notifications(user_id: str):
+def get_diet_notifications(user_id: str):
     """
     Get all diet notifications for a user.
     """
@@ -3020,7 +3020,7 @@ async def get_diet_notifications(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get diet notifications: {e}")
 
 @api_router.get("/users/{user_id}/diet/raw-text", dependencies=[Depends(require_self_or_dietician("user_id"))])
-async def get_diet_raw_text(user_id: str):
+def get_diet_raw_text(user_id: str):
     """
     Get raw extracted text from diet PDF for debugging.
     """
@@ -3050,7 +3050,7 @@ async def get_diet_raw_text(user_id: str):
 
 
 @api_router.post("/users/{user_id}/diet/notifications/test", dependencies=[Depends(require_self_or_dietician("user_id"))])
-async def test_diet_notification(user_id: str):
+def test_diet_notification(user_id: str):
     """
     Send a test notification to verify the user's notification setup.
     """
@@ -3164,7 +3164,7 @@ async def send_notification(request: dict, http_request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to send notification: {e}")
 
 @api_router.get("/notifications/test/{user_id}", dependencies=[Depends(require_dietician())])
-async def test_notification(user_id: str):
+def test_notification(user_id: str):
     """
     Test endpoint to verify notification system is working.
     """
@@ -3273,7 +3273,7 @@ async def send_push_notification_new(request: dict, http_request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/notifications/debug/token/{user_id}", dependencies=[Depends(require_dietician())])
-async def debug_token_status(user_id: str):
+def debug_token_status(user_id: str):
     """
     Debug endpoint to check token status for a user or dietician.
     Use 'dietician' as user_id to check dietician token.
@@ -3477,7 +3477,7 @@ async def delete_diet_notification(user_id: str, notification_id: str):
 
 # Add a health check endpoint at root level
 @app.get("/health")
-async def health_check():
+def health_check():
     logger.info("[HEALTH_CHECK] Health check endpoint called")
     try:
         # Basic health check
@@ -5163,7 +5163,7 @@ async def cancel_plan_switch(userId: str):
         raise HTTPException(status_code=500, detail="Failed to cancel plan switch")
 
 @api_router.post("/subscription/toggle-auto-renewal/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
-async def toggle_auto_renewal(userId: str, enabled: bool = True):
+def toggle_auto_renewal(userId: str, enabled: bool = True):
     """Toggle auto-renewal setting for a user"""
     try:
         check_firebase_availability()
@@ -5187,7 +5187,7 @@ async def toggle_auto_renewal(userId: str, enabled: bool = True):
         raise HTTPException(status_code=500, detail="Failed to toggle auto-renewal")
 
 @api_router.post("/subscription/reset/{userId}", dependencies=[Depends(require_dietician())])
-async def reset_subscription(userId: str):
+def reset_subscription(userId: str):
     """Reset subscription data for a user (for testing purposes)"""
     try:
         check_firebase_availability()
@@ -5747,7 +5747,7 @@ async def activate_free_trial(userId: str):
         raise HTTPException(status_code=500, detail="Failed to activate free trial")
 
 @api_router.get("/subscription/trial-status/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
-async def get_trial_status(userId: str):
+def get_trial_status(userId: str):
     """Get free trial status for a user"""
     try:
         check_firebase_availability()
@@ -5905,7 +5905,7 @@ async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start
         return False
 
 @api_router.get("/notifications/{userId}", dependencies=[Depends(require_self_or_dietician("userId"))])
-async def get_user_notifications(userId: str):
+def get_user_notifications(userId: str):
     """Get notifications for a user"""
     try:
         check_firebase_availability()
@@ -5933,7 +5933,7 @@ async def get_user_notifications(userId: str):
         raise HTTPException(status_code=500, detail="Failed to get notifications")
 
 @api_router.put("/notifications/{notificationId}/read", dependencies=[Depends(require_doc_owner_or_dietician("notifications", "notificationId"))])
-async def mark_notification_read(notificationId: str):
+def mark_notification_read(notificationId: str):
     """Mark a notification as read"""
     try:
         check_firebase_availability()
@@ -5949,7 +5949,7 @@ async def mark_notification_read(notificationId: str):
         raise HTTPException(status_code=500, detail="Failed to mark notification as read")
 
 @api_router.delete("/notifications/{notificationId}", dependencies=[Depends(require_doc_owner_or_dietician("notifications", "notificationId"))])
-async def delete_notification(notificationId: str):
+def delete_notification(notificationId: str):
     """Delete a notification"""
     try:
         check_firebase_availability()
@@ -6048,6 +6048,22 @@ def _claim_background_jobs():
 
 threading.Thread(target=_claim_background_jobs, daemon=True, name="jobs-lock").start()
 
+
+# A worker that has been idle for a few minutes loses its Firestore connection, and its next
+# read takes over 2 s. Every worker does one small read at startup and then every 60 s to
+# keep its own connection open (the document does not need to exist).
+def _keep_firestore_warm():
+    while True:
+        try:
+            firestore_db.collection("server_status").document("keepalive").get(retry=None, timeout=30)
+        except Exception as e:
+            logger.warning(f"[KEEPALIVE] Firestore read failed: {e}")
+        time.sleep(60)
+
+
+if FIREBASE_AVAILABLE and firestore_db is not None:
+    threading.Thread(target=_keep_firestore_warm, daemon=True, name="firestore-keepalive").start()
+
 # DISABLED: Backend notification scheduler to prevent conflicts with local scheduling
 # notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
 # notification_scheduler_thread.start()
@@ -6056,7 +6072,7 @@ print("🔕 Backend notification scheduler DISABLED - using local scheduling onl
 # Include the router in the main app (after all endpoints are defined)
 # Add new endpoints for dietician user management
 @api_router.get("/users/{user_id}/details", dependencies=[Depends(require_dietician())])
-async def get_user_details(user_id: str):
+def get_user_details(user_id: str):
     """Get detailed user information for dietician view"""
     try:
         logger.info(f"[GET USER DETAILS] Request for user_id: {user_id}")
@@ -6113,7 +6129,7 @@ async def get_user_details(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to get user details")
 
 @api_router.post("/users/{user_id}/mark-paid", dependencies=[Depends(require_dietician())])
-async def mark_user_paid(user_id: str):
+def mark_user_paid(user_id: str):
     """Mark user's amount as paid (set totalAmountPaid to 0)"""
     try:
         check_firebase_availability()
@@ -6141,7 +6157,7 @@ async def mark_user_paid(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to mark user as paid")
 
 @api_router.post("/users/{user_id}/lock-app", dependencies=[Depends(require_dietician())])
-async def lock_user_app(user_id: str):
+def lock_user_app(user_id: str):
     """Lock user's app"""
     try:
         check_firebase_availability()
@@ -6169,7 +6185,7 @@ async def lock_user_app(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to lock user app")
 
 @api_router.post("/users/{user_id}/unlock-app", dependencies=[Depends(require_dietician())])
-async def unlock_user_app(user_id: str):
+def unlock_user_app(user_id: str):
     """Unlock user's app"""
     try:
         check_firebase_availability()
@@ -6198,7 +6214,7 @@ async def unlock_user_app(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to unlock user app")
 
 @api_router.get("/users/{user_id}/lock-status", dependencies=[Depends(require_self_or_dietician("user_id"))])
-async def get_user_lock_status(user_id: str):
+def get_user_lock_status(user_id: str):
     """Get user's app lock status"""
     try:
         check_firebase_availability()
@@ -6224,7 +6240,7 @@ async def get_user_lock_status(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to get user lock status")
 
 @api_router.get("/users/{user_id}/test", dependencies=[Depends(require_dietician())])
-async def test_user_exists(user_id: str):
+def test_user_exists(user_id: str):
     """Test endpoint to check if user exists in Firestore"""
     try:
         logger.info(f"[TEST USER] Checking if user {user_id} exists")
@@ -6261,7 +6277,7 @@ async def test_user_exists(user_id: str):
 
 # Add a comprehensive test endpoint for iOS connection and diet functionality
 @api_router.get("/test-ios-diet", dependencies=[Depends(require_dietician())])
-async def test_ios_diet_functionality():
+def test_ios_diet_functionality():
     """Test endpoint for iOS diet functionality"""
     try:
         # Test Firebase connection
