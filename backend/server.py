@@ -546,6 +546,24 @@ def get_profile_data(user_id):
         return {}
 
 
+def user_end_phrase(end_str, user_data):
+    """("Today"|"Tomorrow", "today at 10:20 AM"|"tomorrow at 10:20 AM") for an end time on the
+    user's own calendar, or None when their zone is unknown or the end isn't today/tomorrow."""
+    try:
+        end = datetime.fromisoformat(end_str) if isinstance(end_str, str) else None
+    except ValueError:
+        end = None
+    end_local, now_local = to_user_local(end, user_data), user_local_now(user_data)
+    if end_local is None or now_local is None:
+        return None
+    days = (end_local.date() - now_local.date()).days
+    if days not in (0, 1):
+        return None
+    clock = end_local.strftime("%I:%M %p").lstrip("0")
+    word = "Today" if days == 0 else "Tomorrow"
+    return word, f"{word.lower()} at {clock}"
+
+
 def in_quiet_hours(user_data, now=None):
     """True while it is night for the user. Never true when their zone is unknown."""
     local = to_user_local(now or utc_now(), user_data)
@@ -4048,6 +4066,12 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         elif time_remaining == 1:
             message = f"Hi {user_name}, your {plan_name} consultation period will end in 1 day. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new consultation period to continue."
             title = "Consultation Period Ending Tomorrow"
+            # Users whose app saved a timezone get the exact end on their calendar
+            # (a reminder held overnight can arrive on the end day itself)
+            phrase = user_end_phrase(user_data.get("subscriptionEndDate"), user_data)
+            if phrase:
+                message = f"Hi {user_name}, your {plan_name} consultation period ends {phrase[1]}. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due. If auto-renewal is off, you'll need to select a new consultation period to continue."
+                title = f"Consultation Period Ending {phrase[0]}"
         else:
             message = f"Hi {user_name}, your {plan_name} consultation period will end in {time_remaining} days. Consultation fee of ₹{current_amount:,.0f} will be added to your total amount due."
             title = "Consultation Period Ending Soon"
@@ -4098,6 +4122,11 @@ async def send_trial_reminder_notification(user_id: str, user_data: dict, time_r
         elif time_remaining == 1:
             message = f"Hi {user_name}, your free trial ends in 1 day! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
             title = "Trial Ending Tomorrow"
+            # Users whose app saved a timezone get the exact end on their calendar
+            phrase = user_end_phrase(user_data.get("freeTrialEndDate"), user_data)
+            if phrase:
+                message = f"Hi {user_name}, your free trial ends {phrase[1]}! Select a plan now to keep enjoying premium features like personalized diets, AI chatbot, and custom notifications."
+                title = f"Trial Ending {phrase[0]}"
         else:
             message = f"Hi {user_name}, your free trial ends in {time_remaining} days! Select a plan now to keep enjoying premium features."
             title = "Trial Ending Soon"
@@ -5976,14 +6005,48 @@ def run_notification_scheduler():
         # Wait for 1 minute
         time.sleep(60)
 
-# Start the scheduled job threads
-# Subscription reminders run every 6 hours to check for 1 week and 1 day reminders
-scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
-scheduler_thread.start()
+def start_background_jobs():
+    """Start the scheduled job threads (subscription reminders and diet countdown, each every 6 hours)."""
+    # Subscription reminders run every 6 hours to check for 1 week and 1 day reminders
+    scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
+    scheduler_thread.start()
+    # Diet countdown job runs separately every 6 hours
+    diet_countdown_thread = threading.Thread(target=run_diet_countdown_job, daemon=True)
+    diet_countdown_thread.start()
 
-# Diet countdown job runs separately every 6 hours
-diet_countdown_thread = threading.Thread(target=run_diet_countdown_job, daemon=True)
-diet_countdown_thread.start()
+
+# The server runs several worker processes, and each imports this module. The scheduled
+# jobs must run in only one of them (otherwise notices are sent once per worker), so each
+# worker competes for an OS file lock and only the holder starts the jobs. The lock is
+# released when that process exits, and the other workers keep trying, so another worker
+# takes over the jobs if it dies.
+import fcntl
+import tempfile
+
+_JOBS_LOCK_PATH = os.environ.get("JOBS_LOCK_PATH") or os.path.join(tempfile.gettempdir(), "nutricious4u-background-jobs.lock")
+_jobs_lock_file = None  # kept open for the life of the process (closing it releases the lock)
+
+
+def _claim_background_jobs():
+    global _jobs_lock_file
+    while True:
+        try:
+            fh = open(_JOBS_LOCK_PATH, "a")
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                fh.close()  # another worker runs the jobs
+            else:
+                _jobs_lock_file = fh
+                logger.info(f"[JOBS] Worker pid {os.getpid()} runs the scheduled jobs")
+                start_background_jobs()
+                return
+        except Exception as e:
+            logger.error(f"[JOBS] Could not claim scheduled jobs: {e}")
+        time.sleep(60)
+
+
+threading.Thread(target=_claim_background_jobs, daemon=True, name="jobs-lock").start()
 
 # DISABLED: Backend notification scheduler to prevent conflicts with local scheduling
 # notification_scheduler_thread = threading.Thread(target=run_notification_scheduler, daemon=True)
