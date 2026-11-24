@@ -901,62 +901,17 @@ const LoginSignupScreen = () => {
         return;
       }
       
-      // If login fails for dietician, try to create the account
-      if (
-        email.trim().toLowerCase() === 'nutricious4u@gmail.com' &&
-        password === 'Ekta1978' &&
-        (error.code === 'auth/user-not-found' || error.message?.toLowerCase().includes('no user record'))
-      ) {
-        try {
-          console.log('[Login] Creating dietician account...');
-          // Create the dietician account
-          const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-          const user = userCredential.user;
-          if (user) {
-            // Create user profile for dietician
-            await createUserProfile({
-              id: user.uid,
-              userId: user.uid, // For backward compatibility
-              firstName: 'Ekta',
-              lastName: 'Taneja',
-              age: 45,
-              gender: 'female',
-              email,
-              currentWeight: 70,
-              goalWeight: 70,
-              height: 170,
-              dietaryPreference: 'vegetarian',
-              favouriteCuisine: '',
-              allergies: '',
-              medicalConditions: '',
-              targetCalories: 2000,
-              targetProtein: 150,
-              targetFat: 65,
-              activityLevel: 'moderate',
-    
-              caloriesBurnedGoal: 500
-            });
-          }
-          // Retry login
-          await auth.signInWithEmailAndPassword(email, password);
-          setError(null);
-        } catch (createErr: any) {
-          console.log('[Login] Error creating dietician account:', createErr);
-          setError('Failed to create dietician account: ' + (createErr.message || 'Unknown error'));
-        }
+      // Provide more specific error messages for iOS
+      if (error.code === 'auth/invalid-email') {
+        setError('Invalid email address. Please check your email format.');
+      } else if (error.code === 'auth/user-not-found') {
+        setError('No account found with this email. Please check your email or sign up.');
+      } else if (error.code === 'auth/wrong-password') {
+        setError('Incorrect password. Please try again.');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Please try again later.');
       } else {
-        // Provide more specific error messages for iOS
-        if (error.code === 'auth/invalid-email') {
-          setError('Invalid email address. Please check your email format.');
-        } else if (error.code === 'auth/user-not-found') {
-          setError('No account found with this email. Please check your email or sign up.');
-        } else if (error.code === 'auth/wrong-password') {
-          setError('Incorrect password. Please try again.');
-        } else if (error.code === 'auth/too-many-requests') {
-          setError('Too many failed attempts. Please try again later.');
-        } else {
-          setError('Login failed. Please check your credentials and try again.');
-        }
+        setError('Login failed. Please check your credentials and try again.');
       }
     } finally {
       setLoadingLogin(false);

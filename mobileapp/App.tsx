@@ -585,10 +585,8 @@ function AppContent() {
       setIsAppLocked(lockStatus.isAppLocked);
       setAmountDue(lockStatus.amountDue);
       
-      // Show lock modal if app is locked
-      if (lockStatus.isAppLocked) {
-        setShowLockModal(true);
-      }
+      // Show the lock modal while the app is locked; hide it once the dietician unlocks
+      setShowLockModal(!!lockStatus.isAppLocked);
     } catch (error: any) {
       console.error('[App Lock] Error checking lock status:', error);
       
