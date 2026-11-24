@@ -13171,11 +13171,17 @@ const DieticianDashboardScreen = ({ navigation }: { navigation: any }) => {
         // Delete appointment
         await firestore.collection('appointments').doc(appt.id).delete();
         
-        // Add notification for user
+        // Add notification for user (same shape as the server's notices: naive-UTC timestamp, title, body, type)
+        const cancelText = `Your appointment at ${timeSlot} on ${formatDate(date)} was cancelled due to a break.`;
+        const nowIso = new Date().toISOString();
         await firestore.collection('notifications').add({
           userId: appt.userId,
-          message: `Your appointment at ${timeSlot} on ${formatDate(date)} was cancelled due to a break.`,
-          createdAt: new Date().toISOString(),
+          title: 'Appointment cancelled',
+          body: cancelText,
+          message: cancelText, // kept for older app versions that read `message`
+          type: 'appointment_cancelled_break',
+          timestamp: nowIso.replace('Z', ''),
+          createdAt: nowIso,
           read: false,
         });
         
