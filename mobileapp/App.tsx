@@ -570,12 +570,13 @@ function AppContent() {
   };
 
   // App lock check function
-  const checkAppLockStatus = async () => {
-    if (!user?.uid || isDietician) return; // Don't check for dieticians
+  // The login sequence passes the uid: it runs in a callback from the first render, which has no user yet
+  const checkAppLockStatus = async (uid: string | undefined = user?.uid) => {
+    if (!uid || isDietician) return; // Don't check for dieticians
     
     try {
       // Add timeout to prevent hanging
-      const lockPromise = getUserLockStatus(user.uid);
+      const lockPromise = getUserLockStatus(uid);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('App lock check timeout')), 12000) // Increased timeout
       );
@@ -958,13 +959,11 @@ function AppContent() {
                   // For regular users, check if they have a profile
                   let profile = null;
                   try {
-                    // Add delay before profile check to prevent conflicts
-                    await new Promise(resolve => setTimeout(resolve, 1000));
                     await waitForSignupProfilePendingClear(firebaseUser.uid);
                     
                     // Add EAS build-specific error handling
                     try {
-                      profile = await getUserProfileSafe(firebaseUser.uid);
+                      profile = await getUserProfileSafe(firebaseUser.uid, { duringLogin: true });
                       if (profile) savePhoneTimezone(firebaseUser.uid);
                       // Check if profile has complete data (not just firstName)
                       // Profile is complete if it has currentWeight, goalWeight, height, dietaryPreference, activityLevel
@@ -1035,9 +1034,6 @@ function AppContent() {
                   // Check subscription status for non-dietician users - SEQUENTIAL to prevent 499 errors
                   if (!isDieticianAccount && profile) {
                     try {
-                      // Add longer delay between API calls to prevent connection conflicts
-                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
-                      
                       // Log queue status before making requests
                       const queueStatus = getQueueStatus();
                       console.log('[Queue Status] Before subscription check:', queueStatus);
@@ -1075,9 +1071,6 @@ function AppContent() {
                         await checkAndShowMandatoryPopups(subscriptionStatus);
                       }
                       
-                      // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
-                      
                       // Check and reset daily data (with error handling)
                       try {
                         await checkAndResetDailyData();
@@ -1085,13 +1078,10 @@ function AppContent() {
                         console.log('[Daily Reset] Error during login sequence, continuing:', dailyResetError);
                       }
                       
-                      // Add longer delay before next API call
-                      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
-                      
-                      // Check app lock status (with error handling)
+                      // Check app lock status before the dashboard shows (with error handling)
                       try {
                         console.log('[LOGIN SEQUENCE] Starting app lock status check...');
-                        await checkAppLockStatus();
+                        await checkAppLockStatus(firebaseUser.uid);
                         console.log('[LOGIN SEQUENCE] ✅ App lock status check completed successfully');
                       } catch (lockError) {
                         console.log('[LOGIN SEQUENCE] ❌ App lock status check failed:', lockError);
@@ -1106,7 +1096,7 @@ function AppContent() {
                       
                       // Log to backend for EAS builds
                       try {
-                        await logFrontendEvent(firebaseUser.uid, 'LOGIN_SEQUENCE_COMPLETED', {
+                        logFrontendEvent(firebaseUser.uid, 'LOGIN_SEQUENCE_COMPLETED', {
                           isDietician: isDieticianAccount,
                           hasProfile: !!profile,
                           subscriptionActive: hasActiveSubscription

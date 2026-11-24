@@ -830,15 +830,16 @@ const isSignupProfilePending = async (userId: string): Promise<boolean> => {
   }
 };
 
-// Enhanced getUserProfile that respects login state
-export const getUserProfileSafe = async (userId: string): Promise<UserProfile> => {
+// Enhanced getUserProfile that respects login state. The login sequence itself passes
+// duringLogin, otherwise it would wait for its own login flag until the time limit.
+export const getUserProfileSafe = async (userId: string, { duringLogin = false }: { duringLogin?: boolean } = {}): Promise<UserProfile> => {
   const start = Date.now();
   const maxWaitMs = 12000;
 
   // Wait while signup profile creation is pending and/or login bootstrap is active.
   while (Date.now() - start < maxWaitMs) {
     const [loginBusy, signupPending, globalSignupBusy] = await Promise.all([
-      Promise.resolve(isLoginInProgress()),
+      Promise.resolve(!duringLogin && isLoginInProgress()),
       isSignupProfilePending(userId),
       Promise.resolve(isGlobalSignupInProgress()),
     ]);
