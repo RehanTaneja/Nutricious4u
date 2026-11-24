@@ -73,6 +73,7 @@ from services.auth_guard import (
     get_caller, caller_is_dietician, strip_protected_fields,
 )
 auth_guard.configure(lambda: firestore_db)
+from google.api_core.exceptions import Aborted, AlreadyExists, FailedPrecondition
 from fastapi.responses import JSONResponse
 
 # Helper function to check Firebase availability
@@ -358,12 +359,14 @@ async def ios_connection_middleware(request, call_next):
         # Add timeout handling for long-running requests
         import asyncio
         try:
-            # Account deletion needs more time (90 seconds), other requests 30 seconds
-            timeout = 90.0 if request.url.path.endswith("/account") and request.method == "DELETE" else 30.0
+            # Account deletion and reading a diet PDF need more time (90 seconds), other requests 30 seconds
+            path = request.url.path
+            needs_more_time = (path.endswith("/account") and request.method == "DELETE") or (request.method == "POST" and (
+                path.endswith("/diet/upload") or path.endswith("/diet/notifications/extract") or "/subscription/activate-trial/" in path))
+            timeout = 90.0 if needs_more_time else 30.0
             response = await asyncio.wait_for(call_next(request), timeout=timeout)
         except asyncio.TimeoutError:
-            timeout_duration = 90.0 if request.url.path.endswith("/account") and request.method == "DELETE" else 30.0
-            logger.error(f"[TIMEOUT] {request.method} {request.url.path} - Request timed out after {timeout_duration} seconds")
+            logger.error(f"[TIMEOUT] {request.method} {request.url.path} - Request timed out after {timeout} seconds")
             return JSONResponse(
                 status_code=408,
                 content={"detail": "Request timeout. Please try again."}
@@ -757,24 +760,7 @@ async def log_food_item(request: FoodLogRequest):
         
         # Check if daily reset is needed
         try:
-            user_doc = firestore_db.collection("user_profiles").document(user_id).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                last_food_log_date = user_data.get("lastFoodLogDate")
-                # Use user's timezone for daily reset if available
-                if request.timezoneOffset is not None:
-                    utc_time = datetime.utcnow()
-                    user_local_time = utc_time - timedelta(minutes=request.timezoneOffset)
-                    today = user_local_time.strftime('%Y-%m-%d')
-                    logger.info(f"[FOOD LOG] Using user's local date for daily reset: UTC {utc_time} - {request.timezoneOffset}min = {user_local_time} -> {today}")
-                else:
-                    today = datetime.now().strftime('%Y-%m-%d')
-                    logger.info(f"[FOOD LOG] Using server date for daily reset: {today}")
-                
-                if last_food_log_date != today:
-                    logger.info(f"[FOOD LOG] Daily reset needed for user {user_id}. Last: {last_food_log_date}, Today: {today}")
-                    # Reset daily data
-                    await _reset_daily_data(user_id, request.timezoneOffset)
+            await asyncio.to_thread(_reset_if_new_day, user_id, request.timezoneOffset)
         except Exception as reset_error:
             logger.warning(f"[FOOD LOG] Error checking daily reset: {reset_error}")
             # Continue with food logging even if reset fails
@@ -888,13 +874,12 @@ async def get_food_log_summary(user_id: str):
         
         # Use datetime object for query, not isoformat string
         query = logs_ref.where("timestamp", ">=", start_of_week)
-        docs_stream = query.stream()
+        docs_stream = await asyncio.to_thread(lambda: list(query.stream()))
         
         history = {}
         all_logs = []
         
-        logger.info(f"[SUMMARY TRACE] 🔍 Processing {len(list(docs_stream))} documents...")
-        docs_stream = query.stream()  # Re-create stream since we consumed it
+        logger.info(f"[SUMMARY TRACE] 🔍 Processing {len(docs_stream)} documents...")
         
         for doc_index, doc in enumerate(docs_stream):
             log = doc.to_dict()
@@ -1665,7 +1650,8 @@ async def chatbot_message(request: ChatMessageRequest):
         diet_pdf_url = profile.get("dietPdfUrl") if profile else None
         if diet_pdf_url:
             try:
-                system_prompt = pdf_rag_service.enhance_chatbot_prompt(
+                system_prompt = await asyncio.to_thread(
+                    pdf_rag_service.enhance_chatbot_prompt,
                     request.userId, 
                     diet_pdf_url, 
                     firestore_db, 
@@ -1909,46 +1895,48 @@ async def log_routine(user_id: str, routine_id: str):
         workout_items = [item for item in items if item.type == 'workout']
         n_food = len(food_items) if len(food_items) > 0 else 1
         n_workout = len(workout_items) if len(workout_items) > 0 else 1
-        # Log food
-        for item in food_items:
-            food_log = {
-                "userId": user_id,
-                "food": {
-                    "name": item.name,
-                    "calories": float(routine_obj.calories) / n_food,
-                    "protein": float(routine_obj.protein) / n_food,
-                    "fat": float(routine_obj.fat) / n_food,
-                    "per_100g": True
-                },
-                "servingSize": item.quantity or "100",
-                "timestamp": food_time
-            }
-            firestore_db.collection(f"users/{user_id}/food_logs").add(food_log)
-        # Log workout
-        for item in workout_items:
-            workout_log = {
-                "userId": user_id,
-                "exerciseId": "routine",
-                "exerciseName": item.name,
-                "type": "routine",
-                "duration": item.quantity or "30",
-                "sets": None,
-                "reps": None,
-                "date": now.isoformat(),
-                "calories": float(routine_obj.burned) / n_workout
-            }
-            firestore_db.collection("workout_logs").add(workout_log)
-        # Delete food logs older than 7 days
-        seven_days_ago = now - timedelta(days=7)
-        food_logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
-        old_food_logs = list(food_logs_ref.where("timestamp", "<", seven_days_ago).stream())
-        for doc in old_food_logs:
-            doc.reference.delete()
-        # Delete workout logs older than 7 days
-        workout_logs_ref = firestore_db.collection("workout_logs")
-        old_workout_logs = list(workout_logs_ref.where("userId", "==", user_id).where("date", "<", (now - timedelta(days=7)).isoformat()).stream())
-        for doc in old_workout_logs:
-            doc.reference.delete()
+        def write_logs():
+            # Log food
+            for item in food_items:
+                food_log = {
+                    "userId": user_id,
+                    "food": {
+                        "name": item.name,
+                        "calories": float(routine_obj.calories) / n_food,
+                        "protein": float(routine_obj.protein) / n_food,
+                        "fat": float(routine_obj.fat) / n_food,
+                        "per_100g": True
+                    },
+                    "servingSize": item.quantity or "100",
+                    "timestamp": food_time
+                }
+                firestore_db.collection(f"users/{user_id}/food_logs").add(food_log)
+            # Log workout
+            for item in workout_items:
+                workout_log = {
+                    "userId": user_id,
+                    "exerciseId": "routine",
+                    "exerciseName": item.name,
+                    "type": "routine",
+                    "duration": item.quantity or "30",
+                    "sets": None,
+                    "reps": None,
+                    "date": now.isoformat(),
+                    "calories": float(routine_obj.burned) / n_workout
+                }
+                firestore_db.collection("workout_logs").add(workout_log)
+            # Delete food logs older than 7 days
+            seven_days_ago = now - timedelta(days=7)
+            food_logs_ref = firestore_db.collection(f"users/{user_id}/food_logs")
+            old_food_logs = list(food_logs_ref.where("timestamp", "<", seven_days_ago).stream())
+            for doc in old_food_logs:
+                doc.reference.delete()
+            # Delete workout logs older than 7 days
+            workout_logs_ref = firestore_db.collection("workout_logs")
+            old_workout_logs = list(workout_logs_ref.where("userId", "==", user_id).where("date", "<", (now - timedelta(days=7)).isoformat()).stream())
+            for doc in old_workout_logs:
+                doc.reference.delete()
+        await asyncio.to_thread(write_logs)
         return {"success": True}
     except Exception as e:
         logger.error(f"Error logging routine: {e}")
@@ -2046,162 +2034,166 @@ async def upload_user_diet_pdf(user_id: str, file: UploadFile = File(...), dieti
             print(f"ERROR updating Firestore: {firestore_error}")
             raise firestore_error
         
-        # Extract notifications from the new diet PDF but DON'T automatically schedule
-        try:
-            print(f"Starting notification extraction from new diet PDF: {file.filename}")
-            notifications = diet_notification_service.extract_and_create_notifications(
-                user_id, file.filename, firestore_db
-            )
+        async def finish_upload():
+            # Extract notifications from the new diet PDF but DON'T automatically schedule
+            try:
+                print(f"Starting notification extraction from new diet PDF: {file.filename}")
+                notifications = await asyncio.to_thread(
+                    diet_notification_service.extract_and_create_notifications,
+                    user_id, file.filename, firestore_db
+                )
             
-            if notifications:
-                # Store notifications in Firestore with the new PDF URL
-                user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
-                try:
-                    await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
-                        "diet_notifications": notifications,
-                        "extracted_at": datetime.now().isoformat(),
-                        "diet_pdf_url": file.filename,  # Use the new PDF filename
-                    }, merge=True))
-                    logger.info(f"[DIET UPLOAD] Successfully stored notifications in Firestore for user {user_id}")
-                except RuntimeError as e:
-                    if "cannot schedule new futures after shutdown" in str(e):
-                        logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call")
-                        # Use direct Firestore call as fallback
-                        user_notifications_ref.set({
+                if notifications:
+                    # Store notifications in Firestore with the new PDF URL
+                    user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+                    try:
+                        await loop.run_in_executor(executor, lambda: user_notifications_ref.set({
                             "diet_notifications": notifications,
                             "extracted_at": datetime.now().isoformat(),
-                            "diet_pdf_url": file.filename,
-                        }, merge=True)
-                        logger.info(f"[DIET UPLOAD] Successfully stored notifications using direct Firestore call for user {user_id}")
-                    else:
-                        raise
-                
-                # Set new_diet_received flag in user profile for popup trigger
-                logger.info(f"[DIET UPLOAD] Setting new_diet_received=True for user {user_id}")
-                try:
-                    user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
-                    logger.info(f"[DIET UPLOAD] Created Firestore reference for user {user_id}")
-                    
-                    # Test if document exists first
-                    try:
-                        doc_exists = await loop.run_in_executor(executor, lambda: user_profile_ref.get().exists)
-                        logger.info(f"[DIET UPLOAD] Document exists check: {doc_exists}")
+                            "diet_pdf_url": file.filename,  # Use the new PDF filename
+                        }, merge=True))
+                        logger.info(f"[DIET UPLOAD] Successfully stored notifications in Firestore for user {user_id}")
                     except RuntimeError as e:
                         if "cannot schedule new futures after shutdown" in str(e):
-                            logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for flag setting")
+                            logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call")
                             # Use direct Firestore call as fallback
-                            doc_exists = user_profile_ref.get().exists
-                            logger.info(f"[DIET UPLOAD] Document exists check (direct): {doc_exists}")
+                            user_notifications_ref.set({
+                                "diet_notifications": notifications,
+                                "extracted_at": datetime.now().isoformat(),
+                                "diet_pdf_url": file.filename,
+                            }, merge=True)
+                            logger.info(f"[DIET UPLOAD] Successfully stored notifications using direct Firestore call for user {user_id}")
                         else:
                             raise
-                    
-                    if not doc_exists:
-                        logger.error(f"[DIET UPLOAD] Document {user_id} does not exist in user_profiles collection!")
-                        # Create the document with the flag
-                        try:
-                            await loop.run_in_executor(executor, lambda: user_profile_ref.set({
-                                "new_diet_received": True
-                            }, merge=True))
-                            logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True for user {user_id}")
-                        except RuntimeError as e:
-                            if "cannot schedule new futures after shutdown" in str(e):
-                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document creation")
-                                user_profile_ref.set({
-                                    "new_diet_received": True
-                                }, merge=True)
-                                logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True using direct call for user {user_id}")
-                            else:
-                                raise
-                    else:
-                        # Update existing document
-                        try:
-                            await loop.run_in_executor(executor, lambda: user_profile_ref.update({
-                                "new_diet_received": True
-                            }))
-                            logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True for user {user_id}")
-                        except RuntimeError as e:
-                            if "cannot schedule new futures after shutdown" in str(e):
-                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document update")
-                                user_profile_ref.update({
-                                    "new_diet_received": True
-                                })
-                                logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True using direct call for user {user_id}")
-                            else:
-                                raise
-                    
-                    # Verify the update
+                
+                    # Set new_diet_received flag in user profile for popup trigger
+                    logger.info(f"[DIET UPLOAD] Setting new_diet_received=True for user {user_id}")
                     try:
-                        updated_doc = await loop.run_in_executor(executor, lambda: user_profile_ref.get())
-                        if updated_doc.exists:
-                            updated_data = updated_doc.to_dict()
-                            flag_value = updated_data.get("new_diet_received")
-                            logger.info(f"[DIET UPLOAD] Verification: new_diet_received={flag_value}")
+                        user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
+                        logger.info(f"[DIET UPLOAD] Created Firestore reference for user {user_id}")
+                    
+                        # Test if document exists first
+                        try:
+                            doc_exists = await loop.run_in_executor(executor, lambda: user_profile_ref.get().exists)
+                            logger.info(f"[DIET UPLOAD] Document exists check: {doc_exists}")
+                        except RuntimeError as e:
+                            if "cannot schedule new futures after shutdown" in str(e):
+                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for flag setting")
+                                # Use direct Firestore call as fallback
+                                doc_exists = user_profile_ref.get().exists
+                                logger.info(f"[DIET UPLOAD] Document exists check (direct): {doc_exists}")
+                            else:
+                                raise
+                    
+                        if not doc_exists:
+                            logger.error(f"[DIET UPLOAD] Document {user_id} does not exist in user_profiles collection!")
+                            # Create the document with the flag
+                            try:
+                                await loop.run_in_executor(executor, lambda: user_profile_ref.set({
+                                    "new_diet_received": True
+                                }, merge=True))
+                                logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True for user {user_id}")
+                            except RuntimeError as e:
+                                if "cannot schedule new futures after shutdown" in str(e):
+                                    logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document creation")
+                                    user_profile_ref.set({
+                                        "new_diet_received": True
+                                    }, merge=True)
+                                    logger.info(f"[DIET UPLOAD] Created document with new_diet_received=True using direct call for user {user_id}")
+                                else:
+                                    raise
                         else:
-                            logger.error(f"[DIET UPLOAD] Verification failed: document does not exist after update")
-                    except RuntimeError as e:
-                        if "cannot schedule new futures after shutdown" in str(e):
-                            logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for verification")
-                            updated_doc = user_profile_ref.get()
+                            # Update existing document
+                            try:
+                                await loop.run_in_executor(executor, lambda: user_profile_ref.update({
+                                    "new_diet_received": True
+                                }))
+                                logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True for user {user_id}")
+                            except RuntimeError as e:
+                                if "cannot schedule new futures after shutdown" in str(e):
+                                    logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for document update")
+                                    user_profile_ref.update({
+                                        "new_diet_received": True
+                                    })
+                                    logger.info(f"[DIET UPLOAD] Updated existing document with new_diet_received=True using direct call for user {user_id}")
+                                else:
+                                    raise
+                    
+                        # Verify the update
+                        try:
+                            updated_doc = await loop.run_in_executor(executor, lambda: user_profile_ref.get())
                             if updated_doc.exists:
                                 updated_data = updated_doc.to_dict()
                                 flag_value = updated_data.get("new_diet_received")
-                                logger.info(f"[DIET UPLOAD] Verification (direct): new_diet_received={flag_value}")
+                                logger.info(f"[DIET UPLOAD] Verification: new_diet_received={flag_value}")
                             else:
-                                logger.error(f"[DIET UPLOAD] Verification failed (direct): document does not exist after update")
-                        else:
-                            raise
+                                logger.error(f"[DIET UPLOAD] Verification failed: document does not exist after update")
+                        except RuntimeError as e:
+                            if "cannot schedule new futures after shutdown" in str(e):
+                                logger.error(f"[DIET UPLOAD] ThreadPoolExecutor shutdown error, using direct Firestore call for verification")
+                                updated_doc = user_profile_ref.get()
+                                if updated_doc.exists:
+                                    updated_data = updated_doc.to_dict()
+                                    flag_value = updated_data.get("new_diet_received")
+                                    logger.info(f"[DIET UPLOAD] Verification (direct): new_diet_received={flag_value}")
+                                else:
+                                    logger.error(f"[DIET UPLOAD] Verification failed (direct): document does not exist after update")
+                            else:
+                                raise
                         
-                except Exception as flag_error:
-                    logger.error(f"[DIET UPLOAD] Error setting new_diet_received flag: {flag_error}")
-                    import traceback
-                    logger.error(f"[DIET UPLOAD] Flag setting traceback: {traceback.format_exc()}")
-                    # Don't raise the error, just log it - diet upload should still succeed
+                    except Exception as flag_error:
+                        logger.error(f"[DIET UPLOAD] Error setting new_diet_received flag: {flag_error}")
+                        import traceback
+                        logger.error(f"[DIET UPLOAD] Flag setting traceback: {traceback.format_exc()}")
+                        # Don't raise the error, just log it - diet upload should still succeed
                 
-                print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
-                print(f"Stored notifications with new PDF URL: {file.filename}")
-                print(f"Set new_diet_received=True for popup trigger")
+                    print(f"Extracted {len(notifications)} timed activities from new diet PDF for user {user_id}")
+                    print(f"Stored notifications with new PDF URL: {file.filename}")
+                    print(f"Set new_diet_received=True for popup trigger")
                 
-                # DO NOT automatically schedule here - let the user trigger it via popup
-                # This prevents backend/frontend scheduling conflicts
+                    # DO NOT automatically schedule here - let the user trigger it via popup
+                    # This prevents backend/frontend scheduling conflicts
                     
-            else:
-                print(f"No timed activities found in new diet PDF for user {user_id}")
+                else:
+                    print(f"No timed activities found in new diet PDF for user {user_id}")
                 
-        except Exception as e:
-            print(f"Error extracting notifications from new diet PDF: {e}")
-            import traceback
-            traceback.print_exc()
+            except Exception as e:
+                print(f"Error extracting notifications from new diet PDF: {e}")
+                import traceback
+                traceback.print_exc()
         
-        # Send notification using new simple system
-        print(f"[DIET UPLOAD] ===== SENDING NOTIFICATION =====")
-        print(f"[DIET UPLOAD] User ID: {user_id}")
+            # Send notification using new simple system
+            print(f"[DIET UPLOAD] ===== SENDING NOTIFICATION =====")
+            print(f"[DIET UPLOAD] User ID: {user_id}")
         
-        try:
-            notification_service = get_notification_service(firestore_db)
+            try:
+                notification_service = get_notification_service(firestore_db)
             
-            # Get dietician name for personalization
-            dietician_doc = firestore_db.collection("user_profiles").document(dietician_id).get()
-            dietician_name = "Your dietician"
-            if dietician_doc.exists:
-                dietician_data = dietician_doc.to_dict()
-                first_name = dietician_data.get("firstName", "")
-                last_name = dietician_data.get("lastName", "")
-                if first_name and last_name:
-                    dietician_name = f"{first_name} {last_name}"
-                elif first_name:
-                    dietician_name = first_name
+                # Get dietician name for personalization
+                dietician_doc = await asyncio.to_thread(firestore_db.collection("user_profiles").document(dietician_id).get)
+                dietician_name = "Your dietician"
+                if dietician_doc.exists:
+                    dietician_data = dietician_doc.to_dict()
+                    first_name = dietician_data.get("firstName", "")
+                    last_name = dietician_data.get("lastName", "")
+                    if first_name and last_name:
+                        dietician_name = f"{first_name} {last_name}"
+                    elif first_name:
+                        dietician_name = first_name
             
-            success = notification_service.send_new_diet_notification(user_id, dietician_name)
+                success = await asyncio.to_thread(notification_service.send_new_diet_notification, user_id, dietician_name)
             
-            if success:
-                print(f"[DIET UPLOAD] ✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
-                print(f"[DIET UPLOAD] 🎯 User should see notification")
-            else:
-                print(f"[DIET UPLOAD] ❌ NOTIFICATION FAILED to send to user {user_id}")
+                if success:
+                    print(f"[DIET UPLOAD] ✅ NOTIFICATION SENT SUCCESSFULLY to user {user_id}")
+                    print(f"[DIET UPLOAD] 🎯 User should see notification")
+                else:
+                    print(f"[DIET UPLOAD] ❌ NOTIFICATION FAILED to send to user {user_id}")
                 
-        except Exception as notif_error:
-            print(f"[DIET UPLOAD] ❌ Error sending notification: {notif_error}")
-        
+            except Exception as notif_error:
+                print(f"[DIET UPLOAD] ❌ Error sending notification: {notif_error}")
+
+        await _run_to_completion(finish_upload())
+
         print(f"[DIET UPLOAD] ===== UPLOAD COMPLETE =====")
         
         return {"success": True, "pdf_url": pdf_url, "message": "Diet uploaded successfully"}
@@ -2610,6 +2602,87 @@ async def create_appointment(appointment: AppointmentRequest):
         logger.error(f"Error creating appointment: {e}")
         raise HTTPException(status_code=500, detail="Failed to create appointment")
 
+# Slots are on the dietician's clock (India)
+DIETICIAN_TIMEZONE = "Asia/Kolkata"
+
+
+class SlotUnavailable(Exception):
+    """A booking refused because of the slot itself (the reason is the API's error detail)."""
+
+
+def _find_slot_booking(booking, slot_date):
+    """Check the dietician's breaks and the slot's other bookings. Returns this user's existing
+    booking of the slot (a retry) or None if it is free; raises SlotUnavailable otherwise."""
+    day_start = slot_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    utc_text = lambda d: d.astimezone(_dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # Older app versions save bookings with random ids (and, outside India, a shifted time),
+    # so look at every booking in the dietician's day
+    same_day = firestore_db.collection("appointments").where("date", ">=", utc_text(day_start)).where("date", "<", utc_text(day_start + timedelta(days=1))).stream()
+    taken = [doc for doc in same_day if (doc.to_dict() or {}).get("timeSlot") == booking["timeSlot"]]
+    for doc in taken:
+        if doc.to_dict().get("userId") != booking["userId"]:
+            raise SlotUnavailable("slot_taken")
+    if taken:
+        return taken[0]
+    day_keys = (slot_date.strftime("%a %b %d %Y"), slot_date.strftime("%Y-%m-%d"))
+    for doc in firestore_db.collection("breaks").stream():
+        item = doc.to_dict() or {}
+        if (item.get("fromTime") or "~") <= booking["timeSlot"] <= (item.get("toTime") or "") and \
+                (not item.get("specificDate") or item.get("specificDate") in day_keys):
+            raise SlotUnavailable("slot_in_break")
+    return None
+
+
+def _book_slot(booking, slot_date):
+    """Book a slot. There is one fixed document id per slot and create() fails if it exists, so
+    of several people booking it at once exactly one gets it. Returns (id, saved booking)."""
+    existing = _find_slot_booking(booking, slot_date)
+    if existing is not None:
+        return existing.id, existing.to_dict()
+    ref = firestore_db.collection("appointments").document(f"slot_{slot_date:%Y-%m-%d}_{slot_date:%H%M}")
+    try:
+        ref.create(booking)
+    except AlreadyExists:
+        winner = ref.get()
+        if winner.exists and winner.to_dict().get("userId") == booking["userId"]:
+            return winner.id, winner.to_dict()  # this user's own simultaneous request
+        raise SlotUnavailable("slot_taken")
+    # An older app's direct save, or a new break, may have landed since the check: give way to it
+    try:
+        _find_slot_booking(booking, slot_date)
+    except SlotUnavailable:
+        ref.delete()
+        raise
+    return ref.id, booking
+
+
+@api_router.post("/appointments/book", response_model=AppointmentResponse, dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
+async def book_appointment(appointment: AppointmentRequest, http_request: Request):
+    """Book a slot (one booking per slot). 409 detail: "slot_taken" or "slot_in_break"."""
+    check_firebase_availability()
+    if await get_caller(http_request) is None:  # new route: no token-less apps use it
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        moment = datetime.fromisoformat(appointment.date.replace("Z", "+00:00"))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=_dt_timezone.utc)
+        slot_date = moment.astimezone(ZoneInfo(DIETICIAN_TIMEZONE))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid appointment date")
+    if slot_date.strftime("%H:%M") != appointment.timeSlot:
+        raise HTTPException(status_code=400, detail="The date does not match the time slot")
+    booking = appointment.dict()
+    booking["date"] = slot_date.astimezone(_dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # as the app writes it
+    booking["createdAt"] = datetime.utcnow().isoformat() + "Z"
+    try:
+        appointment_id, saved = await asyncio.to_thread(_book_slot, booking, slot_date)
+        return AppointmentResponse(id=appointment_id, **saved)
+    except SlotUnavailable as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"[BOOK APPOINTMENT] Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create appointment")
+
 @api_router.get("/appointments", response_model=List[AppointmentResponse], dependencies=[Depends(require_login())])
 def get_appointments(user_id: Optional[str] = None):
     """Get all appointments or appointments for a specific user"""
@@ -2933,7 +3006,7 @@ async def extract_diet_notifications(user_id: str):
     try:
         # Get user profile to find diet PDF URL
         logger.info(f"[DIET EXTRACTION] Getting user profile for {user_id}")
-        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
+        user_doc = await asyncio.to_thread(firestore_db.collection("user_profiles").document(user_id).get)
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -2955,36 +3028,42 @@ async def extract_diet_notifications(user_id: str):
             logger.error(f"[DIET EXTRACTION] Error cancelling existing notifications for user {user_id}: {cancel_error}")
             # Continue with extraction even if cancellation fails
         
-        # Extract notifications from diet PDF
-        logger.info(f"[DIET EXTRACTION] Starting PDF text extraction for {user_id}")
-        extraction_start = time.time()
-        notifications = diet_notification_service.extract_and_create_notifications(
-            user_id, diet_pdf_url, firestore_db
-        )
-        extraction_time = time.time() - extraction_start
-        logger.info(f"[DIET EXTRACTION] PDF extraction completed in {extraction_time:.2f}s for user {user_id}")
+        def extract_and_store():
+            # Extract notifications from diet PDF
+            logger.info(f"[DIET EXTRACTION] Starting PDF text extraction for {user_id}")
+            extraction_start = time.time()
+            notifications = diet_notification_service.extract_and_create_notifications(
+                user_id, diet_pdf_url, firestore_db
+            )
+            extraction_time = time.time() - extraction_start
+            logger.info(f"[DIET EXTRACTION] PDF extraction completed in {extraction_time:.2f}s for user {user_id}")
+            if not notifications:
+                return notifications
+
+            # Store notifications in Firestore for the user
+            logger.info(f"[DIET EXTRACTION] Storing {len(notifications)} notifications in Firestore for {user_id}")
+            user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
+            user_notifications_ref.set({
+                "diet_notifications": notifications,
+                "extracted_at": datetime.now().isoformat(),
+                "diet_pdf_url": diet_pdf_url,
+            }, merge=True)
         
+            # Clear new_diet_received flag when extraction is completed
+            user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
+            user_profile_ref.update({
+                "new_diet_received": False
+            })
+            return notifications
+
+        notifications = await asyncio.to_thread(extract_and_store)
+
         if not notifications:
             logger.info(f"[DIET EXTRACTION] No notifications found for user {user_id}")
             return {
                 "message": "No timed activities found in diet PDF",
                 "notifications": []
             }
-        
-        # Store notifications in Firestore for the user
-        logger.info(f"[DIET EXTRACTION] Storing {len(notifications)} notifications in Firestore for {user_id}")
-        user_notifications_ref = firestore_db.collection("user_notifications").document(user_id)
-        user_notifications_ref.set({
-            "diet_notifications": notifications,
-            "extracted_at": datetime.now().isoformat(),
-            "diet_pdf_url": diet_pdf_url,
-        }, merge=True)
-        
-        # Clear new_diet_received flag when extraction is completed
-        user_profile_ref = firestore_db.collection("user_profiles").document(user_id)
-        user_profile_ref.update({
-            "new_diet_received": False
-        })
         
         # DISABLED: Schedule the notifications on the backend to prevent conflicts
         # Manual extraction now uses only local scheduling on the device for reliability
@@ -3038,7 +3117,7 @@ def get_diet_raw_text(user_id: str):
     """
     try:
         # Get user's diet PDF URL
-        user_doc = firestore_db.collection("users").document(user_id).get()
+        user_doc = firestore_db.collection("user_profiles").document(user_id).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -3055,6 +3134,8 @@ def get_diet_raw_text(user_id: str):
             raise HTTPException(status_code=404, detail="Failed to extract text from diet PDF")
         
         return {"raw_text": raw_text}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting raw diet text for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get raw diet text")
@@ -3137,7 +3218,7 @@ async def send_notification(request: dict, http_request: Request):
         
         if notification_type == "new_diet":
             dietician_name = request.get("dieticianName", "Your dietician")
-            success = notification_service.send_new_diet_notification(recipient_id, dietician_name)
+            success = await asyncio.to_thread(notification_service.send_new_diet_notification, recipient_id, dietician_name)
             
         elif notification_type == "message":
             # This old endpoint is deprecated - use /push-notifications/send instead
@@ -3149,7 +3230,7 @@ async def send_notification(request: dict, http_request: Request):
             
         elif notification_type == "diet_reminder":
             user_name = request.get("userName", "User")
-            success = notification_service.send_diet_reminder_notification(recipient_id, user_name)
+            success = await asyncio.to_thread(notification_service.send_diet_reminder_notification, recipient_id, user_name)
             
         elif notification_type == "dietician_diet_reminder":
             # This old endpoint is deprecated - use scheduled job instead
@@ -3160,7 +3241,7 @@ async def send_notification(request: dict, http_request: Request):
             title = request.get("title", "Notification")
             body = request.get("body", "")
             data = request.get("data", {})
-            success = notification_service.send_notification(recipient_id, title, body, data)
+            success = await asyncio.to_thread(notification_service.send_notification, recipient_id, title, body, data)
         
         if success:
             logger.info(f"[SIMPLE NOTIFICATION] ✅ Notification sent successfully to {recipient_id}")
@@ -3231,7 +3312,8 @@ async def send_push_notification_new(request: dict, http_request: Request):
             logger.info(f"[PUSH NOTIFICATION] Message notification: {sender_name} -> {recipient_id}")
             
             notification_service = get_notification_service(firestore_db)
-            success = notification_service.send_message_notification(
+            success = await asyncio.to_thread(
+                notification_service.send_message_notification,
                 recipient_id, sender_name, message, is_from_dietician
             )
             
@@ -3244,7 +3326,8 @@ async def send_push_notification_new(request: dict, http_request: Request):
             logger.info(f"[PUSH NOTIFICATION] Appointment scheduled: {user_name} at {date} {time_slot}")
             
             notification_service = get_notification_service(firestore_db)
-            success = notification_service.send_notification(
+            success = await asyncio.to_thread(
+                notification_service.send_notification,
                 recipient_id="dietician",
                 title="New Appointment Scheduled",
                 body=f"{user_name} scheduled an appointment for {date} at {time_slot}",
@@ -3260,7 +3343,8 @@ async def send_push_notification_new(request: dict, http_request: Request):
             logger.info(f"[PUSH NOTIFICATION] Appointment cancelled: {user_name} at {date} {time_slot}")
             
             notification_service = get_notification_service(firestore_db)
-            success = notification_service.send_notification(
+            success = await asyncio.to_thread(
+                notification_service.send_notification,
                 recipient_id="dietician",
                 title="Appointment Cancelled",
                 body=f"{user_name} cancelled appointment for {date} at {time_slot}",
@@ -3766,6 +3850,47 @@ from google.cloud.firestore import transactional as _firestore_transactional
 _paid_period_tasks = set()  # background processing started by status calls
 
 
+async def _run_to_completion(coro):
+    """Await coro, but let it finish in the background if this request is cancelled (e.g. by the
+    30 s request timeout), so a multi-step write is never left half done."""
+    task = asyncio.ensure_future(coro)
+    _paid_period_tasks.add(task)
+    task.add_done_callback(_paid_period_tasks.discard)
+    return await asyncio.shield(task)
+
+
+def _update_if_unchanged(snap, updates):
+    """Write to a document only if it hasn't changed since `snap` was read (no locks, so
+    simultaneous requests can't block each other). Returns whether it was written."""
+    try:
+        snap.reference.update(updates, option=firestore_db.write_option(last_update_time=snap.update_time))
+        return True
+    except (FailedPrecondition, Aborted):
+        return False
+
+
+def _reset_if_new_day(user_id, js_offset_minutes):
+    """First food log of the user's day: clear that day's leftover entries. Only one of several
+    simultaneous logs claims the day, and it deletes only entries listed before its claim, so it
+    can't erase the others' new entries."""
+    doc_ref = firestore_db.collection("user_profiles").document(user_id)
+    for attempt in range(10):
+        snap = doc_ref.get()
+        if not snap.exists:
+            return
+        data = snap.to_dict() or {}
+        today = user_today_start(data, js_offset_minutes) or datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_str = today.strftime('%Y-%m-%d')
+        if data.get("lastFoodLogDate") == today_str:
+            return
+        leftovers = list(firestore_db.collection(f"users/{user_id}/food_logs").where("timestamp", ">=", today).stream())
+        if _update_if_unchanged(snap, {"lastFoodLogDate": today_str}):
+            for log in leftovers:
+                log.reference.delete()
+            logger.info(f"[DAILY RESET] New day for user {user_id}. Deleted {len(leftovers)} food logs.")
+            return
+
+
 @_firestore_transactional
 def _paid_period_transaction(transaction, doc_ref, now):
     """Decide and write this period's due steps atomically. Returns (pre_state, actions)."""
@@ -4099,11 +4224,12 @@ async def send_payment_reminder_notification(user_id: str, user_data: dict, time
         }
         
         # Save notification to Firestore
-        firestore_db.collection("notifications").add(notification_data)
+        await asyncio.to_thread(firestore_db.collection("notifications").add, notification_data)
         
         # Send push notification using SimpleNotificationService (same as messages/appointments)
         notification_service = get_notification_service(firestore_db)
-        success = notification_service.send_notification(
+        success = await asyncio.to_thread(
+            notification_service.send_notification,
             recipient_id=user_id,
             title=title,
             body=message,
@@ -4329,11 +4455,12 @@ async def send_plan_switch_notifications(user_id: str, user_data: dict, new_plan
                 "newPlanName": new_plan_name
             }
         }
-        firestore_db.collection("notifications").add(notification_data)
+        await asyncio.to_thread(firestore_db.collection("notifications").add, notification_data)
         
         # Send push notification to user using SimpleNotificationService (same as messages/appointments)
         notification_service = get_notification_service(firestore_db)
-        success = notification_service.send_notification(
+        success = await asyncio.to_thread(
+            notification_service.send_notification,
             recipient_id=user_id,
             title="Plan Switched",
             body=f"Hi {user_name}, your {old_plan_name} has ended. Switched to {new_plan_name}. Your new plan is now active!",
@@ -4482,11 +4609,12 @@ async def send_dietician_subscription_notification(user_id: str, user_data: dict
             "data": notification_data
         }
         
-        firestore_db.collection("notifications").add(dietician_notification)
+        await asyncio.to_thread(firestore_db.collection("notifications").add, dietician_notification)
         
         # Send push notification to dietician using SimpleNotificationService (same as messages/appointments)
         notification_service = get_notification_service(firestore_db)
-        success = notification_service.send_notification(
+        success = await asyncio.to_thread(
+            notification_service.send_notification,
             recipient_id="dietician",  # Special ID for dietician
             title=title,
             body=body,
@@ -4522,11 +4650,12 @@ async def send_subscription_renewal_notifications(user_id: str, user_data: dict,
             }
         }
         
-        firestore_db.collection("notifications").add(user_notification)
+        await asyncio.to_thread(firestore_db.collection("notifications").add, user_notification)
         
         # Send push notification to user using SimpleNotificationService (same as messages/appointments)
         notification_service = get_notification_service(firestore_db)
-        success = notification_service.send_notification(
+        success = await asyncio.to_thread(
+            notification_service.send_notification,
             recipient_id=user_id,
             title="Subscription Auto-Renewed",
             body=f"Hi {user_name}, your {plan_name} has ended. Automatically renewed to {plan_name}. Your subscription continues seamlessly!",
@@ -4564,7 +4693,7 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
         
         # IMPORTANT: Mark consultation period as expired and inactive when auto-renewal is disabled
         # This ensures the consultation period doesn't remain "active" after expiry
-        firestore_db.collection("user_profiles").document(user_id).update({
+        await asyncio.to_thread(firestore_db.collection("user_profiles").document(user_id).update, {
             "isSubscriptionActive": False,
             "subscriptionStatus": "expired"
         })
@@ -4585,11 +4714,12 @@ async def send_subscription_expiry_notifications(user_id: str, user_data: dict):
             }
         }
         
-        firestore_db.collection("notifications").add(user_notification)
+        await asyncio.to_thread(firestore_db.collection("notifications").add, user_notification)
         
         # Send push notification to user using SimpleNotificationService (same as messages/appointments)
         notification_service = get_notification_service(firestore_db)
-        user_success = notification_service.send_notification(
+        user_success = await asyncio.to_thread(
+            notification_service.send_notification,
             recipient_id=user_id,
             title="Consultation Period Expired",
             body=f"Hi {user_name}, your {plan_name} consultation period has ended. Select a new consultation period to continue!",
@@ -4781,6 +4911,152 @@ async def get_subscription_plans():
         logger.error(f"[GET SUBSCRIPTION PLANS] Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subscription plans")
 
+def _select_subscription_once(doc_ref, request, plan_prices):
+    """Check and apply a plan selection, unless the profile changes meanwhile (a double tap, or a
+    renewal at the same moment). Returns (newly_activated, response), or None to try again."""
+    # Get user profile
+    user_doc = doc_ref.get()
+    if not user_doc.exists:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_data = user_doc.to_dict()
+
+    # Check if user is a dietician (prevent dieticians from subscribing)
+    user_email = user_data.get("email", "")
+    if user_email == "dietician@nutricious4u.com" or "dietician" in user_email.lower():
+        raise HTTPException(status_code=403, detail="Dieticians cannot subscribe to plans")
+    current_total = user_data.get("totalAmountPaid", 0.0)
+
+    # Calculate subscription dates
+    start_date = utc_now()
+    if request.planId == "1month":
+        end_date = start_date + timedelta(days=30)  # 1 month = 30 days
+    elif request.planId == "2months":
+        end_date = start_date + timedelta(days=60)  # 2 months = 60 days
+    elif request.planId == "3months":
+        end_date = start_date + timedelta(days=90)  # 3 months = 90 days
+    elif request.planId == "6months":
+        end_date = start_date + timedelta(days=180)  # 6 months = 180 days
+
+    # Check if user already has an active subscription
+    has_active_subscription = user_data.get("isSubscriptionActive", False)
+    current_subscription_end = user_data.get("subscriptionEndDate")
+    current_plan = user_data.get("subscriptionPlan")
+
+    # If user has active subscription, store as pending plan switch (deferred activation)
+    if has_active_subscription and current_subscription_end and current_plan and current_plan != "trial":
+        # Parse current end date
+        current_end_date = datetime.fromisoformat(current_subscription_end)
+
+        # If switching to the same plan, treat it as renewal and enable auto-renewal
+        if request.planId == current_plan:
+            # Enable auto-renewal and clear any pending switch
+            if not _update_if_unchanged(user_doc, {
+                "autoRenewalEnabled": True,
+                "pendingPlanSwitch": None,
+                "nextPlanId": None,
+                "subscriptionStatus": "active"
+            }):
+                return None
+
+            plan_name = get_plan_name(request.planId)
+            message = f"Auto-renewal enabled! Your {plan_name} consultation period will automatically renew when it expires."
+
+            return False, SubscriptionResponse(
+                success=True,
+                message=message,
+                subscription={
+                    "planId": request.planId,
+                    "autoRenewalEnabled": True,
+                    "isRenewal": True
+                }
+            )
+
+        # Calculate new plan dates starting from current plan end
+        if request.planId == "1month":
+            new_end_date = current_end_date + timedelta(days=30)  # 1 month = 30 days
+        elif request.planId == "2months":
+            new_end_date = current_end_date + timedelta(days=60)  # 2 months = 60 days
+        elif request.planId == "3months":
+            new_end_date = current_end_date + timedelta(days=90)  # 3 months = 90 days
+        elif request.planId == "6months":
+            new_end_date = current_end_date + timedelta(days=180)  # 6 months = 180 days
+        else:
+            new_end_date = current_end_date
+
+        # Store as pending plan switch
+        # Use autoRenewalEnabled from request, default to True if not provided
+        auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
+
+        pending_switch = {
+            "newPlanId": request.planId,
+            "switchDate": current_end_date.isoformat(),  # When current plan ends
+            "amount": plan_prices[request.planId]
+        }
+
+        update_data = {
+            "pendingPlanSwitch": pending_switch,
+            "nextPlanId": request.planId,
+            "subscriptionStatus": "pending_switch",
+            "autoRenewalEnabled": auto_renewal  # Set auto-renewal for the new plan
+        }
+
+        if not _update_if_unchanged(user_doc, update_data):
+            return None
+
+        plan_name = get_plan_name(request.planId)
+        message = f"Consultation period change scheduled! Your {plan_name} consultation will activate after your current consultation period ends on {format_user_date(current_end_date, user_data)}."
+
+        return False, SubscriptionResponse(
+            success=True,
+            message=message,
+            subscription={
+                "planId": request.planId,
+                "switchDate": current_end_date.isoformat(),
+                "amountPaid": plan_prices[request.planId],
+                "isPendingSwitch": True
+            }
+        )
+
+    # User has NO active subscription - activate immediately
+    # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
+    # Use autoRenewalEnabled from request, default to True if not provided
+    auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
+
+    update_data = {
+        "subscriptionPlan": request.planId,
+        "subscriptionStartDate": start_date.isoformat(),
+        "subscriptionEndDate": end_date.isoformat(),
+        "currentSubscriptionAmount": plan_prices[request.planId],
+        "totalAmountPaid": current_total,  # Keep existing total, don't add yet
+        "isSubscriptionActive": True,
+        "subscriptionStatus": "active",
+        "autoRenewalEnabled": auto_renewal,  # Set auto-renewal preference
+        "pendingPlanSwitch": None,  # Clear any pending switch
+        "nextPlanId": None,
+        # Reset reminder flags left over from a trial or earlier plan, so they can't
+        # be mistaken for this new plan's fee/reminders (same as renewal and switch)
+        "lastPaymentReminderSent": {"oneWeek": False, "twoDays": False, "oneDay": False}
+    }
+
+    if not _update_if_unchanged(user_doc, update_data):
+        return None
+
+    message = f"Successfully confirmed {get_plan_name(request.planId)} consultation period. Your consultation access is now active!"
+
+    return True, SubscriptionResponse(
+        success=True,
+        message=message,
+        subscription={
+            "planId": request.planId,
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "amountPaid": plan_prices[request.planId],
+            "totalAmountPaid": current_total
+        }
+    )
+
+
 @api_router.post("/subscription/select", dependencies=[Depends(require_self_or_dietician("userId", source="body"))])
 async def select_subscription(request: SelectSubscriptionRequest):
     """Select a subscription plan for a user"""
@@ -4798,155 +5074,31 @@ async def select_subscription(request: SelectSubscriptionRequest):
         if request.planId not in plan_prices:
             raise HTTPException(status_code=400, detail="Invalid plan ID")
         
-        # Get user profile
-        user_doc = firestore_db.collection("user_profiles").document(request.userId).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        user_data = user_doc.to_dict()
-        
-        # Check if user is a dietician (prevent dieticians from subscribing)
-        user_email = user_data.get("email", "")
-        if user_email == "dietician@nutricious4u.com" or "dietician" in user_email.lower():
-            raise HTTPException(status_code=403, detail="Dieticians cannot subscribe to plans")
-        current_total = user_data.get("totalAmountPaid", 0.0)
-        
-        # Calculate subscription dates
-        from datetime import datetime, timedelta
-        
-        start_date = utc_now()
-        if request.planId == "1month":
-            end_date = start_date + timedelta(days=30)  # 1 month = 30 days
-        elif request.planId == "2months":
-            end_date = start_date + timedelta(days=60)  # 2 months = 60 days
-        elif request.planId == "3months":
-            end_date = start_date + timedelta(days=90)  # 3 months = 90 days
-        elif request.planId == "6months":
-            end_date = start_date + timedelta(days=180)  # 6 months = 180 days
-        
-        # Check if user already has an active subscription
-        has_active_subscription = user_data.get("isSubscriptionActive", False)
-        current_subscription_end = user_data.get("subscriptionEndDate")
-        current_plan = user_data.get("subscriptionPlan")
-        
-        # If user has active subscription, store as pending plan switch (deferred activation)
-        if has_active_subscription and current_subscription_end and current_plan and current_plan != "trial":
-            # Parse current end date
-            current_end_date = datetime.fromisoformat(current_subscription_end)
-            
-            # If switching to the same plan, treat it as renewal and enable auto-renewal
-            if request.planId == current_plan:
-                # Enable auto-renewal and clear any pending switch
-                firestore_db.collection("user_profiles").document(request.userId).update({
-                    "autoRenewalEnabled": True,
-                    "pendingPlanSwitch": None,
-                    "nextPlanId": None,
-                    "subscriptionStatus": "active"
-                })
-                
-                plan_name = get_plan_name(request.planId)
-                message = f"Auto-renewal enabled! Your {plan_name} consultation period will automatically renew when it expires."
-                
-                return SubscriptionResponse(
-                    success=True,
-                    message=message,
-                    subscription={
-                        "planId": request.planId,
-                        "autoRenewalEnabled": True,
-                        "isRenewal": True
-                    }
-                )
-            
-            # Calculate new plan dates starting from current plan end
-            if request.planId == "1month":
-                new_end_date = current_end_date + timedelta(days=30)  # 1 month = 30 days
-            elif request.planId == "2months":
-                new_end_date = current_end_date + timedelta(days=60)  # 2 months = 60 days
-            elif request.planId == "3months":
-                new_end_date = current_end_date + timedelta(days=90)  # 3 months = 90 days
-            elif request.planId == "6months":
-                new_end_date = current_end_date + timedelta(days=180)  # 6 months = 180 days
-            else:
-                new_end_date = current_end_date
-            
-            # Store as pending plan switch
-            # Use autoRenewalEnabled from request, default to True if not provided
-            auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
-            
-            pending_switch = {
-                "newPlanId": request.planId,
-                "switchDate": current_end_date.isoformat(),  # When current plan ends
-                "amount": plan_prices[request.planId]
-            }
-            
-            update_data = {
-                "pendingPlanSwitch": pending_switch,
-                "nextPlanId": request.planId,
-                "subscriptionStatus": "pending_switch",
-                "autoRenewalEnabled": auto_renewal  # Set auto-renewal for the new plan
-            }
-            
-            firestore_db.collection("user_profiles").document(request.userId).update(update_data)
-            
-            plan_name = get_plan_name(request.planId)
-            message = f"Consultation period change scheduled! Your {plan_name} consultation will activate after your current consultation period ends on {format_user_date(current_end_date, user_data)}."
-            
-            return SubscriptionResponse(
-                success=True,
-                message=message,
-                subscription={
-                    "planId": request.planId,
-                    "switchDate": current_end_date.isoformat(),
-                    "amountPaid": plan_prices[request.planId],
-                    "isPendingSwitch": True
-                }
-            )
-        
-        # User has NO active subscription - activate immediately
-        # NOTE: Do NOT add to totalAmountPaid here - will be added when plan ends (Phase 4)
-        # Use autoRenewalEnabled from request, default to True if not provided
-        auto_renewal = request.autoRenewalEnabled if request.autoRenewalEnabled is not None else True
-        
-        update_data = {
-            "subscriptionPlan": request.planId,
-            "subscriptionStartDate": start_date.isoformat(),
-            "subscriptionEndDate": end_date.isoformat(),
-            "currentSubscriptionAmount": plan_prices[request.planId],
-            "totalAmountPaid": current_total,  # Keep existing total, don't add yet
-            "isSubscriptionActive": True,
-            "subscriptionStatus": "active",
-            "autoRenewalEnabled": auto_renewal,  # Set auto-renewal preference
-            "pendingPlanSwitch": None,  # Clear any pending switch
-            "nextPlanId": None,
-            # Reset reminder flags left over from a trial or earlier plan, so they can't
-            # be mistaken for this new plan's fee/reminders (same as renewal and switch)
-            "lastPaymentReminderSent": {"oneWeek": False, "twoDays": False, "oneDay": False}
-        }
-        
-        firestore_db.collection("user_profiles").document(request.userId).update(update_data)
-        
-        # Send notification to dietician about new subscription
-        # Get updated user data to include current totalAmountPaid
-        updated_user_doc = firestore_db.collection("user_profiles").document(request.userId).get()
-        if updated_user_doc.exists:
-            updated_user_data = updated_user_doc.to_dict()
-            plan_name = get_plan_name(request.planId)
-            await send_dietician_subscription_notification(request.userId, updated_user_data, "plan_started", plan_name)
-        
-        message = f"Successfully confirmed {get_plan_name(request.planId)} consultation period. Your consultation access is now active!"
-        
-        return SubscriptionResponse(
-            success=True,
-            message=message,
-            subscription={
-                "planId": request.planId,
-                "startDate": start_date.isoformat(),
-                "endDate": end_date.isoformat(),
-                "amountPaid": plan_prices[request.planId],
-                "totalAmountPaid": current_total
-            }
-        )
-        
+        doc_ref = firestore_db.collection("user_profiles").document(request.userId)
+
+        async def apply_selection():
+            outcome = None
+            for attempt in range(20):
+                outcome = await asyncio.to_thread(_select_subscription_once, doc_ref, request, plan_prices)
+                if outcome is not None:
+                    break
+                await asyncio.sleep(random.random() * 0.2)
+            if outcome is None:
+                raise Exception("profile kept changing")
+            newly_activated, response = outcome
+
+            if newly_activated:
+                # Send notification to dietician about new subscription
+                # Get updated user data to include current totalAmountPaid
+                updated_user_doc = await asyncio.to_thread(doc_ref.get)
+                if updated_user_doc.exists:
+                    updated_user_data = updated_user_doc.to_dict()
+                    plan_name = get_plan_name(request.planId)
+                    await send_dietician_subscription_notification(request.userId, updated_user_data, "plan_started", plan_name)
+            return response
+
+        return await _run_to_completion(apply_selection())
+
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -4959,7 +5111,7 @@ async def get_subscription_status(userId: str):
     try:
         check_firebase_availability()
         
-        user_doc = firestore_db.collection("user_profiles").document(userId).get()
+        user_doc = await asyncio.to_thread(firestore_db.collection("user_profiles").document(userId).get)
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -5030,7 +5182,7 @@ async def get_subscription_status(userId: str):
                 _paid_period_tasks.add(task)  # strong reference until done (asyncio only keeps weak ones)
                 task.add_done_callback(_paid_period_tasks.discard)
                 await asyncio.wait({task}, timeout=8)
-                fresh = firestore_db.collection("user_profiles").document(userId).get().to_dict() or {}
+                fresh = (await asyncio.to_thread(firestore_db.collection("user_profiles").document(userId).get)).to_dict() or {}
                 for key in ("subscriptionPlan", "subscriptionStartDate", "subscriptionEndDate",
                             "currentSubscriptionAmount", "totalAmountPaid", "isSubscriptionActive",
                             "autoRenewalEnabled", "pendingPlanSwitch", "nextPlanId", "subscriptionStatus"):
@@ -5044,11 +5196,13 @@ async def get_subscription_status(userId: str):
                     requires_plan_selection = True
                 end_date = None
             if end_date is not None and utc_now() > end_date:
-                # Update subscription status to inactive
-                firestore_db.collection("user_profiles").document(userId).update({
+                # Update subscription status to inactive, unless the profile changed since it was
+                # read (e.g. a plan was just selected): then answer from the fresh state
+                if not await asyncio.to_thread(_update_if_unchanged, user_doc, {
                     "isSubscriptionActive": False,
                     "subscriptionStatus": "expired"
-                })
+                }):
+                    return await get_subscription_status(userId)
                 subscription_data["isSubscriptionActive"] = False
                 subscription_data["subscriptionStatus"] = "expired"
                 # If subscription expired and no plan selected, require plan selection
@@ -5730,15 +5884,17 @@ async def activate_free_trial(userId: str):
                 }
             }
 
-        # Assign default diet to user - pass start_date so countdown starts from trial start, not diet assignment
-        default_diet_assigned = await assign_default_diet_to_user(userId, user_data, start_date)
+        async def finish_activation():
+            # Assign default diet to user - pass start_date so countdown starts from trial start, not diet assignment
+            assigned = await assign_default_diet_to_user(userId, user_data, start_date)
+            await asyncio.to_thread(doc_ref.update, {
+                "new_diet_received": True  # Trigger new diet popup
+            })
+            # Send notification to dietician
+            await send_dietician_subscription_notification(userId, user_data, "trial_started")
+            return assigned
 
-        firestore_db.collection("user_profiles").document(userId).update({
-            "new_diet_received": True  # Trigger new diet popup
-        })
-
-        # Send notification to dietician
-        await send_dietician_subscription_notification(userId, user_data, "trial_started")
+        default_diet_assigned = await _run_to_completion(finish_activation())
         
         logger.info(f"[ACTIVATE TRIAL] Successfully activated free trial for user {userId}, ends at {end_date.isoformat()}")
         
@@ -5801,6 +5957,11 @@ def get_trial_status(userId: str):
         raise HTTPException(status_code=500, detail="Failed to get trial status")
 
 async def assign_default_diet_to_user(user_id: str, user_data: dict, trial_start_date: datetime = None):
+    """Assign the free trial diet PDF to a user (in a thread; every step blocks)"""
+    return await asyncio.to_thread(_assign_default_diet_to_user, user_id, user_data, trial_start_date)
+
+
+def _assign_default_diet_to_user(user_id: str, user_data: dict, trial_start_date: datetime = None):
     """Assign the free trial diet PDF to a user during free trial
     trial_start_date: Trial start time - used for lastDietUpload to ensure countdown starts from trial start
     """
